@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Player — Pickleball League</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="court-bg">
+
+<div class="app-shell">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar-brand">🥒 <span id="topbar-league">Pickleball</span></div>
+    <div class="topbar-right">
+      <div class="user-chip"><span class="name" id="topbar-name"></span></div>
+      <button class="btn btn-secondary" onclick="Auth.logout()" style="padding:6px 14px; font-size:0.75rem;">Logout</button>
+    </div>
+  </header>
+
+  <div class="main-content">
+
+    <!-- Sidebar Nav -->
+    <nav class="sidebar">
+      <div class="nav-section">
+        <div class="nav-item active" data-page="my-games"><span class="icon">🎾</span> My Games</div>
+        <div class="nav-item" data-page="attendance"><span class="icon">📋</span> Availability</div>
+        <div class="nav-item" data-page="scoresheet"><span class="icon">📊</span> Scoresheet</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-label">Standings</div>
+        <div class="nav-item" data-page="standings-week"><span class="icon">📅</span> Weekly</div>
+        <div class="nav-item" data-page="standings-season"><span class="icon">🏆</span> Season</div>
+        <div class="nav-item" data-page="attendance-all"><span class="icon">👥</span> Attendance</div>
+      </div>
+    </nav>
+
+    <main class="page-area" id="page-area">
+
+      <!-- ═══ MY GAMES ═══ -->
+      <section id="page-my-games" class="tab-panel active">
+        <div class="page-header">
+          <h2 id="my-games-title">My Games</h2>
+          <div id="my-rank-badge"></div>
+        </div>
+        <div class="card-grid" id="my-stats"></div>
+        <div class="card mt-2">
+          <div class="card-header"><div class="card-title">Game History</div></div>
+          <div class="table-wrap" id="my-game-history"></div>
+        </div>
+      </section>
+
+      <!-- ═══ AVAILABILITY ═══ -->
+      <section id="page-attendance" class="tab-panel">
+        <div class="page-header"><h2>My Availability</h2></div>
+        <div class="card">
+          <p style="font-size:0.88rem; color:var(--muted); margin-bottom:16px;">
+            Tap each week to set your availability. Changes save automatically.
+          </p>
+          <div id="my-attendance-grid"></div>
+        </div>
+      </section>
+
+      <!-- ═══ SCORESHEET ═══ -->
+      <section id="page-scoresheet" class="tab-panel">
+        <div class="page-header">
+          <h2>Scoresheet</h2>
+          <div class="week-selector">
+            <button id="sheet-week-prev">‹</button>
+            <div class="week-num" id="sheet-week-label">Week 1</div>
+            <button id="sheet-week-next">›</button>
+          </div>
+        </div>
+        <div class="card">
+          <div id="player-scoresheet"></div>
+        </div>
+      </section>
+
+      <!-- ═══ WEEKLY STANDINGS ═══ -->
+      <section id="page-standings-week" class="tab-panel">
+        <div class="page-header">
+          <h2>Weekly Standings</h2>
+          <div class="week-selector">
+            <button id="wstand-prev">‹</button>
+            <div class="week-num" id="wstand-label">Week 1</div>
+            <button id="wstand-next">›</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="table-wrap" id="weekly-standings-table"></div>
+        </div>
+      </section>
+
+      <!-- ═══ SEASON STANDINGS ═══ -->
+      <section id="page-standings-season" class="tab-panel">
+        <div class="page-header"><h2>Season Standings</h2></div>
+        <div class="card">
+          <div class="table-wrap" id="season-standings-table"></div>
+        </div>
+      </section>
+
+      <!-- ═══ FULL ATTENDANCE ═══ -->
+      <section id="page-attendance-all" class="tab-panel">
+        <div class="page-header"><h2>Attendance</h2></div>
+        <div class="card">
+          <div id="full-attendance-grid"></div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<div class="loading-overlay hidden" id="loading"><div class="spinner"></div></div>
+
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/reports.js"></script>
+<script src="js/player.js"></script>
+</body>
+</html>

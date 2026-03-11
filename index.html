@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pickleball League — Login</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="court-bg">
+
+<div class="login-page">
+  <div class="login-box">
+
+    <div class="login-logo">
+      <span class="ball">🥒</span>
+      <h1>PICKLE<span>BALL</span></h1>
+      <div class="league-name">League Manager</div>
+    </div>
+
+    <!-- Step 1: Select League -->
+    <div id="step-league">
+      <div class="form-group">
+        <label class="form-label">Select Your League</label>
+        <select class="form-control" id="league-select">
+          <option value="">— Loading leagues… —</option>
+        </select>
+      </div>
+      <button class="btn btn-primary w-full" id="btn-league-next" disabled>Continue →</button>
+    </div>
+
+    <!-- Step 2: Select Player -->
+    <div id="step-player" class="hidden">
+      <div style="margin-bottom:16px;">
+        <div class="label">League</div>
+        <div id="selected-league-name" style="font-weight:600; color:var(--green); font-size:1rem;"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Select Your Name</label>
+        <select class="form-control" id="player-select">
+          <option value="">— Choose Player —</option>
+        </select>
+      </div>
+      <button class="btn btn-primary w-full" id="btn-player-next" disabled>Continue →</button>
+
+      <div class="login-divider">or</div>
+
+      <button class="btn btn-secondary w-full" id="btn-admin-entry">Admin Login</button>
+
+      <button class="btn btn-secondary w-full mt-1" id="btn-back-league" style="margin-top:8px; opacity:0.6; font-size:0.75rem;">← Change League</button>
+    </div>
+
+    <!-- Step 3: Enter PIN -->
+    <div id="step-pin" class="hidden">
+      <div style="margin-bottom:16px;">
+        <div class="label">League</div>
+        <div id="pin-league-name" style="font-weight:600; color:var(--green); font-size:0.95rem; margin-bottom:8px;"></div>
+        <div class="label">Player</div>
+        <div id="pin-player-name" style="font-weight:600; color:var(--white); font-size:1rem;"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Enter PIN</label>
+        <input type="password" class="form-control pin-input" id="pin-input"
+               maxlength="8" inputmode="numeric" placeholder="••••" autocomplete="off">
+      </div>
+      <div id="pin-error" class="hidden" style="color:var(--danger); font-size:0.8rem; margin-bottom:12px;"></div>
+      <div class="btn-group">
+        <button class="btn btn-secondary" id="btn-back-player">← Back</button>
+        <button class="btn btn-primary" id="btn-login" style="flex:1;">Enter</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script>
+(async function init() {
+  // If already logged in with a valid league, redirect
+  const session = Auth.getSession();
+  if (session && session.leagueId) {
+    window.location.href = session.isAdmin ? 'admin.html' : 'player.html';
+    return;
+  }
+
+  let leagues = [];
+  let selectedLeague = null;
+  let selectedPlayer = null;
+
+  // ── Step 1: Load leagues ────────────────────────────────────
+  const leagueSel = document.getElementById('league-select');
+  const btnLeagueNext = document.getElementById('btn-league-next');
+
+  try {
+    const data = await API.getLeagues();
+    leagues = data.leagues || [];
+
+    leagueSel.innerHTML = '<option value="">— Choose League —</option>';
+    if (leagues.length === 0) {
+      leagueSel.innerHTML = '<option value="">No leagues configured yet</option>';
+      showToast('No leagues found. Set up a league in the admin panel.', 'warn');
+    } else {
+      leagues.forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = l.leagueId;
+        opt.textContent = l.name;
+        leagueSel.appendChild(opt);
+      });
+    }
+  } catch (e) {
+    leagueSel.innerHTML = '<option value="">Could not load leagues</option>';
+    showToast('Could not connect. Check GAS_URL in api.js.', 'error');
+  }
+
+  leagueSel.addEventListener('change', () => {
+    btnLeagueNext.disabled = !leagueSel.value;
+  });
+
+  btnLeagueNext.addEventListener('click', async () => {
+    const leagueId = leagueSel.value;
+    if (!leagueId) return;
+    selectedLeague = leagues.find(l => l.leagueId === leagueId);
+
+    // Temporarily set leagueId in session so API calls are routed correctly
+    Auth.setSession('', false, leagueId, selectedLeague.name);
+
+    // Load players for this league
+    document.getElementById('selected-league-name').textContent = selectedLeague.name;
+    const playerSel = document.getElementById('player-select');
+    playerSel.innerHTML = '<option value="">— Loading… —</option>';
+
+    goTo('step-player');
+
+    try {
+      const data = await API.getPlayers();
+      const players = (data.players || []).filter(p => p.active !== false);
+      playerSel.innerHTML = '<option value="">— Choose Player —</option>';
+      players.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.name;
+        opt.textContent = p.name;
+        playerSel.appendChild(opt);
+      });
+    } catch (e) {
+      playerSel.innerHTML = '<option value="">Could not load players</option>';
+      showToast('Failed to load players: ' + e.message, 'error');
+    }
+  });
+
+  // ── Step 2: Select player ───────────────────────────────────
+  const playerSel = document.getElementById('player-select');
+  const btnPlayerNext = document.getElementById('btn-player-next');
+
+  playerSel.addEventListener('change', () => {
+    btnPlayerNext.disabled = !playerSel.value;
+  });
+
+  btnPlayerNext.addEventListener('click', () => {
+    if (!playerSel.value) return;
+    selectedPlayer = playerSel.value;
+    showPinStep(selectedPlayer);
+  });
+
+  document.getElementById('btn-admin-entry').addEventListener('click', () => {
+    selectedPlayer = 'Admin';
+    showPinStep('Admin');
+  });
+
+  document.getElementById('btn-back-league').addEventListener('click', () => {
+    Auth.clearSession();
+    selectedLeague = null;
+    goTo('step-league');
+  });
+
+  // ── Step 3: PIN ─────────────────────────────────────────────
+  document.getElementById('btn-back-player').addEventListener('click', () => {
+    goTo('step-player');
+    document.getElementById('pin-input').value = '';
+    document.getElementById('pin-error').classList.add('hidden');
+  });
+
+  document.getElementById('pin-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('btn-login').click();
+  });
+
+  document.getElementById('btn-login').addEventListener('click', async () => {
+    const pin = document.getElementById('pin-input').value.trim();
+    if (!pin) return;
+
+    const btn = document.getElementById('btn-login');
+    btn.disabled = true;
+    btn.textContent = '…';
+
+    try {
+      const result = await Auth.login(
+        selectedPlayer,
+        pin,
+        selectedLeague.leagueId,
+        selectedLeague.name
+      );
+      if (result.valid) {
+        window.location.href = result.isAdmin ? 'admin.html' : 'player.html';
+      } else {
+        document.getElementById('pin-error').textContent = result.reason || 'Incorrect PIN';
+        document.getElementById('pin-error').classList.remove('hidden');
+        document.getElementById('pin-input').value = '';
+      }
+    } catch (e) {
+      showToast('Login error: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Enter';
+    }
+  });
+
+  // ── Helpers ─────────────────────────────────────────────────
+  function showPinStep(name) {
+    document.getElementById('pin-league-name').textContent = selectedLeague?.name || '';
+    document.getElementById('pin-player-name').textContent = name;
+    document.getElementById('pin-error').classList.add('hidden');
+    document.getElementById('pin-input').value = '';
+    goTo('step-pin');
+    setTimeout(() => document.getElementById('pin-input').focus(), 50);
+  }
+
+  function goTo(stepId) {
+    ['step-league', 'step-player', 'step-pin'].forEach(id => {
+      document.getElementById(id).classList.toggle('hidden', id !== stepId);
+    });
+  }
+
+  function showToast(msg, type = '') {
+    const container = document.getElementById('toast-container');
+    const t = document.createElement('div');
+    t.className = 'toast ' + type;
+    t.textContent = msg;
+    container.appendChild(t);
+    setTimeout(() => t.remove(), 5000);
+  }
+})();
+</script>
+
+</body>
+</html>

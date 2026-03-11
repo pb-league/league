@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — Pickleball League</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="court-bg">
+
+<div class="app-shell">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar-brand">🥒 <span>Pickle</span>Ball Admin</div>
+    <div class="topbar-right">
+      <div class="user-chip">Admin: <span class="name" id="topbar-name"></span></div>
+      <button class="btn btn-secondary" onclick="Auth.logout()" style="padding:6px 14px; font-size:0.75rem;">Logout</button>
+    </div>
+  </header>
+
+  <div class="main-content">
+
+    <!-- Sidebar Nav -->
+    <nav class="sidebar">
+      <div class="nav-section">
+        <div class="nav-section-label">League</div>
+        <div class="nav-item active" data-page="dashboard"><span class="icon">📊</span> Dashboard</div>
+        <div class="nav-item" data-page="setup"><span class="icon">⚙️</span> Setup</div>
+        <div class="nav-item" data-page="players"><span class="icon">👥</span> Players</div>
+        <div class="nav-item" data-page="leagues"><span class="icon">🌐</span> All Leagues</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-label">Weekly</div>
+        <div class="nav-item" data-page="attendance"><span class="icon">📋</span> Attendance</div>
+        <div class="nav-item" data-page="pairings"><span class="icon">🎲</span> Pairings</div>
+        <div class="nav-item" data-page="scores"><span class="icon">✏️</span> Score Entry</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-label">Reports</div>
+        <div class="nav-item" data-page="standings"><span class="icon">🏆</span> Standings</div>
+        <div class="nav-item" data-page="player-report"><span class="icon">👤</span> Player Report</div>
+      </div>
+    </nav>
+
+    <!-- Page Area -->
+    <main class="page-area" id="page-area">
+
+      <!-- ═══ DASHBOARD ═══ -->
+      <section id="page-dashboard" class="tab-panel active">
+        <div class="page-header">
+          <h2 id="dash-league-name">League Dashboard</h2>
+        </div>
+        <div class="card-grid" id="dash-stats"></div>
+        <div class="card mt-2">
+          <div class="card-header"><div class="card-title">Season Standings</div></div>
+          <div class="table-wrap" id="dash-standings"></div>
+        </div>
+      </section>
+
+      <!-- ═══ SETUP ═══ -->
+      <section id="page-setup" class="tab-panel">
+        <div class="page-header"><h2>League Setup</h2></div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">Configuration</div></div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">League Name</label>
+              <input class="form-control" id="cfg-name" placeholder="My Pickleball League">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Admin PIN</label>
+              <input class="form-control" id="cfg-admin-pin" type="password" placeholder="••••">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Number of Weeks</label>
+              <input class="form-control" id="cfg-weeks" type="number" min="1" max="20" value="8">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Courts per Session</label>
+              <input class="form-control" id="cfg-courts" type="number" min="1" max="10" value="3">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Games per Session</label>
+              <input class="form-control" id="cfg-games" type="number" min="1" max="15" value="7">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Optimizer Tries</label>
+              <input class="form-control" id="cfg-tries" type="number" min="10" max="500" value="100">
+            </div>
+          </div>
+          <div id="cfg-dates-area"></div>
+          <button class="btn btn-primary mt-2" id="btn-save-config">Save Configuration</button>
+        </div>
+      </section>
+
+      <!-- ═══ PLAYERS ═══ -->
+      <section id="page-players" class="tab-panel">
+        <div class="page-header">
+          <h2>Players</h2>
+          <button class="btn btn-primary" id="btn-add-player">+ Add Player</button>
+        </div>
+        <div class="card">
+          <div style="display:grid; grid-template-columns:1fr 100px 120px 80px 40px; gap:8px; padding:0 4px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">
+            <span class="label">Name</span>
+            <span class="label">PIN</span>
+            <span class="label">Group</span>
+            <span class="label">Active</span>
+            <span></span>
+          </div>
+          <div id="player-list"></div>
+          <button class="btn btn-primary mt-2" id="btn-save-players">Save Players</button>
+        </div>
+      </section>
+
+      <!-- ═══ ATTENDANCE ═══ -->
+      <section id="page-attendance" class="tab-panel">
+        <div class="page-header"><h2>Attendance</h2></div>
+        <div class="card">
+          <div id="attendance-grid"></div>
+          <div class="mt-2 text-muted" style="font-size:0.8rem;">Click any cell to cycle: present → absent → tbd. Changes save automatically.</div>
+        </div>
+      </section>
+
+      <!-- ═══ PAIRINGS ═══ -->
+      <section id="page-pairings" class="tab-panel">
+        <div class="page-header">
+          <h2>Pairings Generator</h2>
+          <div class="week-selector">
+            <button id="pair-week-prev">‹</button>
+            <div class="week-num" id="pair-week-label">Week 1</div>
+            <button id="pair-week-next">›</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Generate Pairings</div>
+          </div>
+          <p style="font-size:0.88rem; color:var(--muted); margin-bottom:16px;">
+            Only players marked <strong style="color:var(--green);">present</strong> for this week will be included.
+            The optimizer will try to minimize repeat partners/opponents and equalize byes.
+          </p>
+          <div class="btn-group">
+            <button class="btn btn-gold" id="btn-generate">🎲 Generate Best Pairings</button>
+            <button class="btn btn-primary" id="btn-lock-pairings" disabled>🔒 Lock &amp; Save</button>
+            <button class="btn btn-danger" id="btn-clear-pairings">🗑 Clear Week</button>
+          </div>
+          <div class="optimizer-status mt-1 hidden" id="optimizer-status">
+            Score: <span class="score" id="optimizer-score">—</span>
+            <span id="optimizer-msg"></span>
+          </div>
+        </div>
+        <div id="pairings-preview"></div>
+      </section>
+
+      <!-- ═══ SCORES ═══ -->
+      <section id="page-scores" class="tab-panel">
+        <div class="page-header">
+          <h2>Score Entry</h2>
+          <div class="week-selector">
+            <button id="score-week-prev">‹</button>
+            <div class="week-num" id="score-week-label">Week 1</div>
+            <button id="score-week-next">›</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Scoresheet</div>
+            <button class="btn btn-primary" id="btn-save-scores">Save Scores</button>
+          </div>
+          <div id="scoresheet"></div>
+        </div>
+      </section>
+
+      <!-- ═══ STANDINGS ═══ -->
+      <section id="page-standings" class="tab-panel">
+        <div class="page-header">
+          <h2>Standings</h2>
+        </div>
+        <div class="tabs" id="standings-tabs">
+          <button class="tab-btn active" data-tab="season">Season Overall</button>
+          <button class="tab-btn" data-tab="weekly">By Week</button>
+        </div>
+        <div id="standings-season" class="tab-panel active">
+          <div class="card">
+            <div class="card-header"><div class="card-title">Season Standings</div></div>
+            <div class="table-wrap" id="standings-season-table"></div>
+          </div>
+        </div>
+        <div id="standings-weekly" class="tab-panel">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Weekly Standings</div>
+              <div class="week-selector">
+                <button id="stand-week-prev">‹</button>
+                <div class="week-num" id="stand-week-label">Week 1</div>
+                <button id="stand-week-next">›</button>
+              </div>
+            </div>
+            <div class="table-wrap" id="standings-weekly-table"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══ PLAYER REPORT ═══ -->
+      <section id="page-player-report" class="tab-panel">
+        <div class="page-header">
+          <h2>Player Report</h2>
+          <select class="form-control" id="report-player-select" style="width:200px;"></select>
+        </div>
+        <div id="player-report-content"></div>
+      </section>
+
+      <!-- ═══ ALL LEAGUES ═══ -->
+      <section id="page-leagues" class="tab-panel">
+        <div class="page-header">
+          <h2>All Leagues</h2>
+          <button class="btn btn-primary" id="btn-show-add-league">+ Add League</button>
+        </div>
+
+        <!-- Add league form (hidden by default) -->
+        <div class="card hidden" id="add-league-form">
+          <div class="card-header"><div class="card-title">Add New League</div></div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">League ID <span style="color:var(--muted);font-weight:400;">(slug, no spaces)</span></label>
+              <input class="form-control" id="new-league-id" placeholder="e.g. spring2026">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Display Name</label>
+              <input class="form-control" id="new-league-name" placeholder="e.g. Spring 2026">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Google Sheet ID</label>
+              <input class="form-control" id="new-league-sheet" placeholder="Paste Sheet ID from URL">
+            </div>
+          </div>
+          <div class="btn-group mt-1">
+            <button class="btn btn-primary" id="btn-save-new-league">Save League</button>
+            <button class="btn btn-secondary" id="btn-cancel-add-league">Cancel</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="table-wrap" id="leagues-table"></div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<div class="loading-overlay hidden" id="loading"><div class="spinner"></div></div>
+
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/pairings.js"></script>
+<script src="js/reports.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>

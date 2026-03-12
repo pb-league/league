@@ -33,6 +33,7 @@
         <div class="nav-item" data-page="standings-week"><span class="icon">📅</span> Weekly</div>
         <div class="nav-item" data-page="standings-season"><span class="icon">🏆</span> Season</div>
         <div class="nav-item" data-page="attendance-all"><span class="icon">👥</span> Attendance</div>
+        <div class="nav-item" data-page="player-report"><span class="icon">👤</span> Player Report</div>
       </div>
     </nav>
 
@@ -83,7 +84,7 @@
           <h2>Weekly Standings</h2>
           <div class="week-selector">
             <button id="wstand-prev">‹</button>
-            <div class="week-num" id="wstand-label">Week 1</div>
+            <div class="week-num" id="wstand-label" style="min-width:140px; text-align:center;">Week 1</div>
             <button id="wstand-next">›</button>
           </div>
         </div>
@@ -106,6 +107,15 @@
         <div class="card">
           <div id="full-attendance-grid"></div>
         </div>
+      </section>
+
+      <!-- ═══ PLAYER REPORT ═══ -->
+      <section id="page-player-report" class="tab-panel">
+        <div class="page-header">
+          <h2>Player Report</h2>
+          <select class="form-control" id="report-player-select" style="width:200px;"></select>
+        </div>
+        <div id="player-report-content"></div>
       </section>
 
     </main>

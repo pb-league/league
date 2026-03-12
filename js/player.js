@@ -56,6 +56,7 @@
         item.classList.add('active');
         const page = item.dataset.page;
         document.getElementById('page-' + page)?.classList.add('active');
+        if (page === 'player-report') renderPlayerReportSelect();
       });
     });
   }
@@ -67,6 +68,7 @@
     renderWeeklyStandings();
     renderSeasonStandings();
     renderFullAttendance();
+    renderPlayerReportSelect();
   }
 
   // ── My Games ───────────────────────────────────────────────
@@ -213,7 +215,8 @@
   // ── Weekly Standings ───────────────────────────────────────
   function renderWeeklyStandings() {
     const week = state.currentWstandWeek;
-    document.getElementById('wstand-label').textContent = `Week ${week}`;
+    const wstandDate = state.config['date_' + week] ? ' — ' + formatDate(state.config['date_' + week]) : '';
+    document.getElementById('wstand-label').textContent = `Week ${week}${wstandDate}`;
     const s = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week);
     document.getElementById('weekly-standings-table').innerHTML = renderStandingsTable(s, playerName);
   }
@@ -272,6 +275,103 @@
       const max = parseInt(state.config.weeks || 8);
       if (state.currentWstandWeek < max) { state.currentWstandWeek++; renderWeeklyStandings(); }
     });
+  }
+
+  // ── Player Report ──────────────────────────────────────────
+  function renderPlayerReportSelect() {
+    const sel = document.getElementById('report-player-select');
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = '<option value="">— Select Player —</option>';
+    state.players.filter(p => p.active !== false).forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.name;
+      o.textContent = p.name;
+      if (p.name === current) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.onchange = () => renderPlayerReport(sel.value);
+  }
+
+  function renderPlayerReport(name) {
+    const el = document.getElementById('player-report-content');
+    if (!el) return;
+    if (!name) { el.innerHTML = ''; return; }
+
+    const report = Reports.computePlayerReport(name, state.scores, state.standings);
+    const s = report.standing;
+
+    // Opponent & partner frequency maps
+    const opponentMap = {};
+    const partnerMap  = {};
+    report.games.forEach(g => {
+      g.opponents.forEach(opp => {
+        if (!opp) return;
+        if (!opponentMap[opp]) opponentMap[opp] = { count: 0, wins: 0, losses: 0 };
+        opponentMap[opp].count++;
+        if (g.won) opponentMap[opp].wins++; else opponentMap[opp].losses++;
+      });
+      if (g.partner) {
+        if (!partnerMap[g.partner]) partnerMap[g.partner] = { count: 0, wins: 0, losses: 0 };
+        partnerMap[g.partner].count++;
+        if (g.won) partnerMap[g.partner].wins++; else partnerMap[g.partner].losses++;
+      }
+    });
+
+    const sortedOpponents = Object.entries(opponentMap).sort((a, b) => b[1].count - a[1].count);
+    const sortedPartners  = Object.entries(partnerMap).sort((a, b) => b[1].count - a[1].count);
+
+    let html = `<div class="card">
+      <div class="card-header">
+        <div class="card-title">${esc(name)}</div>
+        ${s ? `<div>
+          <span class="badge badge-gold">Rank #${s.rank}</span>
+          <span class="badge badge-green ml-1">${Reports.wl(s.wins, s.losses)}</span>
+          <span class="badge badge-muted">${Reports.pct(s.winPct)}</span>
+        </div>` : ''}
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px;">
+        <div>
+          <div class="card-title" style="font-size:0.8rem; margin-bottom:8px; color:var(--muted);">FACED AS OPPONENT</div>
+          <table>
+            <thead><tr><th>Player</th><th>Games</th><th>W/L vs them</th></tr></thead>
+            <tbody>${sortedOpponents.length ? sortedOpponents.map(([n, d]) =>
+              `<tr><td class="player-name">${esc(n)}</td><td>${d.count}</td>
+               <td><span class="${d.wins >= d.losses ? 'win' : 'loss'}">${d.wins}W / ${d.losses}L</span></td></tr>`
+            ).join('') : '<tr><td colspan="3" class="text-muted">No data</td></tr>'}</tbody>
+          </table>
+        </div>
+        <div>
+          <div class="card-title" style="font-size:0.8rem; margin-bottom:8px; color:var(--muted);">PLAYED AS PARTNER</div>
+          <table>
+            <thead><tr><th>Player</th><th>Games</th><th>W/L together</th></tr></thead>
+            <tbody>${sortedPartners.length ? sortedPartners.map(([n, d]) =>
+              `<tr><td class="player-name">${esc(n)}</td><td>${d.count}</td>
+               <td><span class="${d.wins >= d.losses ? 'win' : 'loss'}">${d.wins}W / ${d.losses}L</span></td></tr>`
+            ).join('') : '<tr><td colspan="3" class="text-muted">No data</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card-title" style="font-size:0.8rem; margin-bottom:8px; color:var(--muted);">GAME LOG</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Wk</th><th>Rd</th><th>Court</th><th>Partner</th><th>Opponents</th><th>Score</th><th>Result</th></tr></thead>
+          <tbody>${report.games.length ? report.games.map(g =>
+            `<tr>
+              <td>${g.week}</td><td>${g.round}</td><td>${g.court}</td>
+              <td class="player-name">${esc(g.partner)}</td>
+              <td class="text-muted">${g.opponents.map(o => esc(o)).join(' & ')}</td>
+              <td><strong>${g.myScore}</strong> — ${g.oppScore}</td>
+              <td><span class="badge ${g.won ? 'badge-green' : 'badge-red'}">${g.won ? 'W' : 'L'}</span></td>
+            </tr>`
+          ).join('') : '<tr><td colspan="7" class="text-muted">No games recorded yet.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+    el.innerHTML = html;
   }
 
   // ── Shared Helpers ─────────────────────────────────────────

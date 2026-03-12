@@ -20,39 +20,24 @@
   };
 
   // ── Boot ───────────────────────────────────────────────────
-  const isBootstrap = session.leagueId === '__registry__';
-
-  if (isBootstrap) {
-    // Registry-only mode: skip data load, go straight to Leagues page
-    toast('No league selected — add your first league below.', 'warn');
-    renderAll();
-    setupNav();
-    setupEvents();
-    // Force-navigate to the Leagues page
-    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    document.querySelector('.nav-item[data-page="leagues"]')?.classList.add('active');
-    document.getElementById('page-leagues')?.classList.add('active');
-    renderLeagues();
-  } else {
-    showLoading(true);
-    try {
-      const data = await API.getAllData();
-      state.config     = data.config || {};
-      state.players    = data.players || [];
-      state.attendance = data.attendance || [];
-      state.pairings   = data.pairings || [];
-      state.scores     = data.scores || [];
-      state.standings  = data.standings || [];
-    } catch (e) {
-      toast('Failed to load data: ' + e.message, 'error');
-    } finally {
-      showLoading(false);
-    }
-    renderAll();
-    setupNav();
-    setupEvents();
+  showLoading(true);
+  try {
+    const data = await API.getAllData();
+    state.config     = data.config || {};
+    state.players    = data.players || [];
+    state.attendance = data.attendance || [];
+    state.pairings   = data.pairings || [];
+    state.scores     = data.scores || [];
+    state.standings  = data.standings || [];
+  } catch (e) {
+    toast('Failed to load data: ' + e.message, 'error');
+  } finally {
+    showLoading(false);
   }
+
+  renderAll();
+  setupNav();
+  setupEvents();
 
   // ── Nav ────────────────────────────────────────────────────
   function setupNav() {
@@ -115,6 +100,15 @@
     document.getElementById('cfg-courts').value  = c.courts || 3;
     document.getElementById('cfg-games').value   = c.gamesPerSession || 7;
     document.getElementById('cfg-tries').value   = c.optimizerTries || 100;
+
+    // Optimizer weights
+    const D = Pairings.DEFAULTS;
+    document.getElementById('cfg-w-session-partner').value   = c.wSessionPartner   ?? D.sessionPartnerWeight;
+    document.getElementById('cfg-w-session-opponent').value  = c.wSessionOpponent  ?? D.sessionOpponentWeight;
+    document.getElementById('cfg-w-history-partner').value   = c.wHistoryPartner   ?? D.historyPartnerWeight;
+    document.getElementById('cfg-w-history-opponent').value  = c.wHistoryOpponent  ?? D.historyOpponentWeight;
+    document.getElementById('cfg-w-bye-variance').value      = c.wByeVariance      ?? D.byeVarianceWeight;
+    document.getElementById('cfg-w-session-bye').value       = c.wSessionBye       ?? D.sessionByeWeight;
 
     // Session dates
     const weeks = parseInt(c.weeks || 8);
@@ -382,6 +376,12 @@
         courts:         parseInt(document.getElementById('cfg-courts').value),
         gamesPerSession:parseInt(document.getElementById('cfg-games').value),
         optimizerTries: parseInt(document.getElementById('cfg-tries').value),
+        wSessionPartner:  parseFloat(document.getElementById('cfg-w-session-partner').value),
+        wSessionOpponent: parseFloat(document.getElementById('cfg-w-session-opponent').value),
+        wHistoryPartner:  parseFloat(document.getElementById('cfg-w-history-partner').value),
+        wHistoryOpponent: parseFloat(document.getElementById('cfg-w-history-opponent').value),
+        wByeVariance:     parseFloat(document.getElementById('cfg-w-bye-variance').value),
+        wSessionBye:      parseFloat(document.getElementById('cfg-w-session-bye').value),
       };
       for (let w = 1; w <= weeks; w++) {
         const el = document.getElementById('cfg-date-' + w);
@@ -457,7 +457,7 @@
         .filter(p => p.active !== false)
         .filter(p => {
           const rec = state.attendance.find(a => a.player === p.name && String(a.week) === String(week));
-          return !rec || rec.status !== 'absent';
+          return rec && rec.status === 'present';
         })
         .map(p => p.name);
 
@@ -467,8 +467,17 @@
 
       const pastPairings = state.pairings.filter(p => parseInt(p.week) < week);
 
+      const weights = {
+        sessionPartnerWeight:  state.config.wSessionPartner  ?? Pairings.DEFAULTS.sessionPartnerWeight,
+        sessionOpponentWeight: state.config.wSessionOpponent ?? Pairings.DEFAULTS.sessionOpponentWeight,
+        historyPartnerWeight:  state.config.wHistoryPartner  ?? Pairings.DEFAULTS.historyPartnerWeight,
+        historyOpponentWeight: state.config.wHistoryOpponent ?? Pairings.DEFAULTS.historyOpponentWeight,
+        byeVarianceWeight:     state.config.wByeVariance     ?? Pairings.DEFAULTS.byeVarianceWeight,
+        sessionByeWeight:      state.config.wSessionBye      ?? Pairings.DEFAULTS.sessionByeWeight,
+      };
+
       const { pairings: result, score, error } = Pairings.optimize({
-        presentPlayers, courts, rounds, pastPairings, tries
+        presentPlayers, courts, rounds, pastPairings, tries, weights
       });
 
       if (error) { toast(error, 'error'); return; }

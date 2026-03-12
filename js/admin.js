@@ -20,24 +20,39 @@
   };
 
   // ── Boot ───────────────────────────────────────────────────
-  showLoading(true);
-  try {
-    const data = await API.getAllData();
-    state.config     = data.config || {};
-    state.players    = data.players || [];
-    state.attendance = data.attendance || [];
-    state.pairings   = data.pairings || [];
-    state.scores     = data.scores || [];
-    state.standings  = data.standings || [];
-  } catch (e) {
-    toast('Failed to load data: ' + e.message, 'error');
-  } finally {
-    showLoading(false);
-  }
+  const isBootstrap = session.leagueId === '__registry__';
 
-  renderAll();
-  setupNav();
-  setupEvents();
+  if (isBootstrap) {
+    // Registry-only mode: skip data load, go straight to Leagues page
+    toast('No league selected — add your first league below.', 'warn');
+    renderAll();
+    setupNav();
+    setupEvents();
+    // Force-navigate to the Leagues page
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelector('.nav-item[data-page="leagues"]')?.classList.add('active');
+    document.getElementById('page-leagues')?.classList.add('active');
+    renderLeagues();
+  } else {
+    showLoading(true);
+    try {
+      const data = await API.getAllData();
+      state.config     = data.config || {};
+      state.players    = data.players || [];
+      state.attendance = data.attendance || [];
+      state.pairings   = data.pairings || [];
+      state.scores     = data.scores || [];
+      state.standings  = data.standings || [];
+    } catch (e) {
+      toast('Failed to load data: ' + e.message, 'error');
+    } finally {
+      showLoading(false);
+    }
+    renderAll();
+    setupNav();
+    setupEvents();
+  }
 
   // ── Nav ────────────────────────────────────────────────────
   function setupNav() {

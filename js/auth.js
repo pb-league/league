@@ -25,10 +25,26 @@ const Auth = (() => {
 
   function requireAuth(adminOnly = false) {
     const session = getSession();
-    if (!session || !session.leagueId) {
+
+    // Allow bootstrap admin: arrived via ?setup=1 with no league yet
+    if (!session && window.location.search.includes('setup=1')) {
+      setSession('Admin', true, '__registry__', 'Registry');
+      return getSession();
+    }
+
+    if (!session) {
       window.location.href = 'index.html';
       return null;
     }
+
+    // Registry-only session (__registry__) is only valid on admin.html
+    // and only grants access to the Leagues page
+    if (session.leagueId === '__registry__') {
+      if (adminOnly) return session; // allow admin pages
+      window.location.href = 'index.html';
+      return null;
+    }
+
     if (adminOnly && !session.isAdmin) {
       window.location.href = 'player.html';
       return null;

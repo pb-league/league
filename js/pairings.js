@@ -15,6 +15,7 @@ const Pairings = (() => {
     historyOpponentWeight:  3,    // repeat opponent from prior weeks
     byeVarianceWeight:      20,   // variance of season bye counts
     sessionByeWeight:       30,   // penalty per bye a player takes this session
+    rankBalanceWeight:      15,   // penalty per rank-point difference between team averages
   };
 
   // Score a full set of pairings for a week. Lower is better.
@@ -60,6 +61,17 @@ const Pairings = (() => {
           const k = [a, b].sort().join('|');
           score += (sessionOpponents[k] || 0) * w.sessionOpponentWeight;
         });
+
+        // Rank balance penalty — penalize games where team average ranks differ
+        if (w.rankBalanceWeight > 0 && w.rankMap) {
+          const r1 = w.rankMap[p1] || 999;
+          const r2 = p2 ? (w.rankMap[p2] || 999) : r1;
+          const r3 = w.rankMap[p3] || 999;
+          const r4 = p4 ? (w.rankMap[p4] || 999) : r3;
+          const team1Avg = (r1 + r2) / 2;
+          const team2Avg = (r3 + r4) / 2;
+          score += Math.abs(team1Avg - team2Avg) * w.rankBalanceWeight;
+        }
       });
 
       // Penalize byes this session — each bye a player takes this week costs points.
@@ -160,13 +172,22 @@ const Pairings = (() => {
   }
 
   // Main optimizer — tries N iterations, returns best
-  function optimize({ presentPlayers, courts, rounds, pastPairings, tries = 100, weights = {} }) {
+  // standings: array of {name, rank} used for rank-balance scoring
+  function optimize({ presentPlayers, courts, rounds, pastPairings, tries = 100, weights = {}, standings = [] }) {
     if (presentPlayers.length < 4) {
       return { pairings: [], score: 0, error: 'Not enough players' };
     }
 
     const history   = buildHistory(pastPairings);
     const byeCounts = buildByeCounts(presentPlayers, pastPairings);
+
+    // Build rank lookup map: playerName -> rank (lower = better)
+    const rankMap = {};
+    standings.forEach(s => { if (s.name && s.rank) rankMap[s.name] = s.rank; });
+    // Assign a neutral mid-rank to any player not yet in standings
+    const midRank = standings.length > 0 ? Math.ceil(standings.length / 2) : 5;
+    presentPlayers.forEach(p => { if (!rankMap[p]) rankMap[p] = midRank; });
+    const weightsWithRank = Object.assign({}, weights, { rankMap });
 
     let bestPairings = null;
     let bestScore    = Infinity;
@@ -183,7 +204,7 @@ const Pairings = (() => {
         }
       });
 
-      const score = scorePairings(candidate, history, candidateByeCounts, weights);
+      const score = scorePairings(candidate, history, candidateByeCounts, weightsWithRank);
       if (score < bestScore) {
         bestScore    = score;
         bestPairings = candidate;

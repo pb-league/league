@@ -62,6 +62,7 @@
   }
 
   function renderAll() {
+    renderNextGame();
     renderMyGames();
     renderMyAttendance();
     renderScoresheet();
@@ -69,6 +70,93 @@
     renderSeasonStandings();
     renderFullAttendance();
     renderPlayerReportSelect();
+  }
+
+  // ── Next Game Widget ───────────────────────────────────────
+  function renderNextGame() {
+    const el = document.getElementById('my-next-game');
+    if (!el) return;
+
+    // Find the latest week that has pairings
+    const weeks = [...new Set(state.pairings.map(p => parseInt(p.week)))].sort((a,b) => a-b);
+    if (!weeks.length) { el.innerHTML = ''; return; }
+    const week = Math.max(...weeks);
+
+    // Find all rounds this week
+    const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && p.type === 'game');
+    if (!weekPairings.length) { el.innerHTML = ''; return; }
+
+    // Find the earliest round that hasn't been scored yet where this player plays
+    const rounds = [...new Set(weekPairings.map(p => p.round))].sort((a,b) => a-b);
+    let nextGame = null;
+    let nextRound = null;
+
+    for (const r of rounds) {
+      const game = weekPairings.find(p => p.round == r &&
+        [p.p1, p.p2, p.p3, p.p4].includes(playerName));
+      if (!game) continue;
+      // Check if this round is already scored
+      const scored = state.scores.find(
+        s => parseInt(s.week) === week && parseInt(s.round) === parseInt(r) &&
+             String(s.court) === String(game.court) &&
+             (s.score1 !== '' && s.score2 !== '')
+      );
+      if (!scored) { nextGame = game; nextRound = r; break; }
+    }
+
+    if (!nextGame) {
+      // All rounds scored — show last game result instead
+      const lastRound = Math.max(...rounds);
+      const lastGame = weekPairings.find(p => p.round == lastRound &&
+        [p.p1, p.p2, p.p3, p.p4].includes(playerName));
+      if (!lastGame) { el.innerHTML = ''; return; }
+      const score = state.scores.find(
+        s => parseInt(s.week) === week && parseInt(s.round) === lastRound &&
+             String(s.court) === String(lastGame.court));
+      const myTeam = [lastGame.p1, lastGame.p2].includes(playerName) ? 1 : 2;
+      const partner = myTeam === 1
+        ? (lastGame.p2 || '—') : (lastGame.p4 || '—');
+      const opps = myTeam === 1
+        ? [lastGame.p3, lastGame.p4].filter(Boolean)
+        : [lastGame.p1, lastGame.p2].filter(Boolean);
+      const s1 = score ? score.score1 : '—';
+      const s2 = score ? score.score2 : '—';
+      const myScore = myTeam === 1 ? s1 : s2;
+      const oppScore = myTeam === 1 ? s2 : s1;
+      const won = score && parseInt(myScore) > parseInt(oppScore);
+      const date = state.config['date_' + week] ? ' · ' + formatDate(state.config['date_' + week]) : '';
+
+      el.innerHTML = `<div class="card mt-1" style="border-left:3px solid ${won ? 'var(--green)' : 'var(--danger)'}; margin-bottom:12px;">
+        <div class="card-header" style="padding-bottom:8px;">
+          <div class="card-title" style="font-size:0.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">Week ${week}${date} · Round ${lastRound} — All Done</div>
+          <span class="badge ${won ? 'badge-green' : 'badge-red'}">${won ? 'W' : 'L'} ${myScore}–${oppScore}</span>
+        </div>
+        <div style="display:flex; gap:24px; flex-wrap:wrap; font-size:0.88rem;">
+          <div><span class="label">Court</span><br><strong>${courtName(lastGame.court)}</strong></div>
+          <div><span class="label">Partner</span><br><strong style="color:var(--green);">${esc(partner)}</strong></div>
+          <div><span class="label">Opponents</span><br><strong>${opps.map(o => esc(o)).join(' &amp; ')}</strong></div>
+        </div>
+      </div>`;
+      return;
+    }
+
+    const myTeam = [nextGame.p1, nextGame.p2].includes(playerName) ? 1 : 2;
+    const partner = myTeam === 1 ? (nextGame.p2 || '—') : (nextGame.p4 || '—');
+    const opps = myTeam === 1
+      ? [nextGame.p3, nextGame.p4].filter(Boolean)
+      : [nextGame.p1, nextGame.p2].filter(Boolean);
+    const date = state.config['date_' + week] ? ' · ' + formatDate(state.config['date_' + week]) : '';
+
+    el.innerHTML = `<div class="card mt-1" style="border-left:3px solid var(--gold); margin-bottom:12px;">
+      <div class="card-header" style="padding-bottom:8px;">
+        <div class="card-title" style="font-size:0.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">Week ${week}${date} · Up Next — Round ${nextRound}</div>
+        <span class="badge badge-gold">${courtName(nextGame.court)}</span>
+      </div>
+      <div style="display:flex; gap:24px; flex-wrap:wrap; font-size:0.88rem;">
+        <div><span class="label">Partner</span><br><strong style="color:var(--green); font-size:1rem;">${esc(partner)}</strong></div>
+        <div><span class="label">Opponents</span><br><strong style="font-size:1rem;">${opps.map(o => esc(o)).join(' &amp; ')}</strong></div>
+      </div>
+    </div>`;
   }
 
   // ── My Games ───────────────────────────────────────────────
@@ -186,16 +274,30 @@
 
         const myTeam = [game.p1, game.p2].includes(playerName) ? 1 : [game.p3, game.p4].includes(playerName) ? 2 : 0;
 
-        const highlight1 = myTeam === 1 ? 'style="font-weight:700; color:var(--white);"' : '';
-        const highlight2 = myTeam === 2 ? 'style="font-weight:700; color:var(--white);"' : '';
+        const winStyle  = 'color:var(--green); font-weight:700;';
+        const loseStyle = 'color:var(--muted);';
+        const t1style = entered ? (t1win ? winStyle : loseStyle) : (myTeam === 1 ? 'font-weight:700; color:var(--white);' : '');
+        const t2style = entered ? (t2win ? winStyle : loseStyle) : (myTeam === 2 ? 'font-weight:700; color:var(--white);' : '');
 
-        html += `<div class="game-card">
-          <div class="court-label">Court ${game.court}</div>
-          <div class="team-names" ${highlight1}>${esc(game.p1)}<span class="partner">${esc(game.p2)}</span></div>
-          <div class="score-display ${entered ? (t1win ? 'winner' : 'loser') : 'pending'}">${entered ? s1 : '—'}</div>
-          <div class="vs-divider">—</div>
-          <div class="score-display ${entered ? (t2win ? 'winner' : 'loser') : 'pending'}">${entered ? s2 : '—'}</div>
-          <div class="team-names" ${highlight2} style="text-align:right;">${esc(game.p3)}<span class="partner">${esc(game.p4)}</span></div>
+        const tieStyle = entered && !t1win && !t2win ? 'border:1px solid var(--danger); border-radius:6px; padding:2px 6px;' : '';
+        html += `<div style="background:var(--card-bg); border-radius:10px; padding:12px 14px; margin-bottom:10px;">
+          <div style="font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">${courtName(game.court)}</div>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div style="flex:1; min-width:0;">
+              <div style="${t1style} font-size:0.92rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(game.p1)}</div>
+              ${game.p2 ? `<div style="${t1style} font-size:0.85rem; opacity:0.85; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(game.p2)}</div>` : ''}
+            </div>
+            <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+              <div class="score-display ${entered ? (t1win ? 'winner' : 'loser') : 'pending'}" style="${tieStyle} min-width:32px; text-align:center;">${entered ? s1 : '—'}</div>
+              <div style="color:var(--muted); font-size:0.8rem;">vs</div>
+              <div class="score-display ${entered ? (t2win ? 'winner' : 'loser') : 'pending'}" style="${tieStyle} min-width:32px; text-align:center;">${entered ? s2 : '—'}</div>
+            </div>
+            <div style="flex:1; min-width:0; text-align:right;">
+              <div style="${t2style} font-size:0.92rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(game.p3)}</div>
+              ${game.p4 ? `<div style="${t2style} font-size:0.85rem; opacity:0.85; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(game.p4)}</div>` : ''}
+            </div>
+          </div>
+          ${entered && !t1win && !t2win ? `<div style="margin-top:8px; font-size:0.75rem; color:var(--danger); text-align:center;">⚠️ Tied score — please verify</div>` : ''}
         </div>`;
       });
     });
@@ -360,7 +462,7 @@
           <thead><tr><th>Wk</th><th>Rd</th><th>Court</th><th>Partner</th><th>Opponents</th><th>Score</th><th>Result</th></tr></thead>
           <tbody>${report.games.length ? report.games.map(g =>
             `<tr>
-              <td>${g.week}</td><td>${g.round}</td><td>${g.court}</td>
+              <td>${g.week}</td><td>${g.round}</td><td>${courtName(g.court)}</td>
               <td class="player-name">${esc(g.partner)}</td>
               <td class="text-muted">${g.opponents.map(o => esc(o)).join(' & ')}</td>
               <td><strong>${g.myScore}</strong> — ${g.oppScore}</td>
@@ -411,6 +513,11 @@
   function esc(s) {
     if (!s) return '';
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function courtName(courtNum) {
+    const name = state.config['courtName_' + courtNum];
+    return name && name.trim() ? esc(name.trim()) : `Court ${courtNum}`;
   }
 
   function toast(msg, type = '') {

@@ -55,6 +55,7 @@
         if (page === 'pairings') renderPairingsPreview();
         if (page === 'attendance') renderAttendance();
         if (page === 'leagues') renderLeagues();
+        if (page === 'head-to-head') renderHeadToHead();
       });
     });
   }
@@ -70,6 +71,93 @@
     renderStandings();
     renderPlayerReportSelect();
     renderLeagues();
+  }
+
+  // ── Head-to-Head ───────────────────────────────────────────
+  let h2hMode = 'partners';
+
+  function renderHeadToHead() {
+    // Tab switching
+    document.querySelectorAll('#h2h-tabs .tab-btn').forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('#h2h-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        h2hMode = btn.dataset.h2h;
+        renderH2HTable();
+      };
+    });
+    renderH2HTable();
+  }
+
+  function renderH2HTable() {
+    const players = state.players.filter(p => p.active !== false).map(p => p.name);
+    if (!players.length) {
+      document.getElementById('h2h-content').innerHTML = '<div class="card"><p class="text-muted">No players yet.</p></div>';
+      return;
+    }
+
+    // Build count matrix
+    const matrix = {};
+    players.forEach(a => { matrix[a] = {}; players.forEach(b => { matrix[a][b] = 0; }); });
+
+    state.scores.forEach(s => {
+      if (!s.p1) return;
+      const team1 = [s.p1, s.p2].filter(Boolean);
+      const team2 = [s.p3, s.p4].filter(Boolean);
+
+      if (h2hMode === 'partners') {
+        // Count partner pairings
+        [[s.p1, s.p2], [s.p3, s.p4]].forEach(([a, b]) => {
+          if (a && b && matrix[a] && matrix[b]) {
+            matrix[a][b]++;
+            matrix[b][a]++;
+          }
+        });
+      } else {
+        // Count opponent pairings
+        team1.forEach(a => {
+          team2.forEach(b => {
+            if (matrix[a] && matrix[b]) {
+              matrix[a][b]++;
+              matrix[b][a]++;
+            }
+          });
+        });
+      }
+    });
+
+    // Find max for heat-map shading
+    let maxVal = 1;
+    players.forEach(a => players.forEach(b => { if (a !== b) maxVal = Math.max(maxVal, matrix[a][b]); }));
+
+    const label = h2hMode === 'partners' ? 'Times as Partners' : 'Times as Opponents';
+    let tableHtml = `<table style="font-size:0.75rem;">
+      <thead><tr>
+        <th style="min-width:90px;">${label}</th>
+        ${players.map(p => `<th style="text-align:center; padding:4px 6px;">${esc(p)}</th>`).join('')}
+      </tr></thead>
+      <tbody>`;
+
+    players.forEach(rowPlayer => {
+      tableHtml += `<tr><td class="player-name" style="font-size:0.78rem;">${esc(rowPlayer)}</td>`;
+      players.forEach(colPlayer => {
+        if (rowPlayer === colPlayer) {
+          tableHtml += `<td style="text-align:center; background:rgba(255,255,255,0.04); color:var(--muted);">—</td>`;
+        } else {
+          const val = matrix[rowPlayer][colPlayer];
+          const intensity = maxVal > 0 ? val / maxVal : 0;
+          const bg = val === 0
+            ? 'transparent'
+            : `rgba(94,194,106,${(0.1 + intensity * 0.55).toFixed(2)})`;
+          tableHtml += `<td style="text-align:center; background:${bg}; font-weight:${val > 0 ? 600 : 400}; color:${val > 0 ? 'var(--white)' : 'var(--muted)'}">${val || '·'}</td>`;
+        }
+      });
+      tableHtml += '</tr>';
+    });
+
+    tableHtml += '</tbody></table>';
+    document.getElementById('h2h-content').innerHTML =
+      `<div class="card"><div class="table-wrap" style="overflow-x:auto;">${tableHtml}</div></div>`;
   }
 
   // ── Dashboard ──────────────────────────────────────────────
@@ -109,6 +197,7 @@
     document.getElementById('cfg-w-history-opponent').value  = c.wHistoryOpponent  ?? D.historyOpponentWeight;
     document.getElementById('cfg-w-bye-variance').value      = c.wByeVariance      ?? D.byeVarianceWeight;
     document.getElementById('cfg-w-session-bye').value       = c.wSessionBye       ?? D.sessionByeWeight;
+    document.getElementById('cfg-w-rank-balance').value      = c.wRankBalance      ?? D.rankBalanceWeight;
 
     // Session dates
     const weeks = parseInt(c.weeks || 8);
@@ -117,11 +206,24 @@
       datesHtml += `
         <div class="form-group">
           <label class="form-label">Week ${w} Date</label>
-          <input class="form-control" id="cfg-date-${w}" type="date" value="${c['date_' + w] || ''}">
+          <input class="form-control" id="cfg-date-${w}" type="date" value="${normalizeDate(c['date_' + w])}">
         </div>`;
     }
     datesHtml += '</div>';
     document.getElementById('cfg-dates-area').innerHTML = datesHtml;
+
+    // Court names
+    const numCourts = parseInt(c.courts || 3);
+    let courtNamesHtml = '<div class="form-row" style="margin-top:12px;">';
+    for (let cn = 1; cn <= numCourts; cn++) {
+      courtNamesHtml += `
+        <div class="form-group">
+          <label class="form-label">Court ${cn} Name</label>
+          <input class="form-control" id="cfg-court-name-${cn}" placeholder="Court ${cn}" value="${esc(c['courtName_' + cn] || '')}">
+        </div>`;
+    }
+    courtNamesHtml += '</div>';
+    document.getElementById('cfg-court-names-area').innerHTML = courtNamesHtml;
   }
 
   // ── Players ────────────────────────────────────────────────
@@ -246,7 +348,7 @@
           </div>`;
         } else {
           html += `<div class="game-card">
-            <div class="court-label">Court ${game.court}</div>
+            <div class="court-label">${courtName(game.court)}</div>
             <div class="team-names">${esc(game.p1)}<span class="partner">${esc(game.p2)}</span></div>
             <div class="vs-divider">VS</div>
             <div class="team-names">${esc(game.p3)}<span class="partner">${esc(game.p4)}</span></div>
@@ -286,7 +388,7 @@
         const s2 = existingScore ? existingScore.score2 : '';
 
         html += `<div class="game-card" data-week="${week}" data-round="${game.round}" data-court="${game.court}">
-          <div class="court-label">Court ${game.court}</div>
+          <div class="court-label">${courtName(game.court)}</div>
           <div class="team-names">${esc(game.p1)}<span class="partner">${esc(game.p2)}</span></div>
           <input type="number" class="score-input" data-score="1"
                  value="${s1}" min="0" max="30" placeholder="0">
@@ -318,8 +420,157 @@
         const tab = btn.dataset.tab;
         document.getElementById('standings-season').classList.toggle('active', tab === 'season');
         document.getElementById('standings-weekly').classList.toggle('active', tab === 'weekly');
+        document.getElementById('standings-trend').classList.toggle('active', tab === 'trend');
+        if (tab === 'trend') renderRankTrend();
       });
     });
+  }
+
+  function renderRankTrend() {
+    const canvas = document.getElementById('rank-trend-chart');
+    const legend = document.getElementById('rank-trend-legend');
+    if (!canvas) return;
+
+    const totalWeeks = parseInt(state.config.weeks || 8);
+    const activePlayers = state.players.filter(p => p.active !== false);
+    if (!activePlayers.length) {
+      legend.innerHTML = '<span class="text-muted">No players yet.</span>';
+      return;
+    }
+
+    // Build rank for each player at end of each week (cumulative)
+    const weeksWithData = [];
+    const ranksByWeek = {}; // playerName -> [rank at week 1, week 2, ...]
+
+    activePlayers.forEach(p => { ranksByWeek[p.name] = []; });
+
+    for (let w = 1; w <= totalWeeks; w++) {
+      // Only include weeks that have at least one score
+      const hasScores = state.scores.some(s => parseInt(s.week) === w);
+      if (!hasScores) continue;
+      weeksWithData.push(w);
+      // Cumulative: include all scores up through and including week w
+      const scoresThrough = state.scores.filter(s => parseInt(s.week) <= w);
+      const standings = Reports.computeStandings(
+        scoresThrough, state.players, state.pairings
+      );
+      activePlayers.forEach(p => {
+        const entry = standings.find(s => s.name === p.name);
+        ranksByWeek[p.name].push(entry ? entry.rank : null);
+      });
+    }
+
+    if (!weeksWithData.length) {
+      legend.innerHTML = '<span class="text-muted">No scored weeks yet.</span>';
+      canvas.style.display = 'none';
+      return;
+    }
+    canvas.style.display = 'block';
+
+    // Distinct colors — enough for up to 20 players
+    const COLORS = [
+      '#5EC26A','#F5C842','#5B9BD5','#E07B54','#A78BFA',
+      '#34D399','#FB7185','#60A5FA','#FBBF24','#A3E635',
+      '#38BDF8','#F472B6','#4ADE80','#FB923C','#818CF8',
+      '#E879F9','#2DD4BF','#FCA5A5','#86EFAC','#93C5FD',
+    ];
+
+    // Canvas sizing
+    const PAD = { top: 24, right: 20, bottom: 36, left: 40 };
+    const W = Math.max(canvas.parentElement.clientWidth || 600, 320);
+    const H = Math.max(240, Math.min(420, W * 0.45));
+    canvas.width  = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+
+    const maxRank = activePlayers.length;
+    const plotW = W - PAD.left - PAD.right;
+    const plotH = H - PAD.top  - PAD.bottom;
+
+    // Grid lines and Y-axis labels (ranks)
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillStyle   = 'rgba(255,255,255,0.35)';
+    ctx.font        = '11px system-ui, sans-serif';
+    ctx.textAlign   = 'right';
+    ctx.lineWidth   = 1;
+
+    const rankStep = maxRank <= 10 ? 1 : maxRank <= 20 ? 2 : 5;
+    for (let r = 1; r <= maxRank; r += rankStep) {
+      const y = PAD.top + ((r - 1) / (maxRank - 1 || 1)) * plotH;
+      ctx.beginPath();
+      ctx.moveTo(PAD.left, y);
+      ctx.lineTo(W - PAD.right, y);
+      ctx.stroke();
+      ctx.fillText(r, PAD.left - 6, y + 4);
+    }
+
+    // X-axis labels (weeks)
+    ctx.textAlign   = 'center';
+    ctx.fillStyle   = 'rgba(255,255,255,0.35)';
+    weeksWithData.forEach((w, i) => {
+      const x = PAD.left + (i / (weeksWithData.length - 1 || 1)) * plotW;
+      const date = state.config['date_' + w];
+      const label = date ? formatDate(date) : `Wk ${w}`;
+      ctx.fillText(label, x, H - PAD.bottom + 16);
+    });
+
+    // Axis labels
+    ctx.save();
+    ctx.translate(12, PAD.top + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.fillText('Rank', 0, 0);
+    ctx.restore();
+
+    // Draw a line per player
+    activePlayers.forEach((player, pi) => {
+      const color  = COLORS[pi % COLORS.length];
+      const ranks  = ranksByWeek[player.name];
+      const points = ranks.map((r, i) => {
+        if (r === null) return null;
+        return {
+          x: PAD.left + (i / (weeksWithData.length - 1 || 1)) * plotW,
+          y: PAD.top  + ((r - 1) / (maxRank - 1 || 1)) * plotH,
+        };
+      });
+
+      // Draw line segments, skipping nulls
+      ctx.strokeStyle = color;
+      ctx.lineWidth   = 2.5;
+      ctx.lineJoin    = 'round';
+      ctx.beginPath();
+      let started = false;
+      points.forEach(pt => {
+        if (!pt) { started = false; return; }
+        if (!started) { ctx.moveTo(pt.x, pt.y); started = true; }
+        else ctx.lineTo(pt.x, pt.y);
+      });
+      ctx.stroke();
+
+      // Draw dots
+      points.forEach(pt => {
+        if (!pt) return;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.strokeStyle = '#1a1a2e';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      });
+    });
+
+    // Legend
+    legend.innerHTML = activePlayers.map((p, pi) => {
+      const color = COLORS[pi % COLORS.length];
+      return `<span style="display:flex; align-items:center; gap:5px; white-space:nowrap;">
+        <span style="display:inline-block; width:20px; height:3px; background:${color}; border-radius:2px;"></span>
+        <span style="color:rgba(255,255,255,0.75);">${esc(p.name)}</span>
+      </span>`;
+    }).join('');
   }
 
   function renderStandingsTable(standings, compact = false) {
@@ -382,10 +633,16 @@
         wHistoryOpponent: parseFloat(document.getElementById('cfg-w-history-opponent').value),
         wByeVariance:     parseFloat(document.getElementById('cfg-w-bye-variance').value),
         wSessionBye:      parseFloat(document.getElementById('cfg-w-session-bye').value),
+        wRankBalance:     parseFloat(document.getElementById('cfg-w-rank-balance').value),
       };
       for (let w = 1; w <= weeks; w++) {
         const el = document.getElementById('cfg-date-' + w);
         if (el) config['date_' + w] = el.value;
+      }
+      const numCourts = parseInt(document.getElementById('cfg-courts').value);
+      for (let cn = 1; cn <= numCourts; cn++) {
+        const el = document.getElementById('cfg-court-name-' + cn);
+        if (el) config['courtName_' + cn] = el.value.trim();
       }
       showLoading(true);
       try {
@@ -474,10 +731,12 @@
         historyOpponentWeight: state.config.wHistoryOpponent ?? Pairings.DEFAULTS.historyOpponentWeight,
         byeVarianceWeight:     state.config.wByeVariance     ?? Pairings.DEFAULTS.byeVarianceWeight,
         sessionByeWeight:      state.config.wSessionBye      ?? Pairings.DEFAULTS.sessionByeWeight,
+        rankBalanceWeight:     state.config.wRankBalance     ?? Pairings.DEFAULTS.rankBalanceWeight,
       };
 
       const { pairings: result, score, error } = Pairings.optimize({
-        presentPlayers, courts, rounds, pastPairings, tries, weights
+        presentPlayers, courts, rounds, pastPairings, tries, weights,
+        standings: state.standings
       });
 
       if (error) { toast(error, 'error'); return; }
@@ -550,6 +809,13 @@
           });
         }
       });
+
+      // Warn on tied scores before saving
+      const ties = scores.filter(s => s.score1 === s.score2);
+      if (ties.length) {
+        const msg = ties.map(s => `Round ${s.round} ${courtName(s.court)}: ${s.score1}–${s.score2}`).join(', ');
+        if (!confirm(`⚠️ Tied scores detected:\n${msg}\n\nSave anyway?`)) return;
+      }
 
       showLoading(true);
       try {
@@ -702,6 +968,20 @@
     return s === 'present' ? 'In' : s === 'absent' ? 'Out' : 'TBD';
   }
 
+  function normalizeDate(d) {
+    if (!d) return '';
+    try {
+      const dt = new Date(d);
+      if (!isNaN(dt.getTime())) {
+        const yyyy = dt.getUTCFullYear();
+        const mm   = String(dt.getUTCMonth() + 1).padStart(2, '0');
+        const dd   = String(dt.getUTCDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+      }
+    } catch {}
+    return String(d).slice(0, 10);
+  }
+
   function formatDate(d) {
     if (!d) return '';
     try {
@@ -713,6 +993,11 @@
   function esc(s) {
     if (!s) return '';
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function courtName(courtNum) {
+    const name = state.config['courtName_' + courtNum];
+    return name && name.trim() ? esc(name.trim()) : `Court ${courtNum}`;
   }
 
   function toast(msg, type = '') {

@@ -40,6 +40,7 @@
         <div class="nav-section-label">Reports</div>
         <div class="nav-item" data-page="standings"><span class="icon">🏆</span> Standings</div>
         <div class="nav-item" data-page="player-report"><span class="icon">👤</span> Player Report</div>
+        <div class="nav-item" data-page="head-to-head"><span class="icon">⚔️</span> Head-to-Head</div>
       </div>
     </nav>
 
@@ -92,6 +93,7 @@
             </div>
           </div>
           <div id="cfg-dates-area"></div>
+          <div id="cfg-court-names-area"></div>
           <div class="card mt-2" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07);">
             <div class="card-header"><div class="card-title" style="font-size:0.85rem;">Optimizer Weights</div></div>
             <p style="font-size:0.78rem; color:var(--muted); margin-bottom:12px;">
@@ -123,6 +125,10 @@
               <div class="form-group">
                 <label class="form-label">Byes per Player (this session)</label>
                 <input class="form-control" id="cfg-w-session-bye" type="number" min="0" max="500" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Rank Balance (team avg rank diff)</label>
+                <input class="form-control" id="cfg-w-rank-balance" type="number" min="0" max="500" step="1">
               </div>
             </div>
           </div>
@@ -216,6 +222,7 @@
         <div class="tabs" id="standings-tabs">
           <button class="tab-btn active" data-tab="season">Season Overall</button>
           <button class="tab-btn" data-tab="weekly">By Week</button>
+          <button class="tab-btn" data-tab="trend">Ranking Trend</button>
         </div>
         <div id="standings-season" class="tab-panel active">
           <div class="card">
@@ -234,6 +241,15 @@
               </div>
             </div>
             <div class="table-wrap" id="standings-weekly-table"></div>
+          </div>
+        </div>
+        <div id="standings-trend" class="tab-panel">
+          <div class="card">
+            <div class="card-header"><div class="card-title">Ranking Trend by Week</div></div>
+            <div style="position:relative; width:100%; overflow-x:auto;">
+              <canvas id="rank-trend-chart" style="width:100%; min-width:320px; display:block;"></canvas>
+            </div>
+            <div id="rank-trend-legend" style="display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:14px; font-size:0.78rem;"></div>
           </div>
         </div>
       </section>
@@ -280,6 +296,16 @@
         <div class="card">
           <div class="table-wrap" id="leagues-table"></div>
         </div>
+      </section>
+
+      <!-- ═══ HEAD-TO-HEAD ═══ -->
+      <section id="page-head-to-head" class="tab-panel">
+        <div class="page-header"><h2>Head-to-Head</h2></div>
+        <div class="tabs" id="h2h-tabs">
+          <button class="tab-btn active" data-h2h="partners">Partners</button>
+          <button class="tab-btn" data-h2h="opponents">Opponents</button>
+        </div>
+        <div id="h2h-content"></div>
       </section>
 
     </main>

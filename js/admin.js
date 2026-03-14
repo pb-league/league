@@ -200,7 +200,7 @@
     document.getElementById('cfg-courts').value  = c.courts || 3;
     document.getElementById('cfg-games').value   = c.gamesPerSession || 7;
     document.getElementById('cfg-tries').value   = c.optimizerTries || 100;
-    document.getElementById('cfg-mixed-doubles').checked = !!c.mixedDoubles;
+    document.getElementById('cfg-game-mode').value = c.gameMode || 'doubles';
 
     // Optimizer weights
     const D = Pairings.DEFAULTS;
@@ -390,19 +390,29 @@
     const week = state.currentScoreWeek;
     document.getElementById('score-week-label').textContent = `Week ${week}`;
 
-    const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && p.type === 'game');
+    const allWeekPairings = state.pairings.filter(p => parseInt(p.week) === week);
+    const weekPairings    = allWeekPairings.filter(p => p.type === 'game');
 
-    if (!weekPairings.length) {
+    if (!allWeekPairings.length) {
       document.getElementById('scoresheet').innerHTML =
         '<p class="text-muted" style="font-size:0.88rem;">No pairings for this week yet. Generate pairings first.</p>';
       return;
     }
 
-    const rounds = [...new Set(weekPairings.map(p => p.round))].sort((a,b) => a-b);
+    const rounds = [...new Set(allWeekPairings.map(p => p.round))].sort((a,b) => a-b);
     let html = '';
 
     rounds.forEach(r => {
       html += `<div class="round-header">Round ${r}</div>`;
+
+      // Show byes for this round first
+      allWeekPairings.filter(p => p.round == r && p.type === 'bye').forEach(bye => {
+        html += `<div style="padding:6px 10px; margin-bottom:6px; color:var(--muted); font-size:0.85rem;
+                             background:rgba(122,155,181,0.07); border-radius:8px;">
+          ⏸ <strong style="color:var(--white);">${esc(bye.p1)}</strong> — Bye
+        </div>`;
+      });
+
       weekPairings.filter(p => p.round == r).forEach(game => {
         const existingScore = state.scores.find(
           s => parseInt(s.week) === week && parseInt(s.round) === parseInt(game.round) && String(s.court) === String(game.court)
@@ -688,7 +698,7 @@
         courts:         parseInt(document.getElementById('cfg-courts').value),
         gamesPerSession:parseInt(document.getElementById('cfg-games').value),
         optimizerTries: parseInt(document.getElementById('cfg-tries').value),
-        mixedDoubles:   document.getElementById('cfg-mixed-doubles').checked,
+        gameMode:       document.getElementById('cfg-game-mode').value,
         wSessionPartner:  parseFloat(document.getElementById('cfg-w-session-partner').value),
         wSessionOpponent: parseFloat(document.getElementById('cfg-w-session-opponent').value),
         wHistoryPartner:  parseFloat(document.getElementById('cfg-w-history-partner').value),
@@ -782,8 +792,11 @@
         })
         .map(p => p.name);
 
-      if (presentPlayers.length < courts * 4) {
-        toast(`Need at least ${courts * 4} players, only ${presentPlayers.length} available.`, 'warn');
+      const gameMode     = state.config.gameMode || 'doubles';
+      const singles      = gameMode === 'singles';
+      const playersPerCourt = singles ? 2 : 4;
+      if (presentPlayers.length < courts * playersPerCourt) {
+        toast(`Need at least ${courts * playersPerCourt} players, only ${presentPlayers.length} available.`, 'warn');
       }
 
       const pastPairings = state.pairings.filter(p => parseInt(p.week) < week);
@@ -805,14 +818,14 @@
       const { pairings: result, score, breakdown, error } = Pairings.optimize({
         presentPlayers, courts, rounds, pastPairings, tries, weights,
         standings: state.standings,
-        mixedDoubles: !!state.config.mixedDoubles,
+        gameMode,
         playerGroups,
       });
 
       if (error) { toast(error, 'error'); return; }
 
       // Warn if mixed doubles is on and any violations occurred
-      if (state.config.mixedDoubles && breakdown && breakdown.mixedViolations && breakdown.mixedViolations.raw > 0) {
+      if (gameMode === 'mixed-doubles' && breakdown && breakdown.mixedViolations && breakdown.mixedViolations.raw > 0) {
         toast(`⚠️ Mixed doubles: ${breakdown.mixedViolations.raw} same-gender partnership(s) could not be avoided — check player groups and attendance.`, 'warn');
       }
 
@@ -1007,7 +1020,9 @@
       showLoading(true);
       try {
         const sourceLeagueId = Auth.getSession()?.leagueId;
-        const result = await API.addLeague(leagueId, name, sheetId, sourceLeagueId);
+        const copyConfig  = document.getElementById('new-league-copy-config').checked;
+        const copyPlayers = document.getElementById('new-league-copy-players').checked;
+        const result = await API.addLeague(leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers);
         if (result.warnings && result.warnings.length) {
           result.warnings.forEach(w => toast('Copy warning: ' + w, 'warn'));
         }

@@ -67,6 +67,7 @@
     renderMyGames();
     renderMyAttendance();
     renderEmailPrefs();
+    renderChangePin();
     renderScoresheet();
     renderWeeklyStandings();
     renderSeasonStandings();
@@ -298,6 +299,84 @@
     });
   }
 
+  // ── Change PIN ────────────────────────────────────────────
+  function renderChangePin() {
+    const el = document.getElementById('change-pin-section');
+    if (!el) return;
+
+    el.innerHTML = `
+      <div class="card mt-2">
+        <div class="card-header"><div class="card-title">Change PIN</div></div>
+        <div class="form-row" style="align-items:flex-end; gap:12px; flex-wrap:wrap;">
+          <div class="form-group" style="min-width:120px;">
+            <label class="form-label">Current PIN</label>
+            <input class="form-control" id="pin-current" type="password" maxlength="8" placeholder="••••" autocomplete="off">
+          </div>
+          <div class="form-group" style="min-width:120px;">
+            <label class="form-label">New PIN</label>
+            <input class="form-control" id="pin-new" type="password" maxlength="8" placeholder="••••" autocomplete="off">
+          </div>
+          <div class="form-group" style="min-width:120px;">
+            <label class="form-label">Confirm New PIN</label>
+            <input class="form-control" id="pin-confirm" type="password" maxlength="8" placeholder="••••" autocomplete="off">
+          </div>
+          <div class="form-group" style="flex:0;">
+            <button class="btn btn-primary" id="btn-change-pin">Update PIN</button>
+          </div>
+        </div>
+        <div id="pin-change-status" style="font-size:0.82rem; margin-top:6px;"></div>
+      </div>`;
+
+    document.getElementById('btn-change-pin').addEventListener('click', async () => {
+      const current = document.getElementById('pin-current').value.trim();
+      const newPin  = document.getElementById('pin-new').value.trim();
+      const confirm = document.getElementById('pin-confirm').value.trim();
+      const status  = document.getElementById('pin-change-status');
+      const btn     = document.getElementById('btn-change-pin');
+
+      status.textContent = '';
+      status.style.color = '';
+
+      if (!current || !newPin || !confirm) {
+        status.textContent = 'Please fill in all three fields.';
+        status.style.color = 'var(--danger)';
+        return;
+      }
+      if (newPin !== confirm) {
+        status.textContent = 'New PIN and confirmation do not match.';
+        status.style.color = 'var(--danger)';
+        return;
+      }
+      if (newPin.length < 1) {
+        status.textContent = 'New PIN cannot be empty.';
+        status.style.color = 'var(--danger)';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = '…';
+      try {
+        const result = await API.changePin(playerName, current, newPin);
+        if (result.success) {
+          status.textContent = '✓ PIN updated successfully.';
+          status.style.color = 'var(--green)';
+          document.getElementById('pin-current').value = '';
+          document.getElementById('pin-new').value = '';
+          document.getElementById('pin-confirm').value = '';
+        } else {
+          status.textContent = result.reason || 'Could not update PIN.';
+          status.style.color = 'var(--danger)';
+        }
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+        status.style.color = 'var(--danger)';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Update PIN';
+      }
+    });
+  }
+
   // ── Scoresheet (read-only) ─────────────────────────────────
   function renderScoresheet() {
     const week = state.currentSheetWeek;
@@ -311,11 +390,24 @@
       return;
     }
 
-    const rounds = [...new Set(weekPairings.map(p => p.round))].sort((a,b) => a-b);
+    const allWeekPairings = state.pairings.filter(p => parseInt(p.week) === week);
+    const rounds = [...new Set(allWeekPairings.map(p => p.round))].sort((a,b) => a-b);
     let html = '';
 
     rounds.forEach(r => {
       html += `<div class="round-header">Round ${r}</div>`;
+
+      // Show byes inline for this round
+      allWeekPairings.filter(p => p.round == r && p.type === 'bye').forEach(bye => {
+        const isMe = bye.p1 === playerName;
+        html += `<div style="padding:6px 10px; margin-bottom:6px; font-size:0.85rem;
+                              background:rgba(122,155,181,0.07); border-radius:8px;
+                              ${isMe ? 'border-left:3px solid var(--gold);' : ''}">
+          ⏸ <strong style="${isMe ? 'color:var(--gold);' : 'color:var(--white);'}">${esc(bye.p1)}</strong>
+          <span style="color:var(--muted);"> — Bye</span>
+        </div>`;
+      });
+
       weekPairings.filter(p => p.round == r).forEach(game => {
         const score = state.scores.find(
           s => parseInt(s.week) === week && parseInt(s.round) === parseInt(game.round) && String(s.court) === String(game.court)
@@ -333,37 +425,29 @@
         const t1style = entered ? (t1win ? winStyle : loseStyle) : (myTeam === 1 ? 'font-weight:700; color:var(--white);' : '');
         const t2style = entered ? (t2win ? winStyle : loseStyle) : (myTeam === 2 ? 'font-weight:700; color:var(--white);' : '');
 
-        const tieStyle = entered && !t1win && !t2win ? 'border:1px solid var(--danger); border-radius:6px; padding:2px 6px;' : '';
-        html += `<div style="background:var(--card-bg); border-radius:10px; padding:12px 14px; margin-bottom:10px;">
-          <div style="font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">${courtName(game.court)}</div>
-          <div style="display:flex; align-items:center; gap:4px;">
-            <div style="flex:1; min-width:0;">
-              <div style="${t1style} font-size:0.92rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(game.p1)}</div>
-              ${game.p2 ? `<div style="${t1style} font-size:0.85rem; opacity:0.85; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(game.p2)}</div>` : ''}
+        const tieWarning = entered && !t1win && !t2win;
+        const tieBoxStyle = tieWarning ? 'border:1px solid var(--danger); border-radius:6px;' : '';
+        html += `<div style="background:var(--card-bg); border-radius:10px; padding:10px 12px; margin-bottom:8px;">
+          <div style="font-size:0.7rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">${courtName(game.court)}</div>
+          <div style="display:grid; grid-template-columns:1fr 100px 1fr; align-items:center; gap:6px;">
+            <div style="min-width:0;">
+              <div style="${t1style} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p1)}</div>
+              ${game.p2 ? `<div style="${t1style} font-size:0.8rem; opacity:0.85; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p2)}</div>` : ''}
             </div>
-            <div style="display:flex; align-items:center; gap:4px; flex-shrink:0; width:90px; justify-content:center;">
-              <div class="score-display ${entered ? (t1win ? 'winner' : 'loser') : 'pending'}" style="${tieStyle} min-width:32px; text-align:center;">${entered ? s1 : '—'}</div>
-              <div style="color:var(--muted); font-size:0.8rem;">vs</div>
-              <div class="score-display ${entered ? (t2win ? 'winner' : 'loser') : 'pending'}" style="${tieStyle} min-width:32px; text-align:center;">${entered ? s2 : '—'}</div>
+            <div style="display:flex; align-items:center; justify-content:center; gap:4px; ${tieBoxStyle}">
+              <div class="score-display ${entered ? (t1win ? 'winner' : 'loser') : 'pending'}" style="min-width:28px; text-align:center;">${entered ? s1 : '—'}</div>
+              <div style="color:var(--muted); font-size:0.75rem;">vs</div>
+              <div class="score-display ${entered ? (t2win ? 'winner' : 'loser') : 'pending'}" style="min-width:28px; text-align:center;">${entered ? s2 : '—'}</div>
             </div>
-            <div style="flex:1; min-width:0; text-align:right;">
-              <div style="${t2style} font-size:0.92rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(game.p3)}</div>
-              ${game.p4 ? `<div style="${t2style} font-size:0.85rem; opacity:0.85; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(game.p4)}</div>` : ''}
+            <div style="min-width:0; text-align:right;">
+              <div style="${t2style} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p3)}</div>
+              ${game.p4 ? `<div style="${t2style} font-size:0.8rem; opacity:0.85; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p4)}</div>` : ''}
             </div>
           </div>
-          ${entered && !t1win && !t2win ? `<div style="margin-top:8px; font-size:0.75rem; color:var(--danger); text-align:center;">⚠️ Tied score — please verify</div>` : ''}
+          ${tieWarning ? `<div style="margin-top:6px; font-size:0.72rem; color:var(--danger); text-align:center;">⚠️ Tied score — please verify</div>` : ''}
         </div>`;
       });
     });
-
-    // Byes
-    const byes = state.pairings.filter(p => parseInt(p.week) === week && p.type === 'bye');
-    if (byes.length) {
-      html += '<div class="round-header">Byes</div>';
-      byes.forEach(b => {
-        html += `<div style="padding:6px 8px; color:var(--muted); font-size:0.85rem;">⏸ ${esc(b.p1)}</div>`;
-      });
-    }
 
     document.getElementById('player-scoresheet').innerHTML = html;
   }

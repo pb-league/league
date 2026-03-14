@@ -32,6 +32,7 @@
         <div class="nav-section-label">Standings</div>
         <div class="nav-item" data-page="standings-week"><span class="icon">📅</span> Weekly</div>
         <div class="nav-item" data-page="standings-season"><span class="icon">🏆</span> Season</div>
+        <div class="nav-item" data-page="standings-trend"><span class="icon">📈</span> Ranking Trend</div>
         <div class="nav-item" data-page="attendance-all"><span class="icon">👥</span> Attendance</div>
         <div class="nav-item" data-page="player-report"><span class="icon">👤</span> Player Report</div>
       </div>
@@ -62,6 +63,7 @@
           </p>
           <div id="my-attendance-grid"></div>
         </div>
+        <div id="email-prefs"></div>
       </section>
 
       <!-- ═══ SCORESHEET ═══ -->
@@ -99,6 +101,18 @@
         <div class="page-header"><h2>Season Standings</h2></div>
         <div class="card">
           <div class="table-wrap" id="season-standings-table"></div>
+        </div>
+      </section>
+
+      <!-- ═══ RANKING TREND ═══ -->
+      <section id="page-standings-trend" class="tab-panel">
+        <div class="page-header"><h2>Ranking Trend</h2></div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">Overall Ranking by Week</div></div>
+          <div style="position:relative; width:100%; overflow-x:auto;">
+            <canvas id="player-rank-trend-chart" style="width:100%; min-width:320px; display:block;"></canvas>
+          </div>
+          <div id="player-rank-trend-legend" style="display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:14px; font-size:0.78rem;"></div>
         </div>
       </section>
 

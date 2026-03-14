@@ -9,10 +9,14 @@
 <body class="court-bg">
 
 <div class="app-shell">
+<div class="nav-backdrop" id="nav-backdrop"></div>
 
   <!-- Topbar -->
   <header class="topbar">
     <div class="topbar-brand">🥒 <span id="topbar-league">Pickleball</span></div>
+    <button class="nav-toggle" id="nav-toggle" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
     <div class="topbar-right">
       <div class="user-chip"><span class="name" id="topbar-name"></span></div>
       <button class="btn btn-secondary" onclick="Auth.logout()" style="padding:6px 14px; font-size:0.75rem;">Logout</button>
@@ -145,5 +149,35 @@
 <script src="js/auth.js"></script>
 <script src="js/reports.js"></script>
 <script src="js/player.js"></script>
+<script>
+(function() {
+  const toggle   = document.getElementById('nav-toggle');
+  const sidebar  = document.querySelector('.sidebar');
+  const backdrop = document.getElementById('nav-backdrop');
+
+  function openNav() {
+    sidebar.classList.add('open');
+    backdrop.classList.add('visible');
+    toggle.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeNav() {
+    sidebar.classList.remove('open');
+    backdrop.classList.remove('visible');
+    toggle.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  toggle.addEventListener('click', () => sidebar.classList.contains('open') ? closeNav() : openNav());
+  backdrop.addEventListener('click', closeNav);
+
+  // Close drawer when a nav item is tapped on mobile
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+      if (window.innerWidth <= 768) closeNav();
+    });
+  });
+})();
+</script>
 </body>
 </html>

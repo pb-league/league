@@ -20,16 +20,19 @@ const Reports = (() => {
     scores.forEach(s => {
       if (upToWeek !== null && parseInt(s.week) > upToWeek) return;
       if (!s.p1 || !s.p3) return;
-      const score1 = parseInt(s.score1) || 0;
-      const score2 = parseInt(s.score2) || 0;
-      if (score1 === 0 && score2 === 0) return; // not entered yet
+      // Skip games where scores have not been entered
+      if (s.score1 === '' || s.score1 === null || s.score1 === undefined ||
+          s.score2 === '' || s.score2 === null || s.score2 === undefined) return;
+      const score1 = parseInt(s.score1);
+      const score2 = parseInt(s.score2);
+      if (isNaN(score1) || isNaN(score2)) return;
 
       const team1 = [s.p1, s.p2].filter(Boolean);
       const team2 = [s.p3, s.p4].filter(Boolean);
       const t1win = score1 > score2;
 
       team1.forEach(p => {
-        if (!stats[p]) stats[p] = { name: p, wins: 0, losses: 0, points: 0, pointsAgainst: 0, games: 0, byes: 0 };
+        if (!stats[p]) return; // not a registered league player — skip
         stats[p].wins += t1win ? 1 : 0;
         stats[p].losses += t1win ? 0 : 1;
         stats[p].points += score1;
@@ -38,7 +41,7 @@ const Reports = (() => {
       });
 
       team2.forEach(p => {
-        if (!stats[p]) stats[p] = { name: p, wins: 0, losses: 0, points: 0, pointsAgainst: 0, games: 0, byes: 0 };
+        if (!stats[p]) return; // not a registered league player — skip
         stats[p].wins += t1win ? 0 : 1;
         stats[p].losses += t1win ? 1 : 0;
         stats[p].points += score2;
@@ -62,13 +65,14 @@ const Reports = (() => {
       return {
         ...s,
         winPct: total > 0 ? s.wins / total : 0,
-        ptDiff: s.points - s.pointsAgainst
+        ptDiff:    s.points - s.pointsAgainst,
+        avgPtDiff: s.games > 0 ? (s.points - s.pointsAgainst) / s.games : 0
       };
     });
 
     list.sort((a, b) => {
       if (Math.abs(b.winPct - a.winPct) > 0.0001) return b.winPct - a.winPct;
-      return b.ptDiff - a.ptDiff;
+      return b.avgPtDiff - a.avgPtDiff;
     });
 
     list.forEach((s, i) => { s.rank = s.games > 0 ? i + 1 : '-'; });
@@ -80,6 +84,10 @@ const Reports = (() => {
 
     scores.forEach(s => {
       if (!s.p1) return;
+      // Skip games where scores have not been entered
+      if (s.score1 === '' || s.score1 === null || s.score1 === undefined ||
+          s.score2 === '' || s.score2 === null || s.score2 === undefined) return;
+      if (isNaN(parseInt(s.score1)) || isNaN(parseInt(s.score2))) return;
       const team1 = [s.p1, s.p2].filter(Boolean);
       const team2 = [s.p3, s.p4].filter(Boolean);
 
@@ -89,19 +97,19 @@ const Reports = (() => {
         inGame = true;
         partner = team1.find(p => p !== playerName) || '';
         opponents = team2;
-        myScore = parseInt(s.score1) || 0;
-        oppScore = parseInt(s.score2) || 0;
+        myScore = parseInt(s.score1);
+        oppScore = parseInt(s.score2);
         won = myScore > oppScore;
       } else if (team2.includes(playerName)) {
         inGame = true;
         partner = team2.find(p => p !== playerName) || '';
         opponents = team1;
-        myScore = parseInt(s.score2) || 0;
-        oppScore = parseInt(s.score1) || 0;
+        myScore = parseInt(s.score2);
+        oppScore = parseInt(s.score1);
         won = myScore > oppScore;
       }
 
-      if (inGame && (myScore > 0 || oppScore > 0)) {
+      if (inGame) {
         games.push({
           week: parseInt(s.week),
           round: parseInt(s.round),

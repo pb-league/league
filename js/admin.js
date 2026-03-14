@@ -165,6 +165,15 @@
     document.getElementById('dash-league-name').textContent =
       state.config.leagueName || 'League Dashboard';
 
+    const c = state.config;
+    const infoParts = [];
+    if (c.location) infoParts.push(`<span>📍 ${esc(c.location)}</span>`);
+    if (c.sessionTime) infoParts.push(`<span>🕐 ${esc(c.sessionTime)}</span>`);
+    if (c.notes) infoParts.push(`<span>📌 ${esc(c.notes)}</span>`);
+    document.getElementById('dash-info').innerHTML = infoParts.length
+      ? `<div style="display:flex;flex-wrap:wrap;gap:12px 24px;margin-bottom:14px;font-size:0.88rem;color:var(--muted);">${infoParts.join('')}</div>`
+      : '';
+
     const activePlayers = state.players.filter(p => p.active !== false).length;
     const weeksWithScores = [...new Set(state.scores.map(s => s.week))].length;
     const totalGames = state.scores.filter(s => s.score1 || s.score2).length;
@@ -182,8 +191,12 @@
   // ── Setup ──────────────────────────────────────────────────
   function renderSetup() {
     const c = state.config;
-    document.getElementById('cfg-name').value    = c.leagueName || '';
+    document.getElementById('cfg-name').value     = c.leagueName  || '';
+    document.getElementById('cfg-location').value = c.location    || '';
+    document.getElementById('cfg-time').value     = c.sessionTime || '';
+    document.getElementById('cfg-notes').value    = c.notes       || '';
     document.getElementById('cfg-admin-pin').value = '';
+    document.getElementById('cfg-reply-to').value    = c.replyTo || '';
     document.getElementById('cfg-weeks').value   = c.weeks || 8;
     document.getElementById('cfg-courts').value  = c.courts || 3;
     document.getElementById('cfg-games').value   = c.gamesPerSession || 7;
@@ -233,6 +246,7 @@
     state.players.forEach((p, i) => {
       const row = document.createElement('div');
       row.className = 'player-row';
+      row.style.gridTemplateColumns = '1fr 100px 120px 200px 60px 80px 40px';
       row.innerHTML = `
         <input class="form-control" data-field="name" data-idx="${i}" value="${esc(p.name)}" placeholder="Player name">
         <input class="form-control" data-field="pin" data-idx="${i}" type="text" value="${esc(String(p.pin || ''))}" placeholder="PIN" maxlength="8">
@@ -241,6 +255,8 @@
           <option value="F" ${p.group==='F'?'selected':''}>Female</option>
           <option value="Either" ${p.group==='Either'?'selected':''}>Either</option>
         </select>
+        <input class="form-control" data-field="email" data-idx="${i}" type="email" value="${esc(p.email || '')}" placeholder="email@example.com">
+        <input type="checkbox" data-field="notify" data-idx="${i}" ${p.notify ? 'checked' : ''} style="width:20px;height:20px;margin:auto;">
         <select class="form-control" data-field="active" data-idx="${i}">
           <option value="true" ${p.active!==false?'selected':''}>Active</option>
           <option value="false" ${p.active===false?'selected':''}>Inactive</option>
@@ -253,9 +269,9 @@
     // Live update
     list.querySelectorAll('[data-field]').forEach(el => {
       el.addEventListener('change', e => {
-        const idx = parseInt(el.dataset.idx);
+        const idx   = parseInt(el.dataset.idx);
         const field = el.dataset.field;
-        let val = el.value;
+        let val = el.type === 'checkbox' ? el.checked : el.value;
         if (field === 'active') val = val === 'true';
         state.players[idx][field] = val;
       });
@@ -426,34 +442,40 @@
     });
   }
 
-  function renderRankTrend() {
-    const canvas = document.getElementById('rank-trend-chart');
-    const legend = document.getElementById('rank-trend-legend');
-    if (!canvas) return;
 
-    const totalWeeks = parseInt(state.config.weeks || 8);
-    const activePlayers = state.players.filter(p => p.active !== false);
+  // ── Rank Trend Chart (shared drawing logic) ────────────────
+  // DASH_PATTERNS: 5 distinct dash styles cycled across players
+  // combined with colors gives 100 unique combinations
+  const DASH_PATTERNS = [
+    [],             // solid
+    [8, 4],         // dashed
+    [2, 4],         // dotted
+    [10, 4, 2, 4],  // dash-dot
+    [6, 3, 2, 3, 2, 3], // dash-dot-dot
+  ];
+
+  function drawRankTrendChart(canvasId, legendId, chartState) {
+    const canvas = document.getElementById(canvasId);
+    const legend = document.getElementById(legendId);
+    if (!canvas || !legend) return;
+
+    const totalWeeks   = parseInt(chartState.config.weeks || 8);
+    const activePlayers = chartState.players.filter(p => p.active !== false);
     if (!activePlayers.length) {
       legend.innerHTML = '<span class="text-muted">No players yet.</span>';
       return;
     }
 
-    // Build rank for each player at end of each week (cumulative)
+    // Build cumulative rank per player per scored week
     const weeksWithData = [];
-    const ranksByWeek = {}; // playerName -> [rank at week 1, week 2, ...]
-
+    const ranksByWeek   = {};
     activePlayers.forEach(p => { ranksByWeek[p.name] = []; });
 
     for (let w = 1; w <= totalWeeks; w++) {
-      // Only include weeks that have at least one score
-      const hasScores = state.scores.some(s => parseInt(s.week) === w);
-      if (!hasScores) continue;
+      if (!chartState.scores.some(s => parseInt(s.week) === w)) continue;
       weeksWithData.push(w);
-      // Cumulative: include all scores up through and including week w
-      const scoresThrough = state.scores.filter(s => parseInt(s.week) <= w);
-      const standings = Reports.computeStandings(
-        scoresThrough, state.players, state.pairings
-      );
+      const scoresThrough = chartState.scores.filter(s => parseInt(s.week) <= w);
+      const standings     = Reports.computeStandings(scoresThrough, chartState.players, chartState.pairings);
       activePlayers.forEach(p => {
         const entry = standings.find(s => s.name === p.name);
         ranksByWeek[p.name].push(entry ? entry.rank : null);
@@ -467,7 +489,6 @@
     }
     canvas.style.display = 'block';
 
-    // Distinct colors — enough for up to 20 players
     const COLORS = [
       '#5EC26A','#F5C842','#5B9BD5','#E07B54','#A78BFA',
       '#34D399','#FB7185','#60A5FA','#FBBF24','#A3E635',
@@ -475,47 +496,43 @@
       '#E879F9','#2DD4BF','#FCA5A5','#86EFAC','#93C5FD',
     ];
 
-    // Canvas sizing
-    const PAD = { top: 24, right: 20, bottom: 36, left: 40 };
-    const W = Math.max(canvas.parentElement.clientWidth || 600, 320);
-    const H = Math.max(240, Math.min(420, W * 0.45));
+    const PAD  = { top: 24, right: 20, bottom: 36, left: 40 };
+    const W    = Math.max(canvas.parentElement.clientWidth || 600, 320);
+    const H    = Math.max(240, Math.min(420, W * 0.45));
     canvas.width  = W;
     canvas.height = H;
-    const ctx = canvas.getContext('2d');
+    const ctx  = canvas.getContext('2d');
     ctx.clearRect(0, 0, W, H);
 
     const maxRank = activePlayers.length;
-    const plotW = W - PAD.left - PAD.right;
-    const plotH = H - PAD.top  - PAD.bottom;
+    const plotW   = W - PAD.left - PAD.right;
+    const plotH   = H - PAD.top  - PAD.bottom;
 
-    // Grid lines and Y-axis labels (ranks)
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-    ctx.fillStyle   = 'rgba(255,255,255,0.35)';
+    // Grid lines + Y labels
+    ctx.lineWidth   = 1;
     ctx.font        = '11px system-ui, sans-serif';
     ctx.textAlign   = 'right';
-    ctx.lineWidth   = 1;
-
-    const rankStep = maxRank <= 10 ? 1 : maxRank <= 20 ? 2 : 5;
+    const rankStep  = maxRank <= 10 ? 1 : maxRank <= 20 ? 2 : 5;
     for (let r = 1; r <= maxRank; r += rankStep) {
       const y = PAD.top + ((r - 1) / (maxRank - 1 || 1)) * plotH;
-      ctx.beginPath();
-      ctx.moveTo(PAD.left, y);
-      ctx.lineTo(W - PAD.right, y);
-      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(W - PAD.right, y); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
       ctx.fillText(r, PAD.left - 6, y + 4);
     }
 
-    // X-axis labels (weeks)
-    ctx.textAlign   = 'center';
-    ctx.fillStyle   = 'rgba(255,255,255,0.35)';
+    // X labels
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
     weeksWithData.forEach((w, i) => {
-      const x = PAD.left + (i / (weeksWithData.length - 1 || 1)) * plotW;
-      const date = state.config['date_' + w];
-      const label = date ? formatDate(date) : `Wk ${w}`;
+      const x     = PAD.left + (i / (weeksWithData.length - 1 || 1)) * plotW;
+      const date  = chartState.config['date_' + w];
+      const label = date ? formatDate(date) : 'Wk ' + w;
       ctx.fillText(label, x, H - PAD.bottom + 16);
     });
 
-    // Axis labels
+    // Y-axis label
     ctx.save();
     ctx.translate(12, PAD.top + plotH / 2);
     ctx.rotate(-Math.PI / 2);
@@ -525,11 +542,12 @@
     ctx.fillText('Rank', 0, 0);
     ctx.restore();
 
-    // Draw a line per player
+    // Draw lines
     activePlayers.forEach((player, pi) => {
-      const color  = COLORS[pi % COLORS.length];
-      const ranks  = ranksByWeek[player.name];
-      const points = ranks.map((r, i) => {
+      const color   = COLORS[pi % COLORS.length];
+      const dash    = DASH_PATTERNS[pi % DASH_PATTERNS.length];
+      const ranks   = ranksByWeek[player.name];
+      const points  = ranks.map((r, i) => {
         if (r === null) return null;
         return {
           x: PAD.left + (i / (weeksWithData.length - 1 || 1)) * plotW,
@@ -537,10 +555,10 @@
         };
       });
 
-      // Draw line segments, skipping nulls
       ctx.strokeStyle = color;
       ctx.lineWidth   = 2.5;
       ctx.lineJoin    = 'round';
+      ctx.setLineDash(dash);
       ctx.beginPath();
       let started = false;
       points.forEach(pt => {
@@ -549,28 +567,41 @@
         else ctx.lineTo(pt.x, pt.y);
       });
       ctx.stroke();
+      ctx.setLineDash([]);
 
-      // Draw dots
+      // Dots
       points.forEach(pt => {
         if (!pt) return;
         ctx.beginPath();
         ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
-        ctx.fillStyle = color;
+        ctx.fillStyle   = color;
         ctx.fill();
-        ctx.strokeStyle = '#1a1a2e';
-        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+        ctx.lineWidth   = 1.5;
         ctx.stroke();
       });
     });
+    ctx.setLineDash([]);
 
-    // Legend
+    // Legend — show color swatch with dash pattern
     legend.innerHTML = activePlayers.map((p, pi) => {
       const color = COLORS[pi % COLORS.length];
-      return `<span style="display:flex; align-items:center; gap:5px; white-space:nowrap;">
-        <span style="display:inline-block; width:20px; height:3px; background:${color}; border-radius:2px;"></span>
-        <span style="color:rgba(255,255,255,0.75);">${esc(p.name)}</span>
+      const dash  = DASH_PATTERNS[pi % DASH_PATTERNS.length];
+      // Draw a tiny inline SVG line to show the dash pattern
+      const dashArray = dash.length ? dash.join(',') : 'none';
+      const svgLine   = `<svg width="28" height="10" style="vertical-align:middle;overflow:visible">
+        <line x1="0" y1="5" x2="28" y2="5"
+          stroke="${color}" stroke-width="2.5"
+          stroke-dasharray="${dashArray}"/>
+      </svg>`;
+      return `<span style="display:flex;align-items:center;gap:5px;white-space:nowrap;">
+        ${svgLine}
+        <span style="color:rgba(255,255,255,0.75);">${p.name.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>
       </span>`;
     }).join('');
+  }
+  function renderRankTrend() {
+    drawRankTrendChart('rank-trend-chart', 'rank-trend-legend', state);
   }
 
   function renderStandingsTable(standings, compact = false) {
@@ -583,7 +614,7 @@
         <td>${s.wins}/${s.losses}</td>
         <td><span class="${s.winPct >= 0.5 ? 'win' : 'neutral'}">${Reports.pct(s.winPct)}</span></td>
         ${!compact ? `<td>${s.points}/${s.points + s.pointsAgainst}</td>` : ''}
-        <td class="${s.ptDiff > 0 ? 'win' : s.ptDiff < 0 ? 'loss' : 'neutral'}">${s.ptDiff > 0 ? '+' : ''}${s.ptDiff}</td>
+        <td class="${s.avgPtDiff > 0 ? 'win' : s.avgPtDiff < 0 ? 'loss' : 'neutral'}">${s.avgPtDiff > 0 ? '+' : ''}${s.avgPtDiff.toFixed(1)}</td>
         ${!compact ? `<td class="text-muted">${s.games}</td><td class="text-muted">${s.byes}</td>` : ''}
       </tr>`;
     });
@@ -591,7 +622,7 @@
       <thead><tr>
         <th>#</th><th>Player</th><th>W/L</th><th>Win%</th>
         ${!compact ? '<th>Pts/Tot</th>' : ''}
-        <th>+/-</th>
+        <th>Avg+/-</th>
         ${!compact ? '<th>Games</th><th>Byes</th>' : ''}
       </tr></thead>
       <tbody>${rows.join('')}</tbody>
@@ -622,7 +653,11 @@
       const weeks = parseInt(document.getElementById('cfg-weeks').value);
       const config = {
         leagueName:     document.getElementById('cfg-name').value.trim(),
+        location:       document.getElementById('cfg-location').value.trim(),
+        sessionTime:    document.getElementById('cfg-time').value.trim(),
+        notes:          document.getElementById('cfg-notes').value.trim(),
         adminPin:       document.getElementById('cfg-admin-pin').value || state.config.adminPin,
+        replyTo:        document.getElementById('cfg-reply-to').value.trim(),
         weeks,
         courts:         parseInt(document.getElementById('cfg-courts').value),
         gamesPerSession:parseInt(document.getElementById('cfg-games').value),
@@ -671,8 +706,10 @@
         if (name) {
           players.push({
             name,
-            pin: row.querySelector('[data-field="pin"]').value.trim(),
-            group: row.querySelector('[data-field="group"]').value,
+            pin:    row.querySelector('[data-field="pin"]').value.trim(),
+            group:  row.querySelector('[data-field="group"]').value,
+            email:  row.querySelector('[data-field="email"]').value.trim(),
+            notify: row.querySelector('[data-field="notify"]').checked,
             active: row.querySelector('[data-field="active"]').value === 'true'
           });
         }
@@ -829,6 +866,49 @@
       finally { showLoading(false); }
     });
 
+    // Send weekly email report
+    document.getElementById('btn-send-report').addEventListener('click', async () => {
+      const week = state.currentScoreWeek;
+      const recipients = state.players.filter(p => p.active !== false && p.notify && p.email);
+      if (!recipients.length) {
+        toast('No players have email notifications enabled.', 'warn');
+        return;
+      }
+      if (!confirm(`Send Week ${week} results to ${recipients.length} player(s)?`)) return;
+
+      // Build report data
+      const weekScores   = state.scores.filter(s => parseInt(s.week) === week);
+      const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && p.type === 'game');
+      const weekStand    = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week);
+      const seasonStand  = Reports.computeStandings(state.scores, state.players, state.pairings);
+      const weekDate     = state.config['date_' + week] ? formatDate(state.config['date_' + week]) : '';
+
+      showLoading(true);
+      try {
+        await API.sendWeeklyReport({
+          week,
+          weekDate,
+          leagueName:   state.config.leagueName || 'Pickleball League',
+          location:     state.config.location   || '',
+          sessionTime:  state.config.sessionTime || '',
+          notes:        state.config.notes       || '',
+          replyTo:      state.config.replyTo     || '',
+          weekScores,
+          weekPairings,
+          weekStandings:  weekStand,
+          seasonStandings: seasonStand,
+          recipients:   recipients.map(p => ({ name: p.name, email: p.email })),
+          courtNames:   Object.fromEntries(
+            Array.from({ length: parseInt(state.config.courts || 3) }, (_, i) => [
+              i + 1, state.config['courtName_' + (i + 1)] || ('Court ' + (i + 1))
+            ])
+          ),
+        });
+        toast(`Week ${week} results sent to ${recipients.length} player(s)!`);
+      } catch (e) { toast('Send failed: ' + e.message, 'error'); }
+      finally { showLoading(false); }
+    });
+
     // Player report select
     document.getElementById('report-player-select').addEventListener('change', e => {
       renderPlayerReport(e.target.value);
@@ -856,7 +936,11 @@
 
       showLoading(true);
       try {
-        await API.addLeague(leagueId, name, sheetId);
+        const sourceLeagueId = Auth.getSession()?.leagueId;
+        const result = await API.addLeague(leagueId, name, sheetId, sourceLeagueId);
+        if (result.warnings && result.warnings.length) {
+          result.warnings.forEach(w => toast('Copy warning: ' + w, 'warn'));
+        }
         toast(`League "${name}" added!`);
         document.getElementById('new-league-id').value = '';
         document.getElementById('new-league-name').value = '';
@@ -945,14 +1029,13 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Wk</th><th>Rd</th><th>Court</th><th>Partner</th><th>Opponents</th><th>Score</th><th>Result</th></tr></thead>
+          <thead><tr><th>Wk</th><th>Rd</th><th>Partner</th><th>Opponents</th><th>Score</th><th>Result</th></tr></thead>
           <tbody>`;
 
     report.games.forEach(g => {
       html += `<tr>
         <td>${g.week}</td>
         <td>${g.round}</td>
-        <td>${g.court}</td>
         <td class="player-name">${esc(g.partner)}</td>
         <td class="text-muted">${g.opponents.map(o => esc(o)).join(' & ')}</td>
         <td><strong>${g.myScore}</strong> — ${g.oppScore}</td>

@@ -7,8 +7,9 @@
 
 const API = (() => {
   // !! REPLACE THIS with your deployed GAS Web App URL !!
-  const GAS_URL = 'https://script.google.com/macros/s/AKfycby007PfussW_bqnfTP2pD-vDpVgC__ubdHetMk586q4iNFXJIdu1_tgYL5kZaJlkieL/exec';
-  
+  // const GAS_URL = 'https://script.google.com/macros/s/AKfycby007PfussW_bqnfTP2pD-vDpVgC__ubdHetMk586q4iNFXJIdu1_tgYL5kZaJlkieL/exec';
+  // const GAS_URL = 'https://script.google.com/macros/s/AKfycby4zjRSDZ_UgweKI4r-XlS-kU0CwEQd50um7AxYh0vxbqWu1nRYC5KWyd1YEMe5yGeI/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwuM-btsFZ_uHN-0WprVlX6qpNedavLBssD9uV_RZ21lRwQNQMzgSsAG8I17j1Ay7GJ/exec';
 
   // Get the active leagueId from session (set at login)
   function leagueId() {
@@ -53,7 +54,7 @@ const API = (() => {
   return {
     // League registry (no leagueId needed)
     getLeagues:       ()                      => get('getLeagues'),
-    addLeague:        (leagueId, name, sheetId) => post({ action: 'addLeague', leagueId, name, sheetId }),
+    addLeague:        (leagueId, name, sheetId, sourceLeagueId) => post({ action: 'addLeague', leagueId, name, sheetId, sourceLeagueId }),
     updateLeague:     (leagueId, name, sheetId, active) => post({ action: 'updateLeague', leagueId, name, sheetId, active }),
 
     // League-scoped (leagueId auto-injected from session)
@@ -72,5 +73,6 @@ const API = (() => {
     setAttendance:    (player, week, status) => post({ action: 'setAttendance', player, week, status }),
     savePairings:     (week, pairings) => post({ action: 'savePairings', week, pairings }),
     saveScores:       (week, scores)   => post({ action: 'saveScores', week, scores }),
+    sendWeeklyReport: (payload)        => post({ action: 'sendWeeklyReport', ...payload }),
   };
 })();

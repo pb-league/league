@@ -57,6 +57,7 @@
         const page = item.dataset.page;
         document.getElementById('page-' + page)?.classList.add('active');
         if (page === 'player-report') renderPlayerReportSelect();
+        if (page === 'standings-trend') drawRankTrendChart('player-rank-trend-chart', 'player-rank-trend-legend', state);
       });
     });
   }
@@ -65,6 +66,7 @@
     renderNextGame();
     renderMyGames();
     renderMyAttendance();
+    renderEmailPrefs();
     renderScoresheet();
     renderWeeklyStandings();
     renderSeasonStandings();
@@ -173,7 +175,7 @@
       document.getElementById('my-stats').innerHTML = `
         <div class="stat-tile"><div class="stat-value">${Reports.pct(s.winPct)}</div><div class="stat-label">Win %</div></div>
         <div class="stat-tile"><div class="stat-value">${s.wins}/${s.losses}</div><div class="stat-label">W / L</div></div>
-        <div class="stat-tile"><div class="stat-value">${s.ptDiff > 0 ? '+' : ''}${s.ptDiff}</div><div class="stat-label">Point Diff</div></div>
+        <div class="stat-tile"><div class="stat-value">${s.avgPtDiff > 0 ? '+' : ''}${s.avgPtDiff.toFixed(1)}</div><div class="stat-label">Avg Pt Diff</div></div>
         <div class="stat-tile"><div class="stat-value">${s.games}</div><div class="stat-label">Games Played</div></div>
       `;
     }
@@ -244,6 +246,58 @@
     });
   }
 
+  // ── Email Preferences ─────────────────────────────────────
+  function renderEmailPrefs() {
+    const el = document.getElementById('email-prefs');
+    if (!el) return;
+    const me = state.players.find(p => p.name === playerName) || {};
+    el.innerHTML = `
+      <div class="card mt-2">
+        <div class="card-header"><div class="card-title">Email Notifications</div></div>
+        <p style="font-size:0.85rem; color:var(--muted); margin-bottom:14px;">
+          Receive weekly results by email after each session.
+        </p>
+        <div class="form-row" style="align-items:center; gap:16px;">
+          <div class="form-group" style="flex:2;">
+            <label class="form-label">Your Email Address</label>
+            <input class="form-control" id="player-email" type="email"
+              value="${esc(me.email || '')}" placeholder="you@example.com">
+          </div>
+          <div class="form-group" style="flex:0; white-space:nowrap;">
+            <label class="form-label">Send Results</label>
+            <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
+              <input type="checkbox" id="player-notify" ${me.notify ? 'checked' : ''}
+                style="width:18px; height:18px;">
+              <span style="font-size:0.85rem; color:var(--white);">Yes, notify me</span>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-save-email" style="margin-top:4px;">Save</button>
+        <div id="email-save-status" style="font-size:0.8rem; margin-top:8px;"></div>
+      </div>`;
+
+    document.getElementById('btn-save-email').addEventListener('click', async () => {
+      const email  = document.getElementById('player-email').value.trim();
+      const notify = document.getElementById('player-notify').checked;
+      const btn    = document.getElementById('btn-save-email');
+      const status = document.getElementById('email-save-status');
+      btn.disabled = true;
+      try {
+        // Update local player record then save all players
+        const updatedPlayers = state.players.map(pl =>
+          pl.name === playerName ? { ...pl, email, notify } : pl
+        );
+        await API.savePlayers(updatedPlayers);
+        state.players = updatedPlayers;
+        status.textContent = '✓ Saved';
+        status.style.color = 'var(--green)';
+      } catch (e) {
+        status.textContent = 'Save failed: ' + e.message;
+        status.style.color = 'var(--danger)';
+      } finally { btn.disabled = false; }
+    });
+  }
+
   // ── Scoresheet (read-only) ─────────────────────────────────
   function renderScoresheet() {
     const week = state.currentSheetWeek;
@@ -282,12 +336,12 @@
         const tieStyle = entered && !t1win && !t2win ? 'border:1px solid var(--danger); border-radius:6px; padding:2px 6px;' : '';
         html += `<div style="background:var(--card-bg); border-radius:10px; padding:12px 14px; margin-bottom:10px;">
           <div style="font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">${courtName(game.court)}</div>
-          <div style="display:flex; align-items:center; gap:10px;">
+          <div style="display:flex; align-items:center; gap:4px;">
             <div style="flex:1; min-width:0;">
               <div style="${t1style} font-size:0.92rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(game.p1)}</div>
               ${game.p2 ? `<div style="${t1style} font-size:0.85rem; opacity:0.85; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(game.p2)}</div>` : ''}
             </div>
-            <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+            <div style="display:flex; align-items:center; gap:4px; flex-shrink:0; width:90px; justify-content:center;">
               <div class="score-display ${entered ? (t1win ? 'winner' : 'loser') : 'pending'}" style="${tieStyle} min-width:32px; text-align:center;">${entered ? s1 : '—'}</div>
               <div style="color:var(--muted); font-size:0.8rem;">vs</div>
               <div class="score-display ${entered ? (t2win ? 'winner' : 'loser') : 'pending'}" style="${tieStyle} min-width:32px; text-align:center;">${entered ? s2 : '—'}</div>
@@ -459,10 +513,10 @@
       <div class="card-title" style="font-size:0.8rem; margin-bottom:8px; color:var(--muted);">GAME LOG</div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Wk</th><th>Rd</th><th>Court</th><th>Partner</th><th>Opponents</th><th>Score</th><th>Result</th></tr></thead>
+          <thead><tr><th>Wk</th><th>Rd</th><th>Partner</th><th>Opponents</th><th>Score</th><th>Result</th></tr></thead>
           <tbody>${report.games.length ? report.games.map(g =>
             `<tr>
-              <td>${g.week}</td><td>${g.round}</td><td>${courtName(g.court)}</td>
+              <td>${g.week}</td><td>${g.round}</td>
               <td class="player-name">${esc(g.partner)}</td>
               <td class="text-muted">${g.opponents.map(o => esc(o)).join(' & ')}</td>
               <td><strong>${g.myScore}</strong> — ${g.oppScore}</td>
@@ -487,12 +541,12 @@
         <td class="player-name" ${isMe ? 'style="color:var(--green);"' : ''}>${esc(s.name)}${isMe ? ' ◀' : ''}</td>
         <td>${s.wins}/${s.losses}</td>
         <td><span class="${s.winPct >= 0.5 ? 'win' : 'neutral'}">${Reports.pct(s.winPct)}</span></td>
-        <td class="${s.ptDiff > 0 ? 'win' : s.ptDiff < 0 ? 'loss' : 'neutral'}">${s.ptDiff > 0 ? '+' : ''}${s.ptDiff}</td>
+        <td class="${s.avgPtDiff > 0 ? 'win' : s.avgPtDiff < 0 ? 'loss' : 'neutral'}">${s.avgPtDiff > 0 ? '+' : ''}${s.avgPtDiff.toFixed(1)}</td>
         <td class="text-muted">${s.games}</td>
       </tr>`;
     });
     return `<table>
-      <thead><tr><th>#</th><th>Player</th><th>W/L</th><th>Win%</th><th>+/-</th><th>Games</th></tr></thead>
+      <thead><tr><th>#</th><th>Player</th><th>W/L</th><th>Win%</th><th>Avg+/-</th><th>Games</th></tr></thead>
       <tbody>${rows.join('')}</tbody>
     </table>`;
   }
@@ -510,6 +564,164 @@
     try { const p = d.split('-'); return `${parseInt(p[1])}/${parseInt(p[2])}`; } catch { return d; }
   }
 
+
+  // ── Rank Trend Chart (shared drawing logic) ────────────────
+  // DASH_PATTERNS: 5 distinct dash styles cycled across players
+  // combined with colors gives 100 unique combinations
+  const DASH_PATTERNS = [
+    [],             // solid
+    [8, 4],         // dashed
+    [2, 4],         // dotted
+    [10, 4, 2, 4],  // dash-dot
+    [6, 3, 2, 3, 2, 3], // dash-dot-dot
+  ];
+
+  function drawRankTrendChart(canvasId, legendId, chartState) {
+    const canvas = document.getElementById(canvasId);
+    const legend = document.getElementById(legendId);
+    if (!canvas || !legend) return;
+
+    const totalWeeks   = parseInt(chartState.config.weeks || 8);
+    const activePlayers = chartState.players.filter(p => p.active !== false);
+    if (!activePlayers.length) {
+      legend.innerHTML = '<span class="text-muted">No players yet.</span>';
+      return;
+    }
+
+    // Build cumulative rank per player per scored week
+    const weeksWithData = [];
+    const ranksByWeek   = {};
+    activePlayers.forEach(p => { ranksByWeek[p.name] = []; });
+
+    for (let w = 1; w <= totalWeeks; w++) {
+      if (!chartState.scores.some(s => parseInt(s.week) === w)) continue;
+      weeksWithData.push(w);
+      const scoresThrough = chartState.scores.filter(s => parseInt(s.week) <= w);
+      const standings     = Reports.computeStandings(scoresThrough, chartState.players, chartState.pairings);
+      activePlayers.forEach(p => {
+        const entry = standings.find(s => s.name === p.name);
+        ranksByWeek[p.name].push(entry ? entry.rank : null);
+      });
+    }
+
+    if (!weeksWithData.length) {
+      legend.innerHTML = '<span class="text-muted">No scored weeks yet.</span>';
+      canvas.style.display = 'none';
+      return;
+    }
+    canvas.style.display = 'block';
+
+    const COLORS = [
+      '#5EC26A','#F5C842','#5B9BD5','#E07B54','#A78BFA',
+      '#34D399','#FB7185','#60A5FA','#FBBF24','#A3E635',
+      '#38BDF8','#F472B6','#4ADE80','#FB923C','#818CF8',
+      '#E879F9','#2DD4BF','#FCA5A5','#86EFAC','#93C5FD',
+    ];
+
+    const PAD  = { top: 24, right: 20, bottom: 36, left: 40 };
+    const W    = Math.max(canvas.parentElement.clientWidth || 600, 320);
+    const H    = Math.max(240, Math.min(420, W * 0.45));
+    canvas.width  = W;
+    canvas.height = H;
+    const ctx  = canvas.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+
+    const maxRank = activePlayers.length;
+    const plotW   = W - PAD.left - PAD.right;
+    const plotH   = H - PAD.top  - PAD.bottom;
+
+    // Grid lines + Y labels
+    ctx.lineWidth   = 1;
+    ctx.font        = '11px system-ui, sans-serif';
+    ctx.textAlign   = 'right';
+    const rankStep  = maxRank <= 10 ? 1 : maxRank <= 20 ? 2 : 5;
+    for (let r = 1; r <= maxRank; r += rankStep) {
+      const y = PAD.top + ((r - 1) / (maxRank - 1 || 1)) * plotH;
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(W - PAD.right, y); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.fillText(r, PAD.left - 6, y + 4);
+    }
+
+    // X labels
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    weeksWithData.forEach((w, i) => {
+      const x     = PAD.left + (i / (weeksWithData.length - 1 || 1)) * plotW;
+      const date  = chartState.config['date_' + w];
+      const label = date ? formatDate(date) : 'Wk ' + w;
+      ctx.fillText(label, x, H - PAD.bottom + 16);
+    });
+
+    // Y-axis label
+    ctx.save();
+    ctx.translate(12, PAD.top + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.fillText('Rank', 0, 0);
+    ctx.restore();
+
+    // Draw lines
+    activePlayers.forEach((player, pi) => {
+      const color   = COLORS[pi % COLORS.length];
+      const dash    = DASH_PATTERNS[pi % DASH_PATTERNS.length];
+      const ranks   = ranksByWeek[player.name];
+      const points  = ranks.map((r, i) => {
+        if (r === null) return null;
+        return {
+          x: PAD.left + (i / (weeksWithData.length - 1 || 1)) * plotW,
+          y: PAD.top  + ((r - 1) / (maxRank - 1 || 1)) * plotH,
+        };
+      });
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth   = 2.5;
+      ctx.lineJoin    = 'round';
+      ctx.setLineDash(dash);
+      ctx.beginPath();
+      let started = false;
+      points.forEach(pt => {
+        if (!pt) { started = false; return; }
+        if (!started) { ctx.moveTo(pt.x, pt.y); started = true; }
+        else ctx.lineTo(pt.x, pt.y);
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Dots
+      points.forEach(pt => {
+        if (!pt) return;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle   = color;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+        ctx.lineWidth   = 1.5;
+        ctx.stroke();
+      });
+    });
+    ctx.setLineDash([]);
+
+    // Legend — show color swatch with dash pattern
+    legend.innerHTML = activePlayers.map((p, pi) => {
+      const color = COLORS[pi % COLORS.length];
+      const dash  = DASH_PATTERNS[pi % DASH_PATTERNS.length];
+      // Draw a tiny inline SVG line to show the dash pattern
+      const dashArray = dash.length ? dash.join(',') : 'none';
+      const svgLine   = `<svg width="28" height="10" style="vertical-align:middle;overflow:visible">
+        <line x1="0" y1="5" x2="28" y2="5"
+          stroke="${color}" stroke-width="2.5"
+          stroke-dasharray="${dashArray}"/>
+      </svg>`;
+      return `<span style="display:flex;align-items:center;gap:5px;white-space:nowrap;">
+        ${svgLine}
+        <span style="color:rgba(255,255,255,0.75);">${p.name.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>
+      </span>`;
+    }).join('');
+  }
   function esc(s) {
     if (!s) return '';
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');

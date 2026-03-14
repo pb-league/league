@@ -778,6 +778,14 @@
     // Generate pairings
     document.getElementById('btn-generate').addEventListener('click', () => {
       const week = state.currentPairWeek;
+
+      // Block generation if scores already exist for this week
+      const hasScores = state.scores.some(s => parseInt(s.week) === week);
+      if (hasScores) {
+        toast(`Week ${week} already has scores entered. Use the 🗑 Clear Week button to remove all pairings and scores before generating new pairings.`, 'warn');
+        return;
+      }
+
       const weeks = parseInt(state.config.weeks || 8);
       const courts = parseInt(state.config.courts || 3);
       const rounds = parseInt(state.config.gamesPerSession || 7);
@@ -891,17 +899,27 @@
       finally { showLoading(false); }
     });
 
-    // Clear pairings
+    // Clear pairings (and scores for that week)
     document.getElementById('btn-clear-pairings').addEventListener('click', async () => {
-      if (!confirm('Clear all pairings for this week?')) return;
       const week = state.currentPairWeek;
+      const hasScores = state.scores.some(s => parseInt(s.week) === week);
+      const msg = hasScores
+        ? `Clear all pairings AND scores for Week ${week}? This cannot be undone.`
+        : `Clear all pairings for Week ${week}?`;
+      if (!confirm(msg)) return;
       showLoading(true);
       try {
         await API.savePairings(week, []);
         state.pairings = state.pairings.filter(p => parseInt(p.week) !== week);
         state.pendingPairings = null;
-        toast(`Pairings for Week ${week} cleared.`);
+        if (hasScores) {
+          await API.saveScores(week, []);
+          state.scores = state.scores.filter(s => parseInt(s.week) !== week);
+          state.standings = Reports.computeStandings(state.scores, state.players, state.pairings);
+        }
+        toast(`Week ${week} cleared.`);
         renderPairingsPreview();
+        renderScoresheet();
       } catch (e) { toast('Failed: ' + e.message, 'error'); }
       finally { showLoading(false); }
     });

@@ -490,7 +490,7 @@
     [6, 3, 2, 3, 2, 3], // dash-dot-dot
   ];
 
-  function drawRankTrendChart(canvasId, legendId, chartState) {
+  function drawRankTrendChart(canvasId, legendId, chartState, highlightPlayer) {
     const canvas = document.getElementById(canvasId);
     const legend = document.getElementById(legendId);
     if (!canvas || !legend) return;
@@ -578,8 +578,8 @@
     ctx.fillText('Rank', 0, 0);
     ctx.restore();
 
-    // Draw lines
-    activePlayers.forEach((player, pi) => {
+    // Draw lines — non-highlighted players first (dimmed), highlighted on top
+    const drawPlayer = (player, pi, isHighlighted) => {
       const color   = COLORS[pi % COLORS.length];
       const dash    = DASH_PATTERNS[pi % DASH_PATTERNS.length];
       const ranks   = ranksByWeek[player.name];
@@ -591,10 +591,15 @@
         };
       });
 
-      ctx.strokeStyle = color;
-      ctx.lineWidth   = 2.5;
-      ctx.lineJoin    = 'round';
-      ctx.setLineDash(dash);
+      const anyHighlight = highlightPlayer && activePlayers.some(p => p.name === highlightPlayer);
+      const dimmed = anyHighlight && !isHighlighted;
+
+      ctx.globalAlpha  = dimmed ? 0.25 : 1;
+      ctx.strokeStyle  = color;
+      ctx.lineWidth    = isHighlighted ? 4 : 2.5;
+      ctx.lineJoin     = 'round';
+      ctx.setLineDash(isHighlighted ? [] : dash); // highlighted always solid + thicker
+
       ctx.beginPath();
       let started = false;
       points.forEach(pt => {
@@ -605,17 +610,28 @@
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Dots
+      // Dots — larger for highlighted player
+      const dotR = isHighlighted ? 6 : 4;
       points.forEach(pt => {
         if (!pt) return;
         ctx.beginPath();
-        ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+        ctx.arc(pt.x, pt.y, dotR, 0, Math.PI * 2);
         ctx.fillStyle   = color;
         ctx.fill();
-        ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-        ctx.lineWidth   = 1.5;
+        ctx.strokeStyle = isHighlighted ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)';
+        ctx.lineWidth   = isHighlighted ? 2 : 1.5;
         ctx.stroke();
       });
+      ctx.globalAlpha = 1;
+    };
+
+    // Draw background (non-highlighted) players first
+    activePlayers.forEach((player, pi) => {
+      if (player.name !== highlightPlayer) drawPlayer(player, pi, false);
+    });
+    // Draw highlighted player last so it renders on top
+    activePlayers.forEach((player, pi) => {
+      if (player.name === highlightPlayer) drawPlayer(player, pi, true);
     });
     ctx.setLineDash([]);
 
@@ -623,21 +639,25 @@
     legend.innerHTML = activePlayers.map((p, pi) => {
       const color = COLORS[pi % COLORS.length];
       const dash  = DASH_PATTERNS[pi % DASH_PATTERNS.length];
-      // Draw a tiny inline SVG line to show the dash pattern
-      const dashArray = dash.length ? dash.join(',') : 'none';
-      const svgLine   = `<svg width="28" height="10" style="vertical-align:middle;overflow:visible">
+      const isMe  = p.name === highlightPlayer;
+      const dashArray = (!isMe && dash.length) ? dash.join(',') : 'none';
+      const lineW = isMe ? 4 : 2.5;
+      const svgLine = `<svg width="28" height="10" style="vertical-align:middle;overflow:visible">
         <line x1="0" y1="5" x2="28" y2="5"
-          stroke="${color}" stroke-width="2.5"
+          stroke="${color}" stroke-width="${lineW}"
           stroke-dasharray="${dashArray}"/>
       </svg>`;
+      const nameStyle = isMe
+        ? 'color:var(--white); font-weight:700;'
+        : 'color:rgba(255,255,255,0.55);';
       return `<span style="display:flex;align-items:center;gap:5px;white-space:nowrap;">
         ${svgLine}
-        <span style="color:rgba(255,255,255,0.75);">${p.name.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>
+        <span style="${nameStyle}">${p.name.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>
       </span>`;
     }).join('');
   }
   function renderRankTrend() {
-    drawRankTrendChart('rank-trend-chart', 'rank-trend-legend', state);
+    drawRankTrendChart('rank-trend-chart', 'rank-trend-legend', state, session.name);
   }
 
   function renderStandingsTable(standings, compact = false) {
@@ -807,45 +827,54 @@
         toast(`Need at least ${courts * playersPerCourt} players, only ${presentPlayers.length} available.`, 'warn');
       }
 
-      const pastPairings = state.pairings.filter(p => parseInt(p.week) < week);
+      // Show pickleball spinner and defer heavy work so browser paints first
+      const overlay = document.getElementById('pairing-overlay');
+      const overlayMsg = document.getElementById('pairing-overlay-msg');
+      overlayMsg.textContent = `${tries} iterations · ${presentPlayers.length} players`;
+      overlay.classList.remove('hidden');
+      overlay.style.display = 'flex';
 
-      const weights = {
-        sessionPartnerWeight:  state.config.wSessionPartner  ?? Pairings.DEFAULTS.sessionPartnerWeight,
-        sessionOpponentWeight: state.config.wSessionOpponent ?? Pairings.DEFAULTS.sessionOpponentWeight,
-        historyPartnerWeight:  state.config.wHistoryPartner  ?? Pairings.DEFAULTS.historyPartnerWeight,
-        historyOpponentWeight: state.config.wHistoryOpponent ?? Pairings.DEFAULTS.historyOpponentWeight,
-        byeVarianceWeight:     state.config.wByeVariance     ?? Pairings.DEFAULTS.byeVarianceWeight,
-        sessionByeWeight:      state.config.wSessionBye      ?? Pairings.DEFAULTS.sessionByeWeight,
-        rankBalanceWeight:     state.config.wRankBalance     ?? Pairings.DEFAULTS.rankBalanceWeight,
-      };
+      setTimeout(() => {
+        try {
+          const pastPairings = state.pairings.filter(p => parseInt(p.week) < week);
 
-      // Build group map for present players
-      const playerGroups = {};
-      state.players.forEach(p => { playerGroups[p.name] = p.group || 'M'; });
+          const weights = {
+            sessionPartnerWeight:  state.config.wSessionPartner  ?? Pairings.DEFAULTS.sessionPartnerWeight,
+            sessionOpponentWeight: state.config.wSessionOpponent ?? Pairings.DEFAULTS.sessionOpponentWeight,
+            historyPartnerWeight:  state.config.wHistoryPartner  ?? Pairings.DEFAULTS.historyPartnerWeight,
+            historyOpponentWeight: state.config.wHistoryOpponent ?? Pairings.DEFAULTS.historyOpponentWeight,
+            byeVarianceWeight:     state.config.wByeVariance     ?? Pairings.DEFAULTS.byeVarianceWeight,
+            sessionByeWeight:      state.config.wSessionBye      ?? Pairings.DEFAULTS.sessionByeWeight,
+            rankBalanceWeight:     state.config.wRankBalance     ?? Pairings.DEFAULTS.rankBalanceWeight,
+          };
 
-      const { pairings: result, score, breakdown, error } = Pairings.optimize({
-        presentPlayers, courts, rounds, pastPairings, tries, weights,
-        standings: state.standings,
-        gameMode,
-        playerGroups,
-      });
+          const playerGroups = {};
+          state.players.forEach(p => { playerGroups[p.name] = p.group || 'M'; });
 
-      if (error) { toast(error, 'error'); return; }
+          const { pairings: result, score, breakdown, error } = Pairings.optimize({
+            presentPlayers, courts, rounds, pastPairings, tries, weights,
+            standings: state.standings,
+            gameMode,
+            playerGroups,
+          });
 
-      // Warn if mixed doubles is on and any violations occurred
-      if (gameMode === 'mixed-doubles' && breakdown && breakdown.mixedViolations && breakdown.mixedViolations.raw > 0) {
-        toast(`⚠️ Mixed doubles: ${breakdown.mixedViolations.raw} same-gender partnership(s) could not be avoided — check player groups and attendance.`, 'warn');
-      }
+          overlay.classList.add('hidden');
+          overlay.style.display = 'none';
 
-      // Add week to each pairing
-      state.pendingPairings = result.map(p => ({ ...p, week }));
+          if (error) { toast(error, 'error'); return; }
 
-      document.getElementById('optimizer-status').classList.remove('hidden');
-      document.getElementById('optimizer-score').textContent = score.toFixed(1);
-      document.getElementById('optimizer-msg').textContent = `${tries} iterations · ${presentPlayers.length} players`;
+          if (gameMode === 'mixed-doubles' && breakdown && breakdown.mixedViolations && breakdown.mixedViolations.raw > 0) {
+            toast(`⚠️ Mixed doubles: ${breakdown.mixedViolations.raw} same-gender partnership(s) could not be avoided — check player groups and attendance.`, 'warn');
+          }
 
-      // Breakdown table
-      const LABELS = {
+          state.pendingPairings = result.map(p => ({ ...p, week }));
+
+          document.getElementById('optimizer-status').classList.remove('hidden');
+          document.getElementById('optimizer-score').textContent = score.toFixed(1);
+          document.getElementById('optimizer-msg').textContent = `${tries} iterations · ${presentPlayers.length} players`;
+
+          // Breakdown table
+          const LABELS = {
         mixedViolations: 'Mixed doubles violations',
         sessionPartner:  'Repeat Partner (this session)',
         sessionOpponent: 'Repeat Opponent (this session)',
@@ -855,7 +884,7 @@
         byeVariance:     'Bye spread (season)',
         rankBalance:     'Rank imbalance',
       };
-      if (breakdown) {
+          if (breakdown) {
         let bhtml = `<table style="font-size:0.78rem; width:100%; border-collapse:collapse; margin-top:4px;">
           <thead><tr>
             <th style="text-align:left; padding:3px 8px; color:var(--muted); font-weight:500;">Criterion</th>
@@ -873,11 +902,17 @@
           </tr>`;
         });
         bhtml += `</tbody></table>`;
-        document.getElementById('optimizer-breakdown').innerHTML = bhtml;
-      }
-      document.getElementById('btn-lock-pairings').disabled = false;
+            document.getElementById('optimizer-breakdown').innerHTML = bhtml;
+          }
+          document.getElementById('btn-lock-pairings').disabled = false;
 
-      renderPairingsPreview();
+          renderPairingsPreview();
+        } catch (err) {
+          overlay.classList.add('hidden');
+          overlay.style.display = 'none';
+          toast('Generation failed: ' + err.message, 'error');
+        }
+      }, 50); // 50ms delay lets browser paint the spinner
     });
 
     // Lock pairings

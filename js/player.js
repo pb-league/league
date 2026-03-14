@@ -57,7 +57,7 @@
         const page = item.dataset.page;
         document.getElementById('page-' + page)?.classList.add('active');
         if (page === 'player-report') renderPlayerReportSelect();
-        if (page === 'standings-trend') drawRankTrendChart('player-rank-trend-chart', 'player-rank-trend-legend', state);
+        if (page === 'standings-trend') drawRankTrendChart('player-rank-trend-chart', 'player-rank-trend-legend', state, playerName);
       });
     });
   }

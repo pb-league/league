@@ -100,21 +100,20 @@
     const matrix = {};
     players.forEach(a => { matrix[a] = {}; players.forEach(b => { matrix[a][b] = 0; }); });
 
-    state.scores.forEach(s => {
-      if (!s.p1) return;
-      const team1 = [s.p1, s.p2].filter(Boolean);
-      const team2 = [s.p3, s.p4].filter(Boolean);
+    // Use pairings (not scores) so unscored games are still counted
+    state.pairings.filter(g => g.type === 'game').forEach(g => {
+      if (!g.p1) return;
+      const team1 = [g.p1, g.p2].filter(Boolean);
+      const team2 = [g.p3, g.p4].filter(Boolean);
 
       if (h2hMode === 'partners') {
-        // Count partner pairings
-        [[s.p1, s.p2], [s.p3, s.p4]].forEach(([a, b]) => {
+        [[g.p1, g.p2], [g.p3, g.p4]].forEach(([a, b]) => {
           if (a && b && matrix[a] && matrix[b]) {
             matrix[a][b]++;
             matrix[b][a]++;
           }
         });
       } else {
-        // Count opponent pairings
         team1.forEach(a => {
           team2.forEach(b => {
             if (matrix[a] && matrix[b]) {
@@ -201,6 +200,7 @@
     document.getElementById('cfg-courts').value  = c.courts || 3;
     document.getElementById('cfg-games').value   = c.gamesPerSession || 7;
     document.getElementById('cfg-tries').value   = c.optimizerTries || 100;
+    document.getElementById('cfg-mixed-doubles').checked = !!c.mixedDoubles;
 
     // Optimizer weights
     const D = Pairings.DEFAULTS;
@@ -363,12 +363,19 @@
             <span class="text-muted" style="font-size:0.8rem;">⏸ BYE: <strong style="color:var(--white);">${esc(game.p1)}</strong></span>
           </div>`;
         } else {
-          html += `<div class="game-card">
-            <div class="court-label">${courtName(game.court)}</div>
-            <div class="team-names">${esc(game.p1)}<span class="partner">${esc(game.p2)}</span></div>
-            <div class="vs-divider">VS</div>
-            <div class="team-names">${esc(game.p3)}<span class="partner">${esc(game.p4)}</span></div>
-            <div></div>
+          html += `<div style="background:var(--card-bg); border-radius:10px; padding:10px 12px; margin-bottom:8px;">
+            <div class="court-label" style="font-size:0.7rem; margin-bottom:6px;">${courtName(game.court)}</div>
+            <div style="display:grid; grid-template-columns:1fr 40px 1fr; align-items:center; gap:6px;">
+              <div style="min-width:0;">
+                <div style="font-size:0.9rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p1)}</div>
+                ${game.p2 ? `<div style="font-size:0.8rem; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p2)}</div>` : ''}
+              </div>
+              <div style="text-align:center; color:var(--muted); font-size:0.8rem; font-weight:600; flex-shrink:0;">VS</div>
+              <div style="min-width:0; text-align:right;">
+                <div style="font-size:0.9rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p3)}</div>
+                ${game.p4 ? `<div style="font-size:0.8rem; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p4)}</div>` : ''}
+              </div>
+            </div>
           </div>`;
         }
       });
@@ -402,16 +409,35 @@
         );
         const s1 = existingScore ? existingScore.score1 : '';
         const s2 = existingScore ? existingScore.score2 : '';
+        const entered  = s1 !== '' && s2 !== '';
+        const t1win    = entered && parseInt(s1) > parseInt(s2);
+        const t2win    = entered && parseInt(s2) > parseInt(s1);
+        const winStyle  = 'color:var(--green); font-weight:700;';
+        const loseStyle = 'color:var(--muted);';
+        const readOnly  = !session.isAdmin ? 'readonly style="opacity:0.5;pointer-events:none;"' : '';
 
-        html += `<div class="game-card" data-week="${week}" data-round="${game.round}" data-court="${game.court}">
-          <div class="court-label">${courtName(game.court)}</div>
-          <div class="team-names">${esc(game.p1)}<span class="partner">${esc(game.p2)}</span></div>
-          <input type="number" class="score-input" data-score="1"
-                 value="${s1}" min="0" max="30" placeholder="0">
-          <div class="vs-divider">—</div>
-          <input type="number" class="score-input" data-score="2"
-                 value="${s2}" min="0" max="30" placeholder="0">
-          <div class="team-names" style="text-align:right;">${esc(game.p3)}<span class="partner">${esc(game.p4)}</span></div>
+        html += `<div style="background:var(--card-bg); border-radius:10px; padding:10px 12px; margin-bottom:8px;"
+            data-week="${week}" data-round="${game.round}" data-court="${game.court}">
+          <div class="court-label" style="font-size:0.7rem; margin-bottom:6px;">${courtName(game.court)}</div>
+          <div style="display:grid; grid-template-columns:1fr 110px 1fr; align-items:center; gap:6px;">
+            <div style="min-width:0;">
+              <div style="${entered ? (t1win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p1)}</div>
+              ${game.p2 ? `<div style="${entered ? (t1win ? winStyle : loseStyle) : ''} font-size:0.8rem; opacity:0.85; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p2)}</div>` : ''}
+            </div>
+            <div style="display:flex; align-items:center; justify-content:center; gap:4px;">
+              <input type="number" class="score-input" data-score="1"
+                     value="${s1}" min="0" max="30" placeholder="0" ${readOnly}
+                     style="width:44px; text-align:center; padding:4px;">
+              <div style="color:var(--muted); font-size:0.8rem;">—</div>
+              <input type="number" class="score-input" data-score="2"
+                     value="${s2}" min="0" max="30" placeholder="0" ${readOnly}
+                     style="width:44px; text-align:center; padding:4px;">
+            </div>
+            <div style="min-width:0; text-align:right;">
+              <div style="${entered ? (t2win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p3)}</div>
+              ${game.p4 ? `<div style="${entered ? (t2win ? winStyle : loseStyle) : ''} font-size:0.8rem; opacity:0.85; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p4)}</div>` : ''}
+            </div>
+          </div>
         </div>`;
       });
     });
@@ -662,6 +688,7 @@
         courts:         parseInt(document.getElementById('cfg-courts').value),
         gamesPerSession:parseInt(document.getElementById('cfg-games').value),
         optimizerTries: parseInt(document.getElementById('cfg-tries').value),
+        mixedDoubles:   document.getElementById('cfg-mixed-doubles').checked,
         wSessionPartner:  parseFloat(document.getElementById('cfg-w-session-partner').value),
         wSessionOpponent: parseFloat(document.getElementById('cfg-w-session-opponent').value),
         wHistoryPartner:  parseFloat(document.getElementById('cfg-w-history-partner').value),
@@ -771,19 +798,62 @@
         rankBalanceWeight:     state.config.wRankBalance     ?? Pairings.DEFAULTS.rankBalanceWeight,
       };
 
-      const { pairings: result, score, error } = Pairings.optimize({
+      // Build group map for present players
+      const playerGroups = {};
+      state.players.forEach(p => { playerGroups[p.name] = p.group || 'M'; });
+
+      const { pairings: result, score, breakdown, error } = Pairings.optimize({
         presentPlayers, courts, rounds, pastPairings, tries, weights,
-        standings: state.standings
+        standings: state.standings,
+        mixedDoubles: !!state.config.mixedDoubles,
+        playerGroups,
       });
 
       if (error) { toast(error, 'error'); return; }
+
+      // Warn if mixed doubles is on and any violations occurred
+      if (state.config.mixedDoubles && breakdown && breakdown.mixedViolations && breakdown.mixedViolations.raw > 0) {
+        toast(`⚠️ Mixed doubles: ${breakdown.mixedViolations.raw} same-gender partnership(s) could not be avoided — check player groups and attendance.`, 'warn');
+      }
 
       // Add week to each pairing
       state.pendingPairings = result.map(p => ({ ...p, week }));
 
       document.getElementById('optimizer-status').classList.remove('hidden');
       document.getElementById('optimizer-score').textContent = score.toFixed(1);
-      document.getElementById('optimizer-msg').textContent = ` (${tries} iterations, ${presentPlayers.length} players)`;
+      document.getElementById('optimizer-msg').textContent = `${tries} iterations · ${presentPlayers.length} players`;
+
+      // Breakdown table
+      const LABELS = {
+        mixedViolations: 'Mixed doubles violations',
+        sessionPartner:  'Repeat Partner (this session)',
+        sessionOpponent: 'Repeat Opponent (this session)',
+        historyPartner:  'Repeat Partner (prior weeks)',
+        historyOpponent: 'Repeat Opponent (prior weeks)',
+        sessionBye:      'Byes this session',
+        byeVariance:     'Bye spread (season)',
+        rankBalance:     'Rank imbalance',
+      };
+      if (breakdown) {
+        let bhtml = `<table style="font-size:0.78rem; width:100%; border-collapse:collapse; margin-top:4px;">
+          <thead><tr>
+            <th style="text-align:left; padding:3px 8px; color:var(--muted); font-weight:500;">Criterion</th>
+            <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">Raw</th>
+            <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">× Weight</th>
+            <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">Score</th>
+          </tr></thead><tbody>`;
+        Object.entries(breakdown).forEach(([key, v]) => {
+          const nonzero = v.weighted > 0;
+          bhtml += `<tr style="${nonzero ? 'color:var(--white);' : 'color:var(--muted);'}">
+            <td style="padding:3px 8px;">${LABELS[key] || key}</td>
+            <td style="text-align:right; padding:3px 8px;">${v.raw.toFixed(2)}</td>
+            <td style="text-align:right; padding:3px 8px;">${v.weight}</td>
+            <td style="text-align:right; padding:3px 8px; font-weight:${nonzero ? '600' : '400'};">${v.weighted.toFixed(1)}</td>
+          </tr>`;
+        });
+        bhtml += `</tbody></table>`;
+        document.getElementById('optimizer-breakdown').innerHTML = bhtml;
+      }
       document.getElementById('btn-lock-pairings').disabled = false;
 
       renderPairingsPreview();
@@ -829,7 +899,7 @@
       const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && p.type === 'game');
       const scores = [];
 
-      document.querySelectorAll('#scoresheet .game-card').forEach(card => {
+      document.querySelectorAll('#scoresheet [data-round]').forEach(card => {
         const round = card.dataset.round;
         const court = card.dataset.court;
         const pairing = weekPairings.find(p => String(p.round) === String(round) && String(p.court) === String(court));

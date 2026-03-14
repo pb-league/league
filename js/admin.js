@@ -688,13 +688,13 @@
       const ptsTot = s.points + s.pointsAgainst;
       const ptsPctVal = ptsTot > 0 ? (s.points / ptsTot * 100).toFixed(1) + '%' : '—';
       const secCol = usePtsPct
-        ? `<td class="${s.ptsPct >= 0.5 ? 'win' : 'loss'}">${ptsPctVal}</td>`
+        ? `<td>${ptsPctVal}</td>`
         : `<td class="${s.avgPtDiff > 0 ? 'win' : s.avgPtDiff < 0 ? 'loss' : 'neutral'}">${s.avgPtDiff > 0 ? '+' : ''}${s.avgPtDiff.toFixed(1)}</td>`;
       return `<tr>
         <td class="rank-cell ${top}">${s.rank}</td>
         <td class="player-name">${esc(s.name)}</td>
         <td>${s.wins}/${s.losses}</td>
-        <td><span class="${s.winPct >= 0.5 ? 'win' : 'neutral'}">${Reports.pct(s.winPct)}</span></td>
+        <td>${Reports.pct(s.winPct)}</td>
         ${secCol}
         ${!compact ? `<td class="text-muted">${s.games}</td><td class="text-muted">${s.byes}</td>` : ''}
       </tr>`;

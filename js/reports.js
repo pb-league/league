@@ -4,7 +4,7 @@
 
 const Reports = (() => {
 
-  function computeStandings(scores, players, pairings, upToWeek = null) {
+  function computeStandings(scores, players, pairings, upToWeek = null, rankingMethod = 'avgptdiff') {
     const stats = {};
 
     players.forEach(p => {
@@ -66,12 +66,14 @@ const Reports = (() => {
         ...s,
         winPct: total > 0 ? s.wins / total : 0,
         ptDiff:    s.points - s.pointsAgainst,
-        avgPtDiff: s.games > 0 ? (s.points - s.pointsAgainst) / s.games : 0
+        avgPtDiff: s.games > 0 ? (s.points - s.pointsAgainst) / s.games : 0,
+        ptsPct:    (s.points + s.pointsAgainst) > 0 ? s.points / (s.points + s.pointsAgainst) : 0
       };
     });
 
     list.sort((a, b) => {
       if (Math.abs(b.winPct - a.winPct) > 0.0001) return b.winPct - a.winPct;
+      if (rankingMethod === 'ptspct') return b.ptsPct - a.ptsPct;
       return b.avgPtDiff - a.avgPtDiff;
     });
 
@@ -134,11 +136,10 @@ const Reports = (() => {
     return { player: playerName, games, standing, partnerFreq, oppFreq };
   }
 
-  function computeWeeklyStandings(scores, players, pairings, week) {
-    // Only scores from this specific week
-    const weekScores = scores.filter(s => parseInt(s.week) === parseInt(week));
+  function computeWeeklyStandings(scores, players, pairings, week, rankingMethod = 'avgptdiff') {
+    const weekScores   = scores.filter(s => parseInt(s.week) === parseInt(week));
     const weekPairings = pairings.filter(p => parseInt(p.week) === parseInt(week));
-    return computeStandings(weekScores, players, weekPairings);
+    return computeStandings(weekScores, players, weekPairings, null, rankingMethod);
   }
 
   function pct(val) {

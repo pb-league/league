@@ -176,7 +176,10 @@
       document.getElementById('my-stats').innerHTML = `
         <div class="stat-tile"><div class="stat-value">${Reports.pct(s.winPct)}</div><div class="stat-label">Win %</div></div>
         <div class="stat-tile"><div class="stat-value">${s.wins}/${s.losses}</div><div class="stat-label">W / L</div></div>
-        <div class="stat-tile"><div class="stat-value">${s.avgPtDiff > 0 ? '+' : ''}${s.avgPtDiff.toFixed(1)}</div><div class="stat-label">Avg Pt Diff</div></div>
+        ${(state.config.rankingMethod === 'ptspct')
+          ? `<div class="stat-tile"><div class="stat-value">${((s.points/(s.points+s.pointsAgainst||1))*100).toFixed(1)}%</div><div class="stat-label">Pts%</div></div>`
+          : `<div class="stat-tile"><div class="stat-value">${s.avgPtDiff > 0 ? '+' : ''}${s.avgPtDiff.toFixed(1)}</div><div class="stat-label">Avg Pt Diff</div></div>`
+        }
         <div class="stat-tile"><div class="stat-value">${s.games}</div><div class="stat-label">Games Played</div></div>
       `;
     }
@@ -457,13 +460,13 @@
     const week = state.currentWstandWeek;
     const wstandDate = state.config['date_' + week] ? ' — ' + formatDate(state.config['date_' + week]) : '';
     document.getElementById('wstand-label').textContent = `Week ${week}${wstandDate}`;
-    const s = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week);
+    const s = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week, state.config.rankingMethod);
     document.getElementById('weekly-standings-table').innerHTML = renderStandingsTable(s, playerName);
   }
 
   // ── Season Standings ───────────────────────────────────────
   function renderSeasonStandings() {
-    const s = Reports.computeStandings(state.scores, state.players, state.pairings);
+    const s = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod);
     document.getElementById('season-standings-table').innerHTML = renderStandingsTable(s, playerName);
   }
 
@@ -617,20 +620,28 @@
   // ── Shared Helpers ─────────────────────────────────────────
   function renderStandingsTable(standings, highlightPlayer = null) {
     if (!standings || !standings.length) return '<p class="text-muted">No standings data yet.</p>';
+    const rm = state.config.rankingMethod || 'avgptdiff';
+    const usePtsPct = rm === 'ptspct';
     const rows = standings.filter(s => s.games > 0).map((s, i) => {
       const isMe = s.name === highlightPlayer;
       const top = i < 3 ? 'top' : '';
+      const ptsTot = s.points + s.pointsAgainst;
+      const ptsPctVal = ptsTot > 0 ? (s.points / ptsTot * 100).toFixed(1) + '%' : '—';
+      const secCol = usePtsPct
+        ? `<td class="${s.ptsPct >= 0.5 ? 'win' : 'loss'}">${ptsPctVal}</td>`
+        : `<td class="${s.avgPtDiff > 0 ? 'win' : s.avgPtDiff < 0 ? 'loss' : 'neutral'}">${s.avgPtDiff > 0 ? '+' : ''}${s.avgPtDiff.toFixed(1)}</td>`;
       return `<tr ${isMe ? 'style="background:rgba(94,194,106,0.08);"' : ''}>
         <td class="rank-cell ${top}">${s.rank}</td>
         <td class="player-name" ${isMe ? 'style="color:var(--green);"' : ''}>${esc(s.name)}${isMe ? ' ◀' : ''}</td>
         <td>${s.wins}/${s.losses}</td>
         <td><span class="${s.winPct >= 0.5 ? 'win' : 'neutral'}">${Reports.pct(s.winPct)}</span></td>
-        <td class="${s.avgPtDiff > 0 ? 'win' : s.avgPtDiff < 0 ? 'loss' : 'neutral'}">${s.avgPtDiff > 0 ? '+' : ''}${s.avgPtDiff.toFixed(1)}</td>
+        ${secCol}
         <td class="text-muted">${s.games}</td>
       </tr>`;
     });
+    const secHeader = usePtsPct ? '<th>Pts%</th>' : '<th>Avg+/-</th>';
     return `<table>
-      <thead><tr><th>#</th><th>Player</th><th>W/L</th><th>Win%</th><th>Avg+/-</th><th>Games</th></tr></thead>
+      <thead><tr><th>#</th><th>Player</th><th>W/L</th><th>Win%</th>${secHeader}<th>Games</th></tr></thead>
       <tbody>${rows.join('')}</tbody>
     </table>`;
   }
@@ -681,7 +692,7 @@
       if (!chartState.scores.some(s => parseInt(s.week) === w)) continue;
       weeksWithData.push(w);
       const scoresThrough = chartState.scores.filter(s => parseInt(s.week) <= w);
-      const standings     = Reports.computeStandings(scoresThrough, chartState.players, chartState.pairings);
+      const standings     = Reports.computeStandings(scoresThrough, chartState.players, chartState.pairings, null, chartState.config.rankingMethod);
       activePlayers.forEach(p => {
         const entry = standings.find(s => s.name === p.name);
         ranksByWeek[p.name].push(entry ? entry.rank : null);

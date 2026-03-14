@@ -494,15 +494,15 @@ const Pairings = (() => {
       if (total < bestScore) {
         bestScore     = total;
         bestPairings  = candidate;
-        // Re-score best with original weights so breakdown shows user-meaningful numbers
-        const { breakdown: userBreakdown } = scorePairings(
-          candidate, history, candidateByeCounts, weightsWithRank
+        // Score with normalized weights so breakdown shows post-normalization contribution
+        const { breakdown: normBreakdown } = scorePairings(
+          candidate, history, candidateByeCounts, normalizedWeights
         );
-        bestBreakdown = userBreakdown;
+        bestBreakdown = normBreakdown;
       }
     }
 
-    return { pairings: bestPairings, score: bestScore, breakdown: bestBreakdown };
+    return { pairings: bestPairings, score: bestScore, breakdown: bestBreakdown, normalizedWeights };
   }
 
   return { optimize, buildHistory, buildByeCounts, DEFAULTS };

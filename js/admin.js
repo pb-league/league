@@ -75,8 +75,22 @@
 
   // ── Head-to-Head ───────────────────────────────────────────
   let h2hMode = 'partners';
+  let h2hWeek = 'all';
 
   function renderHeadToHead() {
+    // Populate week selector
+    const sel = document.getElementById('h2h-week-select');
+    if (sel) {
+      const weeks = [...new Set(state.pairings.map(p => parseInt(p.week)))].sort((a,b) => a-b);
+      sel.innerHTML = '<option value="all">All Weeks</option>' +
+        weeks.map(w => {
+          const date = state.config['date_' + w] ? ' — ' + formatDate(state.config['date_' + w]) : '';
+          return `<option value="${w}" ${h2hWeek == w ? 'selected' : ''}>Week ${w}${date}</option>`;
+        }).join('');
+      sel.value = h2hWeek;
+      sel.onchange = () => { h2hWeek = sel.value; renderH2HTable(); };
+    }
+
     // Tab switching
     document.querySelectorAll('#h2h-tabs .tab-btn').forEach(btn => {
       btn.onclick = () => {
@@ -100,8 +114,12 @@
     const matrix = {};
     players.forEach(a => { matrix[a] = {}; players.forEach(b => { matrix[a][b] = 0; }); });
 
-    // Use pairings (not scores) so unscored games are still counted
-    state.pairings.filter(g => g.type === 'game').forEach(g => {
+    // Filter pairings by selected week (or all weeks)
+    const h2hPairings = h2hWeek === 'all'
+      ? state.pairings.filter(g => g.type === 'game')
+      : state.pairings.filter(g => g.type === 'game' && parseInt(g.week) === parseInt(h2hWeek));
+
+    h2hPairings.forEach(g => {
       if (!g.p1) return;
       const team1 = [g.p1, g.p2].filter(Boolean);
       const team2 = [g.p3, g.p4].filter(Boolean);
@@ -200,7 +218,8 @@
     document.getElementById('cfg-courts').value  = c.courts || 3;
     document.getElementById('cfg-games').value   = c.gamesPerSession || 7;
     document.getElementById('cfg-tries').value   = c.optimizerTries || 100;
-    document.getElementById('cfg-game-mode').value = c.gameMode || 'doubles';
+    document.getElementById('cfg-game-mode').value      = c.gameMode      || 'doubles';
+    document.getElementById('cfg-ranking-method').value = c.rankingMethod || 'avgptdiff';
 
     // Optimizer weights
     const D = Pairings.DEFAULTS;
@@ -457,10 +476,10 @@
 
   // ── Standings ──────────────────────────────────────────────
   function renderStandings() {
-    const season = Reports.computeStandings(state.scores, state.players, state.pairings);
+    const season = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod);
     document.getElementById('standings-season-table').innerHTML = renderStandingsTable(season);
 
-    const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, state.currentStandWeek);
+    const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, state.currentStandWeek, state.config.rankingMethod);
     document.getElementById('standings-weekly-table').innerHTML = renderStandingsTable(weekStand);
     document.getElementById('stand-week-label').textContent = `Week ${state.currentStandWeek}`;
 
@@ -662,23 +681,29 @@
 
   function renderStandingsTable(standings, compact = false) {
     if (!standings || !standings.length) return '<p class="text-muted">No standings data yet.</p>';
+    const rm = state.config.rankingMethod || 'avgptdiff';
+    const usePtsPct = rm === 'ptspct';
     const rows = standings.filter(s => s.games > 0 || s.rank !== '-').map((s, i) => {
       const top = i < 3 ? 'top' : '';
+      const ptsTot = s.points + s.pointsAgainst;
+      const ptsPctVal = ptsTot > 0 ? (s.points / ptsTot * 100).toFixed(1) + '%' : '—';
+      const secCol = usePtsPct
+        ? `<td class="${s.ptsPct >= 0.5 ? 'win' : 'loss'}">${ptsPctVal}</td>`
+        : `<td class="${s.avgPtDiff > 0 ? 'win' : s.avgPtDiff < 0 ? 'loss' : 'neutral'}">${s.avgPtDiff > 0 ? '+' : ''}${s.avgPtDiff.toFixed(1)}</td>`;
       return `<tr>
         <td class="rank-cell ${top}">${s.rank}</td>
         <td class="player-name">${esc(s.name)}</td>
         <td>${s.wins}/${s.losses}</td>
         <td><span class="${s.winPct >= 0.5 ? 'win' : 'neutral'}">${Reports.pct(s.winPct)}</span></td>
-        ${!compact ? `<td>${s.points}/${s.points + s.pointsAgainst}</td>` : ''}
-        <td class="${s.avgPtDiff > 0 ? 'win' : s.avgPtDiff < 0 ? 'loss' : 'neutral'}">${s.avgPtDiff > 0 ? '+' : ''}${s.avgPtDiff.toFixed(1)}</td>
+        ${secCol}
         ${!compact ? `<td class="text-muted">${s.games}</td><td class="text-muted">${s.byes}</td>` : ''}
       </tr>`;
     });
+    const secHeader = usePtsPct ? '<th>Pts%</th>' : '<th>Avg+/-</th>';
     return `<table>
       <thead><tr>
         <th>#</th><th>Player</th><th>W/L</th><th>Win%</th>
-        ${!compact ? '<th>Pts/Tot</th>' : ''}
-        <th>Avg+/-</th>
+        ${secHeader}
         ${!compact ? '<th>Games</th><th>Byes</th>' : ''}
       </tr></thead>
       <tbody>${rows.join('')}</tbody>
@@ -719,6 +744,7 @@
         gamesPerSession:parseInt(document.getElementById('cfg-games').value),
         optimizerTries: parseInt(document.getElementById('cfg-tries').value),
         gameMode:       document.getElementById('cfg-game-mode').value,
+        rankingMethod:  document.getElementById('cfg-ranking-method').value,
         wSessionPartner:  parseFloat(document.getElementById('cfg-w-session-partner').value),
         wSessionOpponent: parseFloat(document.getElementById('cfg-w-session-opponent').value),
         wHistoryPartner:  parseFloat(document.getElementById('cfg-w-history-partner').value),
@@ -790,7 +816,7 @@
     });
     setupWeekNav('score-week-prev', 'score-week-next', 'currentScoreWeek', renderScoresheet);
     setupWeekNav('stand-week-prev', 'stand-week-next', 'currentStandWeek', () => {
-      const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, state.currentStandWeek);
+      const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, state.currentStandWeek, state.config.rankingMethod);
       document.getElementById('standings-weekly-table').innerHTML = renderStandingsTable(weekStand);
       document.getElementById('stand-week-label').textContent = `Week ${state.currentStandWeek}`;
     });
@@ -851,7 +877,7 @@
           const playerGroups = {};
           state.players.forEach(p => { playerGroups[p.name] = p.group || 'M'; });
 
-          const { pairings: result, score, breakdown, error } = Pairings.optimize({
+          const { pairings: result, score, breakdown, normalizedWeights, error } = Pairings.optimize({
             presentPlayers, courts, rounds, pastPairings, tries, weights,
             standings: state.standings,
             gameMode,
@@ -885,19 +911,36 @@
         rankBalance:     'Rank imbalance',
       };
           if (breakdown) {
+        // Map criterion key -> user weight and normalized weight
+        const USER_WEIGHT_KEYS = {
+          sessionPartner:  'sessionPartnerWeight',
+          sessionOpponent: 'sessionOpponentWeight',
+          historyPartner:  'historyPartnerWeight',
+          historyOpponent: 'historyOpponentWeight',
+          sessionBye:      'sessionByeWeight',
+          byeVariance:     'byeVarianceWeight',
+          rankBalance:     'rankBalanceWeight',
+        };
         let bhtml = `<table style="font-size:0.78rem; width:100%; border-collapse:collapse; margin-top:4px;">
           <thead><tr>
             <th style="text-align:left; padding:3px 8px; color:var(--muted); font-weight:500;">Criterion</th>
             <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">Raw</th>
-            <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">× Weight</th>
+            <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">User Weight</th>
+            <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">Norm. Weight</th>
             <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">Score</th>
           </tr></thead><tbody>`;
         Object.entries(breakdown).forEach(([key, v]) => {
           const nonzero = v.weighted > 0;
+          const wKey = USER_WEIGHT_KEYS[key];
+          // User weight from the weights object passed to optimize
+          const userW = wKey ? (weights[wKey] ?? Pairings.DEFAULTS[wKey] ?? '—') : '—';
+          // Normalized weight from calibration (v.weight is now the normalized value)
+          const normW = (wKey && normalizedWeights) ? normalizedWeights[wKey].toFixed(2) : '—';
           bhtml += `<tr style="${nonzero ? 'color:var(--white);' : 'color:var(--muted);'}">
             <td style="padding:3px 8px;">${LABELS[key] || key}</td>
             <td style="text-align:right; padding:3px 8px;">${v.raw.toFixed(2)}</td>
-            <td style="text-align:right; padding:3px 8px;">${v.weight}</td>
+            <td style="text-align:right; padding:3px 8px;">${typeof userW === 'number' ? userW : userW}</td>
+            <td style="text-align:right; padding:3px 8px; color:var(--muted);">${normW}</td>
             <td style="text-align:right; padding:3px 8px; font-weight:${nonzero ? '600' : '400'};">${v.weighted.toFixed(1)}</td>
           </tr>`;
         });
@@ -950,7 +993,7 @@
         if (hasScores) {
           await API.saveScores(week, []);
           state.scores = state.scores.filter(s => parseInt(s.week) !== week);
-          state.standings = Reports.computeStandings(state.scores, state.players, state.pairings);
+          state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod);
         }
         toast(`Week ${week} cleared.`);
         renderPairingsPreview();
@@ -996,7 +1039,7 @@
         state.scores = state.scores.filter(s => parseInt(s.week) !== week);
         state.scores.push(...scores);
         // Refresh standings
-        state.standings = Reports.computeStandings(state.scores, state.players, state.pairings);
+        state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod);
         toast(`Scores for Week ${week} saved!`);
       } catch (e) { toast('Save failed: ' + e.message, 'error'); }
       finally { showLoading(false); }

@@ -8,8 +8,8 @@
 const API = (() => {
   // !! REPLACE THIS with your deployed GAS Web App URL !!
   // const GAS_URL = 'https://script.google.com/macros/s/AKfycby007PfussW_bqnfTP2pD-vDpVgC__ubdHetMk586q4iNFXJIdu1_tgYL5kZaJlkieL/exec';
-  const GAS_URL = 'https://script.google.com/macros/s/AKfycbziZPrG5fSM_ufJYei6r_DoFTCjt4ymGuof-UBJRRj84oChtHtE67r6orMUJnGk7hbk/exec';
-
+  // const GAS_URL = 'https://script.google.com/macros/s/AKfycbziZPrG5fSM_ufJYei6r_DoFTCjt4ymGuof-UBJRRj84oChtHtE67r6orMUJnGk7hbk/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbzudYO4IDqCJt92kR4gu6dVJyGN5LoKtxpD3RYR1pNHepxU_liEdpogjCnE8mWTOXqU/exec';
   // Get the active leagueId from session (set at login)
   function leagueId() {
     try {

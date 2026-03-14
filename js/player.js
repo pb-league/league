@@ -660,7 +660,7 @@
     [6, 3, 2, 3, 2, 3], // dash-dot-dot
   ];
 
-  function drawRankTrendChart(canvasId, legendId, chartState) {
+  function drawRankTrendChart(canvasId, legendId, chartState, highlightPlayer) {
     const canvas = document.getElementById(canvasId);
     const legend = document.getElementById(legendId);
     if (!canvas || !legend) return;
@@ -748,8 +748,8 @@
     ctx.fillText('Rank', 0, 0);
     ctx.restore();
 
-    // Draw lines
-    activePlayers.forEach((player, pi) => {
+    // Draw lines — non-highlighted players first (dimmed), highlighted on top
+    const drawPlayer = (player, pi, isHighlighted) => {
       const color   = COLORS[pi % COLORS.length];
       const dash    = DASH_PATTERNS[pi % DASH_PATTERNS.length];
       const ranks   = ranksByWeek[player.name];
@@ -761,10 +761,15 @@
         };
       });
 
-      ctx.strokeStyle = color;
-      ctx.lineWidth   = 2.5;
-      ctx.lineJoin    = 'round';
-      ctx.setLineDash(dash);
+      const anyHighlight = highlightPlayer && activePlayers.some(p => p.name === highlightPlayer);
+      const dimmed = anyHighlight && !isHighlighted;
+
+      ctx.globalAlpha  = dimmed ? 0.25 : 1;
+      ctx.strokeStyle  = color;
+      ctx.lineWidth    = isHighlighted ? 4 : 2.5;
+      ctx.lineJoin     = 'round';
+      ctx.setLineDash(isHighlighted ? [] : dash); // highlighted always solid + thicker
+
       ctx.beginPath();
       let started = false;
       points.forEach(pt => {
@@ -775,17 +780,28 @@
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Dots
+      // Dots — larger for highlighted player
+      const dotR = isHighlighted ? 6 : 4;
       points.forEach(pt => {
         if (!pt) return;
         ctx.beginPath();
-        ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+        ctx.arc(pt.x, pt.y, dotR, 0, Math.PI * 2);
         ctx.fillStyle   = color;
         ctx.fill();
-        ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-        ctx.lineWidth   = 1.5;
+        ctx.strokeStyle = isHighlighted ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)';
+        ctx.lineWidth   = isHighlighted ? 2 : 1.5;
         ctx.stroke();
       });
+      ctx.globalAlpha = 1;
+    };
+
+    // Draw background (non-highlighted) players first
+    activePlayers.forEach((player, pi) => {
+      if (player.name !== highlightPlayer) drawPlayer(player, pi, false);
+    });
+    // Draw highlighted player last so it renders on top
+    activePlayers.forEach((player, pi) => {
+      if (player.name === highlightPlayer) drawPlayer(player, pi, true);
     });
     ctx.setLineDash([]);
 
@@ -793,16 +809,20 @@
     legend.innerHTML = activePlayers.map((p, pi) => {
       const color = COLORS[pi % COLORS.length];
       const dash  = DASH_PATTERNS[pi % DASH_PATTERNS.length];
-      // Draw a tiny inline SVG line to show the dash pattern
-      const dashArray = dash.length ? dash.join(',') : 'none';
-      const svgLine   = `<svg width="28" height="10" style="vertical-align:middle;overflow:visible">
+      const isMe  = p.name === highlightPlayer;
+      const dashArray = (!isMe && dash.length) ? dash.join(',') : 'none';
+      const lineW = isMe ? 4 : 2.5;
+      const svgLine = `<svg width="28" height="10" style="vertical-align:middle;overflow:visible">
         <line x1="0" y1="5" x2="28" y2="5"
-          stroke="${color}" stroke-width="2.5"
+          stroke="${color}" stroke-width="${lineW}"
           stroke-dasharray="${dashArray}"/>
       </svg>`;
+      const nameStyle = isMe
+        ? 'color:var(--white); font-weight:700;'
+        : 'color:rgba(255,255,255,0.55);';
       return `<span style="display:flex;align-items:center;gap:5px;white-space:nowrap;">
         ${svgLine}
-        <span style="color:rgba(255,255,255,0.75);">${p.name.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>
+        <span style="${nameStyle}">${p.name.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>
       </span>`;
     }).join('');
   }

@@ -110,12 +110,13 @@
               <label class="form-label">Optimizer Tries</label>
               <input class="form-control" id="cfg-tries" type="number" min="10" max="500" value="100">
             </div>
-            <div class="form-group" style="display:flex; flex-direction:column; justify-content:flex-end;">
-              <label class="form-label">Mixed Doubles Mode</label>
-              <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
-                <input type="checkbox" id="cfg-mixed-doubles" style="width:18px; height:18px;">
-                <span style="font-size:0.85rem; color:var(--muted);">M only partners with F or Either</span>
-              </div>
+            <div class="form-group">
+              <label class="form-label">Game Mode</label>
+              <select class="form-control" id="cfg-game-mode">
+                <option value="doubles">Doubles</option>
+                <option value="mixed-doubles">Mixed Doubles</option>
+                <option value="singles">Singles</option>
+              </select>
             </div>
           </div>
           <div id="cfg-dates-area"></div>
@@ -307,6 +308,18 @@
         <!-- Add league form (hidden by default) -->
         <div class="card hidden" id="add-league-form">
           <div class="card-header"><div class="card-title">Add New League</div></div>
+          <div style="background:rgba(255,255,255,0.04); border-left:3px solid var(--gold); border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:0.82rem; color:var(--muted); line-height:1.7;">
+            <strong style="color:var(--white);">Before adding a league:</strong>
+            create a new blank Google Sheet at
+            <a href="https://sheets.google.com" target="_blank" style="color:var(--green);">sheets.google.com</a>,
+            then paste its ID here.<br>
+            The Sheet ID is the text in the URL between <code style="color:var(--gold); background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:3px;">d/</code>
+            and <code style="color:var(--gold); background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:3px;">/edit</code>
+            — for example:<br>
+            <span style="font-family:monospace; font-size:0.78rem; color:var(--muted);">
+              docs.google.com/spreadsheets/d/<span style="color:var(--gold);">1VPWAWqN1376ewwWUz7laZ8e-_oKbFA2cjv3p0yTvGZ4</span>/edit
+            </span>
+          </div>
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">League ID <span style="color:var(--muted);font-weight:400;">(slug, no spaces)</span></label>
@@ -320,6 +333,18 @@
               <label class="form-label">Google Sheet ID</label>
               <input class="form-control" id="new-league-sheet" placeholder="Paste Sheet ID from URL">
             </div>
+          </div>
+          <div style="display:flex; flex-wrap:wrap; gap:16px; margin:12px 0 4px;">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.85rem;">
+              <input type="checkbox" id="new-league-copy-config" checked style="width:16px;height:16px;">
+              <span>Copy configuration from current league</span>
+              <span style="color:var(--muted); font-size:0.78rem;">(settings, weights, court names, dates)</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.85rem;">
+              <input type="checkbox" id="new-league-copy-players" style="width:16px;height:16px;">
+              <span>Copy all players</span>
+              <span style="color:var(--muted); font-size:0.78rem;">(name, PIN, group, email — attendance &amp; scores not copied)</span>
+            </label>
           </div>
           <div class="btn-group mt-1">
             <button class="btn btn-primary" id="btn-save-new-league">Save League</button>

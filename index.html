@@ -62,7 +62,8 @@
         <input type="password" class="form-control pin-input" id="pin-input"
                maxlength="8" inputmode="numeric" placeholder="••••" autocomplete="off">
       </div>
-      <div id="pin-error" class="hidden" style="color:var(--danger); font-size:0.8rem; margin-bottom:12px;"></div>
+      <div id="pin-error" class="hidden" style="color:var(--danger); font-size:0.8rem; margin-bottom:8px;"></div>
+      <div id="pin-help" class="hidden" style="margin-bottom:12px; font-size:0.8rem; text-align:center;"></div>
       <div class="btn-group">
         <button class="btn btn-secondary" id="btn-back-player">← Back</button>
         <button class="btn btn-primary" id="btn-login" style="flex:1;">Enter</button>
@@ -70,10 +71,6 @@
     </div>
 
   </div>
-</div>
-
-<div style="text-align:center; padding:16px; font-size:0.72rem; color:rgba(255,255,255,0.3); max-width:320px; margin:0 auto; line-height:1.6;">
-  This app was created by Doug Tucker for non-commercial use by the Pickleball community.
 </div>
 
 <div id="toast-container"></div>
@@ -210,6 +207,41 @@
         document.getElementById('pin-error').textContent = result.reason || 'Incorrect PIN';
         document.getElementById('pin-error').classList.remove('hidden');
         document.getElementById('pin-input').value = '';
+
+        // Only show help for non-admin players
+        const helpEl = document.getElementById('pin-help');
+        if (selectedPlayer !== 'Admin') {
+          // Check if player has an email on file
+          try {
+            const playersData = await API.getPlayers();
+            const player = (playersData.players || []).find(p => p.name === selectedPlayer);
+            if (player && player.email) {
+              helpEl.innerHTML = `Forgot your PIN? <a href="#" id="btn-email-pin" style="color:var(--green);">Email it to me</a>`;
+              helpEl.classList.remove('hidden');
+              document.getElementById('btn-email-pin').addEventListener('click', async (e) => {
+                e.preventDefault();
+                const link = e.target;
+                link.textContent = 'Sending…';
+                try {
+                  const r = await API.emailPin(selectedPlayer);
+                  if (r.success) {
+                    helpEl.innerHTML = `<span style="color:var(--green);">✓ PIN sent to your email address.</span>`;
+                  } else {
+                    helpEl.innerHTML = `<span style="color:var(--danger);">${r.reason || 'Could not send email.'}</span>`;
+                  }
+                } catch (err) {
+                  helpEl.innerHTML = `<span style="color:var(--danger);">Send failed. Please contact your league manager.</span>`;
+                }
+              });
+            } else {
+              helpEl.innerHTML = `No email address on file — please contact your league manager to retrieve your PIN.`;
+              helpEl.style.color = 'var(--muted)';
+              helpEl.classList.remove('hidden');
+            }
+          } catch (_) {
+            // silently ignore — help message is non-critical
+          }
+        }
       }
     } catch (e) {
       showToast('Login error: ' + e.message, 'error');

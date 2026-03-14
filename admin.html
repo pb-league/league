@@ -110,6 +110,13 @@
               <label class="form-label">Optimizer Tries</label>
               <input class="form-control" id="cfg-tries" type="number" min="10" max="500" value="100">
             </div>
+            <div class="form-group" style="display:flex; flex-direction:column; justify-content:flex-end;">
+              <label class="form-label">Mixed Doubles Mode</label>
+              <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
+                <input type="checkbox" id="cfg-mixed-doubles" style="width:18px; height:18px;">
+                <span style="font-size:0.85rem; color:var(--muted);">M only partners with F or Either</span>
+              </div>
+            </div>
           </div>
           <div id="cfg-dates-area"></div>
           <div id="cfg-court-names-area"></div>
@@ -209,8 +216,11 @@
             <button class="btn btn-danger" id="btn-clear-pairings">🗑 Clear Week</button>
           </div>
           <div class="optimizer-status mt-1 hidden" id="optimizer-status">
-            Score: <span class="score" id="optimizer-score">—</span>
-            <span id="optimizer-msg"></span>
+            <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:8px;">
+              <span>Total Score: <span class="score" id="optimizer-score">—</span></span>
+              <span id="optimizer-msg" style="font-size:0.78rem; color:var(--muted);"></span>
+            </div>
+            <div id="optimizer-breakdown"></div>
           </div>
         </div>
         <div id="pairings-preview"></div>

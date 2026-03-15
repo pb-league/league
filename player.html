@@ -31,6 +31,7 @@
         <div class="nav-item active" data-page="my-games"><span class="icon">🎾</span> My Games</div>
         <div class="nav-item" data-page="attendance"><span class="icon">📋</span> Availability</div>
         <div class="nav-item" data-page="scoresheet"><span class="icon">📊</span> Scoresheet</div>
+        <div class="nav-item hidden" id="nav-score-entry" data-page="score-entry"><span class="icon">✏️</span> Score Entry</div>
       </div>
       <div class="nav-section">
         <div class="nav-section-label">Standings</div>
@@ -50,7 +51,9 @@
           <h2 id="my-games-title">My Games</h2>
           <div id="my-rank-badge"></div>
         </div>
+        <div id="my-league-info"></div>
         <div id="my-next-game"></div>
+        <div id="player-dash-rules"></div>
         <div class="card-grid" id="my-stats"></div>
         <div class="card mt-2">
           <div class="card-header"><div class="card-title">Game History</div></div>
@@ -83,6 +86,25 @@
         </div>
         <div class="card">
           <div id="player-scoresheet"></div>
+        </div>
+      </section>
+
+      <!-- ═══ SCORE ENTRY ═══ -->
+      <section id="page-score-entry" class="tab-panel">
+        <div class="page-header">
+          <h2>Score Entry</h2>
+          <div class="week-selector">
+            <button id="player-score-week-prev">‹</button>
+            <div class="week-num" id="player-score-week-label">Week 1</div>
+            <button id="player-score-week-next">›</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Scoresheet</div>
+            <button class="btn btn-primary" id="player-btn-save-scores">Save Scores</button>
+          </div>
+          <div id="player-scoresheet-entry"></div>
         </div>
       </section>
 

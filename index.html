@@ -9,6 +9,7 @@
 <body class="court-bg">
 
 <div class="login-page">
+  <div style="display:flex; flex-direction:column; align-items:center;">
   <div class="login-box">
 
     <div class="login-logo">
@@ -62,14 +63,21 @@
         <input type="password" class="form-control pin-input" id="pin-input"
                maxlength="8" inputmode="numeric" placeholder="••••" autocomplete="off">
       </div>
-      <div id="pin-error" class="hidden" style="color:var(--danger); font-size:0.8rem; margin-bottom:8px;"></div>
-      <div id="pin-help" class="hidden" style="margin-bottom:12px; font-size:0.8rem; text-align:center;"></div>
+      <div id="pin-error" class="hidden" style="margin-bottom:12px;">
+        <div id="pin-error-msg" style="color:var(--danger); font-size:0.8rem; margin-bottom:8px;"></div>
+        <div id="pin-email-offer" class="hidden" style="font-size:0.8rem;"></div>
+      </div>
       <div class="btn-group">
         <button class="btn btn-secondary" id="btn-back-player">← Back</button>
         <button class="btn btn-primary" id="btn-login" style="flex:1;">Enter</button>
       </div>
     </div>
 
+  </div>
+  <div style="text-align:center; margin-top:20px; font-size:0.72rem; color:rgba(255,255,255,0.3); line-height:1.5;">
+    Created by Doug Tucker for non-commercial use<br>by the Pickleball community<br>
+    Contact Doug at <a href="mailto:dougjt@yahoo.com" style="color:rgba(255,255,255,0.4);">dougjt@yahoo.com</a> if you are interested in using it.
+  </div>
   </div>
 </div>
 
@@ -119,19 +127,13 @@
     btnLeagueNext.disabled = !leagueSel.value;
   });
 
-  btnLeagueNext.addEventListener('click', async () => {
-    const leagueId = leagueSel.value;
-    if (!leagueId) return;
-    selectedLeague = leagues.find(l => l.leagueId === leagueId);
-
-    // Temporarily set leagueId in session so API calls are routed correctly
-    Auth.setSession('', false, leagueId, selectedLeague.name);
-
-    // Load players for this league
-    document.getElementById('selected-league-name').textContent = selectedLeague.name;
+  // Shared function: select a league and load its players
+  async function selectLeague(league, preselectedPlayer) {
+    selectedLeague = league;
+    Auth.setSession('', false, league.leagueId, league.name);
+    document.getElementById('selected-league-name').textContent = league.name;
     const playerSel = document.getElementById('player-select');
     playerSel.innerHTML = '<option value="">— Loading… —</option>';
-
     goTo('step-player');
 
     try {
@@ -144,11 +146,46 @@
         opt.textContent = p.name;
         playerSel.appendChild(opt);
       });
+
+      // If a player name was pre-provided via URL, select and advance
+      if (preselectedPlayer) {
+        const match = players.find(p => p.name.toLowerCase() === preselectedPlayer.toLowerCase());
+        if (match) {
+          playerSel.value = match.name;
+          document.getElementById('btn-player-next').disabled = false;
+          selectedPlayer = match.name;
+          showPinStep(match.name);
+        }
+      }
     } catch (e) {
       playerSel.innerHTML = '<option value="">Could not load players</option>';
       showToast('Failed to load players: ' + e.message, 'error');
     }
+  }
+
+  btnLeagueNext.addEventListener('click', () => {
+    const leagueId = leagueSel.value;
+    if (!leagueId) return;
+    const league = leagues.find(l => l.leagueId === leagueId);
+    selectLeague(league, null);
   });
+
+  // ── URL parameter pre-selection ─────────────────────────────
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlLeague = urlParams.get('league');
+  const urlPlayer = urlParams.get('player');
+
+  if (urlLeague && leagues.length) {
+    const match = leagues.find(l =>
+      l.leagueId.toLowerCase() === urlLeague.toLowerCase() ||
+      l.name.toLowerCase() === urlLeague.toLowerCase()
+    );
+    if (match) {
+      leagueSel.value = match.leagueId;
+      btnLeagueNext.disabled = false;
+      selectLeague(match, urlPlayer || null);
+    }
+  }
 
   // ── Step 2: Select player ───────────────────────────────────
   const playerSel = document.getElementById('player-select');
@@ -180,6 +217,8 @@
     goTo('step-player');
     document.getElementById('pin-input').value = '';
     document.getElementById('pin-error').classList.add('hidden');
+    document.getElementById('pin-email-offer').classList.add('hidden');
+    document.getElementById('pin-email-offer').innerHTML = '';
   });
 
   document.getElementById('pin-input').addEventListener('keydown', e => {
@@ -204,43 +243,42 @@
       if (result.valid) {
         window.location.href = result.isAdmin ? 'admin.html' : 'player.html';
       } else {
-        document.getElementById('pin-error').textContent = result.reason || 'Incorrect PIN';
+        document.getElementById('pin-error-msg').textContent = result.reason || 'Incorrect PIN';
         document.getElementById('pin-error').classList.remove('hidden');
         document.getElementById('pin-input').value = '';
 
-        // Only show help for non-admin players
-        const helpEl = document.getElementById('pin-help');
-        if (selectedPlayer !== 'Admin') {
-          // Check if player has an email on file
+        // Offer to email PIN or advise to contact manager
+        const offerEl = document.getElementById('pin-email-offer');
+        if (selectedPlayer && selectedPlayer !== 'Admin') {
           try {
-            const playersData = await API.getPlayers();
-            const player = (playersData.players || []).find(p => p.name === selectedPlayer);
-            if (player && player.email) {
-              helpEl.innerHTML = `Forgot your PIN? <a href="#" id="btn-email-pin" style="color:var(--green);">Email it to me</a>`;
-              helpEl.classList.remove('hidden');
-              document.getElementById('btn-email-pin').addEventListener('click', async (e) => {
-                e.preventDefault();
-                const link = e.target;
-                link.textContent = 'Sending…';
-                try {
-                  const r = await API.emailPin(selectedPlayer);
-                  if (r.success) {
-                    helpEl.innerHTML = `<span style="color:var(--green);">✓ PIN sent to your email address.</span>`;
-                  } else {
-                    helpEl.innerHTML = `<span style="color:var(--danger);">${r.reason || 'Could not send email.'}</span>`;
-                  }
-                } catch (err) {
-                  helpEl.innerHTML = `<span style="color:var(--danger);">Send failed. Please contact your league manager.</span>`;
+            // Check if player has an email on file by attempting emailPin dry-run
+            // We show the offer optimistically — GAS will tell us if no email
+            offerEl.innerHTML = `<span style="color:var(--muted);">Forgot your PIN?
+              <button id="btn-send-pin" class="btn btn-secondary"
+                style="padding:3px 10px; font-size:0.75rem; margin-left:6px;">
+                Email my PIN
+              </button>
+            </span>`;
+            offerEl.classList.remove('hidden');
+
+            document.getElementById('btn-send-pin').addEventListener('click', async () => {
+              const sendBtn = document.getElementById('btn-send-pin');
+              sendBtn.disabled = true;
+              sendBtn.textContent = '…';
+              try {
+                const r = await API.emailPin(selectedPlayer);
+                if (r.success) {
+                  offerEl.innerHTML = `<span style="color:var(--green);">✓ PIN sent to your email address.</span>`;
+                } else if (r.noEmail) {
+                  offerEl.innerHTML = `<span style="color:var(--muted);">No email address on file — please contact your league manager to obtain your PIN.</span>`;
+                } else {
+                  offerEl.innerHTML = `<span style="color:var(--danger);">Could not send: ${r.reason || 'unknown error'}</span>`;
                 }
-              });
-            } else {
-              helpEl.innerHTML = `No email address on file — please contact your league manager to retrieve your PIN.`;
-              helpEl.style.color = 'var(--muted)';
-              helpEl.classList.remove('hidden');
-            }
-          } catch (_) {
-            // silently ignore — help message is non-critical
-          }
+              } catch (e) {
+                offerEl.innerHTML = `<span style="color:var(--danger);">Send failed: ${e.message}</span>`;
+              }
+            });
+          } catch (e) { /* silently skip offer if something goes wrong */ }
         }
       }
     } catch (e) {
@@ -256,6 +294,8 @@
     document.getElementById('pin-league-name').textContent = selectedLeague?.name || '';
     document.getElementById('pin-player-name').textContent = name;
     document.getElementById('pin-error').classList.add('hidden');
+    document.getElementById('pin-email-offer').classList.add('hidden');
+    document.getElementById('pin-email-offer').innerHTML = '';
     document.getElementById('pin-input').value = '';
     goTo('step-pin');
     setTimeout(() => document.getElementById('pin-input').focus(), 50);

@@ -58,6 +58,7 @@
         </div>
         <div id="dash-info"></div>
         <div class="card-grid" id="dash-stats"></div>
+        <div id="dash-rules"></div>
         <div class="card mt-2">
           <div class="card-header"><div class="card-title">Season Standings</div></div>
           <div class="table-wrap" id="dash-standings"></div>
@@ -96,6 +97,12 @@
               <label class="form-label">Notes</label>
               <input class="form-control" id="cfg-notes" placeholder="Announcements, reminders…">
             </div>
+          </div>
+          <div class="form-group" style="margin-top:4px;">
+            <label class="form-label">League Rules</label>
+            <textarea class="form-control" id="cfg-rules" rows="5"
+              placeholder="Enter league rules here. Each line will be displayed as a separate item on the dashboard."
+              style="resize:vertical; font-size:0.88rem; line-height:1.6;"></textarea>
           </div>
           <div class="form-row">
             <div class="form-group">
@@ -181,12 +188,13 @@
           <button class="btn btn-primary" id="btn-add-player">+ Add Player</button>
         </div>
         <div class="card">
-          <div style="display:grid; grid-template-columns:1fr 100px 120px 200px 60px 80px 40px; gap:8px; padding:0 4px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">
+          <div style="display:grid; grid-template-columns:1fr 100px 120px 200px 60px 60px 80px 40px; gap:8px; padding:0 4px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">
             <span class="label">Name</span>
             <span class="label">PIN</span>
             <span class="label">Group</span>
             <span class="label">Email</span>
             <span class="label">Notify</span>
+            <span class="label">Scores</span>
             <span class="label">Active</span>
             <span></span>
           </div>
@@ -355,6 +363,11 @@
               <input type="checkbox" id="new-league-copy-players" style="width:16px;height:16px;">
               <span>Copy all players</span>
               <span style="color:var(--muted); font-size:0.78rem;">(name, PIN, group, email — attendance &amp; scores not copied)</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.85rem;">
+              <input type="checkbox" id="new-league-can-create" style="width:16px;height:16px;">
+              <span>Allow new league's admin to create leagues</span>
+              <span style="color:var(--muted); font-size:0.78rem;">(if unchecked, that admin cannot add further leagues)</span>
             </label>
           </div>
           <div class="btn-group mt-1">

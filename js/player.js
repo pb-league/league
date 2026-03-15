@@ -9,6 +9,10 @@
   const playerName = session.name;
   document.getElementById('topbar-name').textContent = playerName;
   document.getElementById('topbar-league').textContent = session.leagueName || 'Pickleball';
+  const canScore = session.canScore || session.isAdmin;
+  if (canScore) {
+    document.getElementById('nav-score-entry')?.classList.remove('hidden');
+  }
 
   let state = {
     config: {}, players: [], attendance: [],
@@ -57,6 +61,7 @@
         const page = item.dataset.page;
         document.getElementById('page-' + page)?.classList.add('active');
         if (page === 'player-report') renderPlayerReportSelect();
+        if (page === 'score-entry') renderScoreEntry();
         if (page === 'standings-trend') drawRankTrendChart('player-rank-trend-chart', 'player-rank-trend-legend', state, playerName);
       });
     });
@@ -73,6 +78,7 @@
     renderSeasonStandings();
     renderFullAttendance();
     renderPlayerReportSelect();
+    if (canScore) renderScoreEntry();
   }
 
   // ── Next Game Widget ───────────────────────────────────────
@@ -168,6 +174,30 @@
     const s = report.standing;
 
     document.getElementById('my-games-title').textContent = `${playerName}'s Games`;
+
+    const infoEl = document.getElementById('my-league-info');
+    if (infoEl) {
+      const c = state.config;
+      const parts = [];
+      if (c.leagueName)   parts.push(`<span>🥒 ${esc(c.leagueName)}</span>`);
+      if (c.location)     parts.push(`<span>📍 ${esc(c.location)}</span>`);
+      if (c.sessionTime)  parts.push(`<span>🕐 ${esc(c.sessionTime)}</span>`);
+      if (c.notes)        parts.push(`<span>📌 ${esc(c.notes)}</span>`);
+      infoEl.innerHTML = parts.length
+        ? `<div style="display:flex; flex-wrap:wrap; gap:8px 20px; margin-bottom:12px; font-size:0.85rem; color:var(--muted);">${parts.join('')}</div>`
+        : '';
+    }
+
+    const rulesEl = document.getElementById('player-dash-rules');
+    if (rulesEl) {
+      const rules = state.config.rules || '';
+      rulesEl.innerHTML = rules
+        ? `<div class="card mt-1" style="margin-bottom:12px;">
+            <div class="card-header"><div class="card-title">League Rules</div></div>
+            <pre style="white-space:pre-wrap; font-family:inherit; font-size:0.85rem; color:var(--muted); margin:0; line-height:1.7;">${esc(rules)}</pre>
+          </div>`
+        : '';
+    }
 
     if (s) {
       document.getElementById('my-rank-badge').innerHTML =
@@ -430,12 +460,13 @@
 
         const tieWarning = entered && !t1win && !t2win;
         const tieBoxStyle = tieWarning ? 'border:1px solid var(--danger); border-radius:6px;' : '';
+
         html += `<div style="background:var(--card-bg); border-radius:10px; padding:10px 12px; margin-bottom:8px;">
           <div style="font-size:0.7rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">${courtName(game.court)}</div>
           <div style="display:grid; grid-template-columns:1fr 100px 1fr; align-items:center; gap:6px;">
             <div style="min-width:0;">
               <div style="${t1style} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p1)}</div>
-              ${game.p2 ? `<div style="${t1style} font-size:0.8rem; opacity:0.85; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p2)}</div>` : ''}
+              ${game.p2 ? `<div style="${t1style} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p2)}</div>` : ''}
             </div>
             <div style="display:flex; align-items:center; justify-content:center; gap:4px; ${tieBoxStyle}">
               <div class="score-display ${entered ? (t1win ? 'winner' : 'loser') : 'pending'}" style="min-width:28px; text-align:center;">${entered ? s1 : '—'}</div>
@@ -444,7 +475,7 @@
             </div>
             <div style="min-width:0; text-align:right;">
               <div style="${t2style} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p3)}</div>
-              ${game.p4 ? `<div style="${t2style} font-size:0.8rem; opacity:0.85; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p4)}</div>` : ''}
+              ${game.p4 ? `<div style="${t2style} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p4)}</div>` : ''}
             </div>
           </div>
           ${tieWarning ? `<div style="margin-top:6px; font-size:0.72rem; color:var(--danger); text-align:center;">⚠️ Tied score — please verify</div>` : ''}
@@ -453,6 +484,67 @@
     });
 
     document.getElementById('player-scoresheet').innerHTML = html;
+  }
+
+  // ── Score Entry (canScore players) ────────────────────────
+  function renderScoreEntry() {
+    const week = state.currentScoreEntryWeek || state.currentSheetWeek;
+    state.currentScoreEntryWeek = week;
+    document.getElementById('player-score-week-label').textContent = `Week ${week}`;
+
+    const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && p.type === 'game');
+
+    if (!weekPairings.length) {
+      document.getElementById('player-scoresheet-entry').innerHTML =
+        '<p class="text-muted">No pairings for this week yet.</p>';
+      return;
+    }
+
+    const rounds = [...new Set(weekPairings.map(p => p.round))].sort((a,b) => a-b);
+    let html = '';
+
+    rounds.forEach(r => {
+      html += `<div class="round-header">Round ${r}</div>`;
+      weekPairings.filter(p => p.round == r).forEach(game => {
+        const existingScore = state.scores.find(
+          s => parseInt(s.week) === week && parseInt(s.round) === parseInt(game.round) &&
+               String(s.court) === String(game.court)
+        );
+        const s1 = existingScore ? existingScore.score1 : '';
+        const s2 = existingScore ? existingScore.score2 : '';
+        const entered = s1 !== '' && s2 !== '';
+        const t1win = entered && parseInt(s1) > parseInt(s2);
+        const t2win = entered && parseInt(s2) > parseInt(s1);
+        const winStyle  = 'color:var(--green); font-weight:700;';
+        const loseStyle = 'color:var(--muted);';
+
+        html += `<div class="game-card" style="background:var(--card-bg); border-radius:10px; padding:10px 12px; margin-bottom:8px;"
+            data-week="${week}" data-round="${game.round}" data-court="${game.court}">
+          <div class="court-label" style="font-size:0.7rem; margin-bottom:6px;">${courtName(game.court)}</div>
+          <div style="display:grid; grid-template-columns:1fr 110px 1fr; align-items:center; gap:6px;">
+            <div style="min-width:0;">
+              <div style="${entered ? (t1win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p1)}</div>
+              ${game.p2 ? `<div style="${entered ? (t1win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p2)}</div>` : ''}
+            </div>
+            <div style="display:flex; align-items:center; justify-content:center; gap:4px;">
+              <input type="number" class="score-input" data-score="1"
+                     value="${s1}" min="0" max="30" placeholder="0"
+                     style="width:44px; text-align:center; padding:4px;">
+              <div style="color:var(--muted); font-size:0.8rem;">—</div>
+              <input type="number" class="score-input" data-score="2"
+                     value="${s2}" min="0" max="30" placeholder="0"
+                     style="width:44px; text-align:center; padding:4px;">
+            </div>
+            <div style="min-width:0; text-align:right;">
+              <div style="${entered ? (t2win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p3)}</div>
+              ${game.p4 ? `<div style="${entered ? (t2win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p4)}</div>` : ''}
+            </div>
+          </div>
+        </div>`;
+      });
+    });
+
+    document.getElementById('player-scoresheet-entry').innerHTML = html;
   }
 
   // ── Weekly Standings ───────────────────────────────────────
@@ -501,6 +593,67 @@
 
   // ── Events ─────────────────────────────────────────────────
   function setupEvents() {
+    // Score entry week nav
+    if (canScore) {
+      if (!state.currentScoreEntryWeek) state.currentScoreEntryWeek = state.currentSheetWeek;
+      document.getElementById('player-score-week-prev').addEventListener('click', () => {
+        if (state.currentScoreEntryWeek > 1) { state.currentScoreEntryWeek--; renderScoreEntry(); }
+      });
+      document.getElementById('player-score-week-next').addEventListener('click', () => {
+        const max = parseInt(state.config.weeks || 8);
+        if (state.currentScoreEntryWeek < max) { state.currentScoreEntryWeek++; renderScoreEntry(); }
+      });
+
+      document.getElementById('player-btn-save-scores').addEventListener('click', async () => {
+        const week = state.currentScoreEntryWeek;
+        const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && p.type === 'game');
+        const scores = [];
+
+        document.querySelectorAll('#player-scoresheet-entry .game-card').forEach(card => {
+          const round = card.dataset.round;
+          const court = card.dataset.court;
+          const pairing = weekPairings.find(p => String(p.round) === String(round) && String(p.court) === String(court));
+          if (!pairing) return;
+          const s1 = card.querySelector('[data-score="1"]').value;
+          const s2 = card.querySelector('[data-score="2"]').value;
+          if (s1 !== '' || s2 !== '') {
+            scores.push({
+              week, round: parseInt(round), court,
+              p1: pairing.p1, p2: pairing.p2, score1: parseInt(s1) || 0,
+              p3: pairing.p3, p4: pairing.p4, score2: parseInt(s2) || 0
+            });
+          }
+        });
+
+        // Merge with existing scores for this week so games left blank are preserved
+        const existingWeekScores = state.scores.filter(s => parseInt(s.week) === week);
+        existingWeekScores.forEach(existing => {
+          const alreadyIncluded = scores.some(
+            s => String(s.round) === String(existing.round) && String(s.court) === String(existing.court)
+          );
+          if (!alreadyIncluded) scores.push(existing);
+        });
+
+        // Warn on ties
+        const ties = scores.filter(s => s.score1 === s.score2);
+        if (ties.length) {
+          const msg = ties.map(s => `Round ${s.round} ${courtName(s.court)}: ${s.score1}–${s.score2}`).join(', ');
+          if (!confirm(`⚠️ Tied scores detected:\n${msg}\n\nSave anyway?`)) return;
+        }
+
+        showLoading(true);
+        try {
+          await API.saveScores(week, scores);
+          state.scores = state.scores.filter(s => parseInt(s.week) !== week);
+          state.scores.push(...scores);
+          state.standings = Reports.computeStandings(state.scores, state.players, state.pairings);
+          toast(`Scores for Week ${week} saved!`);
+          renderScoreEntry();
+        } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+        finally { showLoading(false); }
+      });
+    }
+
     // Scoresheet week nav
     document.getElementById('sheet-week-prev').addEventListener('click', () => {
       if (state.currentSheetWeek > 1) { state.currentSheetWeek--; renderScoresheet(); }
@@ -629,7 +782,7 @@
       const ptsPctVal = ptsTot > 0 ? (s.points / ptsTot * 100).toFixed(1) + '%' : '—';
       const secCol = usePtsPct
         ? `<td>${ptsPctVal}</td>`
-        : `<td class="${s.avgPtDiff > 0 ? 'win' : s.avgPtDiff < 0 ? 'loss' : 'neutral'}">${s.avgPtDiff > 0 ? '+' : ''}${s.avgPtDiff.toFixed(1)}</td>`;
+        : `<td>${s.avgPtDiff > 0 ? '+' : ''}${s.avgPtDiff.toFixed(1)}</td>`;
       return `<tr ${isMe ? 'style="background:rgba(94,194,106,0.08);"' : ''}>
         <td class="rank-cell ${top}">${s.rank}</td>
         <td class="player-name" ${isMe ? 'style="color:var(--green);"' : ''}>${esc(s.name)}${isMe ? ' ◀' : ''}</td>

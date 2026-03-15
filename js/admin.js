@@ -184,12 +184,28 @@
 
     const c = state.config;
     const infoParts = [];
-    if (c.location) infoParts.push(`<span>📍 ${esc(c.location)}</span>`);
+    if (c.location)    infoParts.push(`<span>📍 ${esc(c.location)}</span>`);
     if (c.sessionTime) infoParts.push(`<span>🕐 ${esc(c.sessionTime)}</span>`);
-    if (c.notes) infoParts.push(`<span>📌 ${esc(c.notes)}</span>`);
-    document.getElementById('dash-info').innerHTML = infoParts.length
-      ? `<div style="display:flex;flex-wrap:wrap;gap:12px 24px;margin-bottom:14px;font-size:0.88rem;color:var(--muted);">${infoParts.join('')}</div>`
-      : '';
+    if (c.notes)       infoParts.push(`<span>📌 ${esc(c.notes)}</span>`);
+
+    // Build rules section
+    let rulesHtml = '';
+    if (c.rules && c.rules.trim()) {
+      const lines = c.rules.split('\n').map(l => l.trim()).filter(Boolean);
+      rulesHtml = `<div style="margin-top:10px; padding:12px 16px; background:rgba(255,255,255,0.03);
+                               border-left:3px solid var(--gold); border-radius:6px;">
+        <div style="font-size:0.7rem; letter-spacing:0.1em; text-transform:uppercase;
+                    color:var(--gold); font-weight:600; margin-bottom:8px;">📋 League Rules</div>
+        <ol style="margin:0; padding-left:18px; font-size:0.85rem; color:var(--muted); line-height:1.8;">
+          ${lines.map(l => `<li>${esc(l)}</li>`).join('')}
+        </ol>
+      </div>`;
+    }
+
+    document.getElementById('dash-info').innerHTML =
+      (infoParts.length
+        ? `<div style="display:flex;flex-wrap:wrap;gap:12px 24px;margin-bottom:${rulesHtml ? '8px' : '14px'};font-size:0.88rem;color:var(--muted);">${infoParts.join('')}</div>`
+        : '') + rulesHtml;
 
     const activePlayers = state.players.filter(p => p.active !== false).length;
     const weeksWithScores = [...new Set(state.scores.map(s => s.week))].length;
@@ -202,7 +218,9 @@
       <div class="stat-tile"><div class="stat-value">${totalGames}</div><div class="stat-label">Games Entered</div></div>
     `;
 
-    document.getElementById('dash-standings').innerHTML = renderStandingsTable(state.standings, true);
+    const activeNames = new Set(state.players.filter(p => p.active !== false).map(p => p.name));
+    const dashStandings = state.standings.filter(s => activeNames.has(s.name));
+    document.getElementById('dash-standings').innerHTML = renderStandingsTable(dashStandings, true);
   }
 
   // ── Setup ──────────────────────────────────────────────────
@@ -212,6 +230,7 @@
     document.getElementById('cfg-location').value = c.location    || '';
     document.getElementById('cfg-time').value     = c.sessionTime || '';
     document.getElementById('cfg-notes').value    = c.notes       || '';
+    document.getElementById('cfg-rules').value    = c.rules       || '';
     document.getElementById('cfg-admin-pin').value = '';
     document.getElementById('cfg-reply-to').value    = c.replyTo || '';
     document.getElementById('cfg-weeks').value   = c.weeks || 8;
@@ -265,7 +284,7 @@
     state.players.forEach((p, i) => {
       const row = document.createElement('div');
       row.className = 'player-row';
-      row.style.gridTemplateColumns = '1fr 100px 120px 200px 60px 80px 40px';
+      row.style.gridTemplateColumns = '1fr 100px 120px 200px 60px 60px 80px 40px';
       row.innerHTML = `
         <input class="form-control" data-field="name" data-idx="${i}" value="${esc(p.name)}" placeholder="Player name">
         <input class="form-control" data-field="pin" data-idx="${i}" type="text" value="${esc(String(p.pin || ''))}" placeholder="PIN" maxlength="8">
@@ -276,6 +295,7 @@
         </select>
         <input class="form-control" data-field="email" data-idx="${i}" type="email" value="${esc(p.email || '')}" placeholder="email@example.com">
         <input type="checkbox" data-field="notify" data-idx="${i}" ${p.notify ? 'checked' : ''} style="width:20px;height:20px;margin:auto;">
+        <input type="checkbox" data-field="canScore" data-idx="${i}" ${p.canScore ? 'checked' : ''} style="width:20px;height:20px;margin:auto;">
         <select class="form-control" data-field="active" data-idx="${i}">
           <option value="true" ${p.active!==false?'selected':''}>Active</option>
           <option value="false" ${p.active===false?'selected':''}>Inactive</option>
@@ -330,6 +350,18 @@
       }
       html += '</div>';
     });
+
+    // Totals row — count of players marked present per week
+    html += '<div class="att-row" style="border-top:1px solid rgba(255,255,255,0.1); margin-top:4px; padding-top:4px;">';
+    html += '<div class="att-player-name" style="font-size:0.75rem; color:var(--muted); font-weight:600;">Players In</div>';
+    for (let w = 1; w <= weeks; w++) {
+      const count = players.filter(p => {
+        const rec = state.attendance.find(a => a.player === p.name && String(a.week) === String(w));
+        return rec && rec.status === 'present';
+      }).length;
+      html += `<div class="att-week-header" style="font-weight:700; color:${count > 0 ? 'var(--green)' : 'var(--muted)'}; font-size:0.85rem;">${count}</div>`;
+    }
+    html += '</div>';
 
     html += '</div>';
     document.getElementById('attendance-grid').innerHTML = html;
@@ -387,12 +419,12 @@
             <div style="display:grid; grid-template-columns:1fr 40px 1fr; align-items:center; gap:6px;">
               <div style="min-width:0;">
                 <div style="font-size:0.9rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p1)}</div>
-                ${game.p2 ? `<div style="font-size:0.8rem; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p2)}</div>` : ''}
+                ${game.p2 ? `<div style="font-size:0.9rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p2)}</div>` : ''}
               </div>
               <div style="text-align:center; color:var(--muted); font-size:0.8rem; font-weight:600; flex-shrink:0;">VS</div>
               <div style="min-width:0; text-align:right;">
                 <div style="font-size:0.9rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p3)}</div>
-                ${game.p4 ? `<div style="font-size:0.8rem; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p4)}</div>` : ''}
+                ${game.p4 ? `<div style="font-size:0.9rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p4)}</div>` : ''}
               </div>
             </div>
           </div>`;
@@ -451,7 +483,7 @@
           <div style="display:grid; grid-template-columns:1fr 110px 1fr; align-items:center; gap:6px;">
             <div style="min-width:0;">
               <div style="${entered ? (t1win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p1)}</div>
-              ${game.p2 ? `<div style="${entered ? (t1win ? winStyle : loseStyle) : ''} font-size:0.8rem; opacity:0.85; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p2)}</div>` : ''}
+              ${game.p2 ? `<div style="${entered ? (t1win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p2)}</div>` : ''}
             </div>
             <div style="display:flex; align-items:center; justify-content:center; gap:4px;">
               <input type="number" class="score-input" data-score="1"
@@ -464,7 +496,7 @@
             </div>
             <div style="min-width:0; text-align:right;">
               <div style="${entered ? (t2win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p3)}</div>
-              ${game.p4 ? `<div style="${entered ? (t2win ? winStyle : loseStyle) : ''} font-size:0.8rem; opacity:0.85; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p4)}</div>` : ''}
+              ${game.p4 ? `<div style="${entered ? (t2win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p4)}</div>` : ''}
             </div>
           </div>
         </div>`;
@@ -683,13 +715,13 @@
     if (!standings || !standings.length) return '<p class="text-muted">No standings data yet.</p>';
     const rm = state.config.rankingMethod || 'avgptdiff';
     const usePtsPct = rm === 'ptspct';
-    const rows = standings.filter(s => s.games > 0 || s.rank !== '-').map((s, i) => {
+    const rows = standings.filter(s => s.games > 0).map((s, i) => {
       const top = i < 3 ? 'top' : '';
       const ptsTot = s.points + s.pointsAgainst;
       const ptsPctVal = ptsTot > 0 ? (s.points / ptsTot * 100).toFixed(1) + '%' : '—';
       const secCol = usePtsPct
         ? `<td>${ptsPctVal}</td>`
-        : `<td class="${s.avgPtDiff > 0 ? 'win' : s.avgPtDiff < 0 ? 'loss' : 'neutral'}">${s.avgPtDiff > 0 ? '+' : ''}${s.avgPtDiff.toFixed(1)}</td>`;
+        : `<td>${s.avgPtDiff > 0 ? '+' : ''}${s.avgPtDiff.toFixed(1)}</td>`;
       return `<tr>
         <td class="rank-cell ${top}">${s.rank}</td>
         <td class="player-name">${esc(s.name)}</td>
@@ -737,6 +769,7 @@
         location:       document.getElementById('cfg-location').value.trim(),
         sessionTime:    document.getElementById('cfg-time').value.trim(),
         notes:          document.getElementById('cfg-notes').value.trim(),
+        rules:          document.getElementById('cfg-rules').value.trim(),
         adminPin:       document.getElementById('cfg-admin-pin').value || state.config.adminPin,
         replyTo:        document.getElementById('cfg-reply-to').value.trim(),
         weeks,
@@ -792,8 +825,9 @@
             pin:    row.querySelector('[data-field="pin"]').value.trim(),
             group:  row.querySelector('[data-field="group"]').value,
             email:  row.querySelector('[data-field="email"]').value.trim(),
-            notify: row.querySelector('[data-field="notify"]').checked,
-            active: row.querySelector('[data-field="active"]').value === 'true'
+            notify:   row.querySelector('[data-field="notify"]').checked,
+            canScore: row.querySelector('[data-field="canScore"]').checked,
+            active:   row.querySelector('[data-field="active"]').value === 'true'
           });
         }
       });
@@ -1115,10 +1149,11 @@
 
       showLoading(true);
       try {
-        const sourceLeagueId = Auth.getSession()?.leagueId;
-        const copyConfig  = document.getElementById('new-league-copy-config').checked;
-        const copyPlayers = document.getElementById('new-league-copy-players').checked;
-        const result = await API.addLeague(leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers);
+        const sourceLeagueId  = Auth.getSession()?.leagueId;
+        const copyConfig      = document.getElementById('new-league-copy-config').checked;
+        const copyPlayers     = document.getElementById('new-league-copy-players').checked;
+        const canCreateLeagues = document.getElementById('new-league-can-create').checked;
+        const result = await API.addLeague(leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues);
         if (result.warnings && result.warnings.length) {
           result.warnings.forEach(w => toast('Copy warning: ' + w, 'warn'));
         }
@@ -1145,9 +1180,13 @@
       toast('Failed to load leagues: ' + e.message, 'error');
     }
 
+    // Gate + Add League button from the registry entry for this league
     const currentId = session?.leagueId;
+    const thisLeague = leagues.find(l => l.leagueId === currentId);
+    const canCreate = !thisLeague || thisLeague.canCreateLeagues !== false;
+    document.getElementById('btn-show-add-league').style.display = canCreate ? '' : 'none';
     let html = `<table>
-      <thead><tr><th>ID</th><th>Name</th><th>Sheet ID</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>ID</th><th>Name</th><th>Sheet ID</th><th>Status</th><th>Can Create</th><th></th></tr></thead>
       <tbody>`;
 
     if (!leagues.length) {
@@ -1161,10 +1200,16 @@
         <td class="player-name">${esc(l.name)}${isCurrent ? ' <span class="badge badge-green">current</span>' : ''}</td>
         <td><code style="font-size:0.72rem; color:var(--muted);">${esc(l.sheetId)}</code></td>
         <td><span class="badge ${l.active ? 'badge-green' : 'badge-muted'}">${l.active ? 'Active' : 'Inactive'}</span></td>
-        <td>
+        <td><span class="badge ${l.canCreateLeagues !== false ? 'badge-green' : 'badge-muted'}">${l.canCreateLeagues !== false ? 'Yes' : 'No'}</span></td>
+        <td style="display:flex; gap:4px;">
           <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.72rem;"
             data-toggle-league="${esc(l.leagueId)}" data-active="${l.active}">
             ${l.active ? 'Deactivate' : 'Activate'}
+          </button>
+          <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.72rem;"
+            data-toggle-create="${esc(l.leagueId)}" data-can-create="${l.canCreateLeagues !== false}"
+            ${!canCreate ? 'disabled title="Your league cannot create leagues"' : ''}>
+            ${l.canCreateLeagues !== false ? 'Disallow Create' : 'Allow Create'}
           </button>
         </td>
       </tr>`;
@@ -1178,8 +1223,21 @@
         const lid = btn.dataset.toggleLeague;
         const nowActive = btn.dataset.active === 'true';
         try {
-          await API.updateLeague(lid, undefined, undefined, !nowActive);
+          await API.updateLeague(lid, undefined, undefined, !nowActive, undefined);
           toast(`League ${nowActive ? 'deactivated' : 'activated'}.`);
+          renderLeagues();
+        } catch (e) { toast('Failed: ' + e.message, 'error'); }
+      });
+    });
+
+    document.querySelectorAll('[data-toggle-create]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const lid = btn.dataset.toggleCreate;
+        const nowCan = btn.dataset.canCreate === 'true';
+        try {
+          const callerLeagueId = Auth.getSession()?.leagueId;
+          await API.updateLeagueWithCaller(lid, undefined, undefined, undefined, !nowCan, callerLeagueId);
+          toast(`League ${nowCan ? 'can no longer' : 'can now'} create leagues.`);
           renderLeagues();
         } catch (e) { toast('Failed: ' + e.message, 'error'); }
       });

@@ -15,8 +15,8 @@ const Auth = (() => {
     } catch { return null; }
   }
 
-  function setSession(name, isAdmin, leagueId, leagueName) {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ name, isAdmin, leagueId, leagueName, ts: Date.now() }));
+  function setSession(name, isAdmin, leagueId, leagueName, canScore = false) {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ name, isAdmin, leagueId, leagueName, canScore, ts: Date.now() }));
   }
 
   function clearSession() {
@@ -25,26 +25,10 @@ const Auth = (() => {
 
   function requireAuth(adminOnly = false) {
     const session = getSession();
-
-    // Allow bootstrap admin: arrived via ?setup=1 with no league yet
-    if (!session && window.location.search.includes('setup=1')) {
-      setSession('Admin', true, '__registry__', 'Registry');
-      return getSession();
-    }
-
-    if (!session) {
+    if (!session || !session.leagueId) {
       window.location.href = 'index.html';
       return null;
     }
-
-    // Registry-only session (__registry__) is only valid on admin.html
-    // and only grants access to the Leagues page
-    if (session.leagueId === '__registry__') {
-      if (adminOnly) return session; // allow admin pages
-      window.location.href = 'index.html';
-      return null;
-    }
-
     if (adminOnly && !session.isAdmin) {
       window.location.href = 'player.html';
       return null;
@@ -55,7 +39,7 @@ const Auth = (() => {
   async function login(name, pin, leagueId, leagueName) {
     const result = await API.validatePIN(name, pin);
     if (result.valid) {
-      setSession(result.name, result.isAdmin, leagueId, leagueName);
+      setSession(result.name, result.isAdmin, leagueId, leagueName, result.canScore || false);
     }
     return result;
   }

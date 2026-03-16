@@ -1,4 +1,10 @@
 // ============================================================
+// App version — update APP_VERSION and APP_BUILD_DATE when deploying
+// ============================================================
+const APP_VERSION    = "1.0.0";
+const APP_BUILD_DATE = "2026-03-16";
+
+// ============================================================
 // admin.js — Admin dashboard logic
 // ============================================================
 
@@ -16,7 +22,8 @@
     config: {}, players: [], attendance: [],
     pairings: [], scores: [], standings: [],
     currentPairWeek: 1, currentScoreWeek: 1,
-    currentStandWeek: 1, pendingPairings: null
+    currentStandWeek: 1, pendingPairings: null,
+    tournament: null  // { week, mode, round, seeds }
   };
 
   // ── Boot ───────────────────────────────────────────────────
@@ -52,7 +59,7 @@
         if (page === 'standings') renderStandings();
         if (page === 'player-report') renderPlayerReportSelect();
         if (page === 'scores') renderScoresheet();
-        if (page === 'pairings') renderPairingsPreview();
+        if (page === 'pairings') { renderPairingsPreview(); renderEditPairingForm(); }
         if (page === 'attendance') renderAttendance();
         if (page === 'leagues') renderLeagues();
         if (page === 'head-to-head') renderHeadToHead();
@@ -67,6 +74,7 @@
     renderPlayers();
     renderAttendance();
     renderPairingsPreview();
+    renderEditPairingForm();
     renderScoresheet();
     renderStandings();
     renderPlayerReportSelect();
@@ -187,6 +195,11 @@
     if (c.location)    infoParts.push(`<span>📍 ${esc(c.location)}</span>`);
     if (c.sessionTime) infoParts.push(`<span>🕐 ${esc(c.sessionTime)}</span>`);
     if (c.notes)       infoParts.push(`<span>📌 ${esc(c.notes)}</span>`);
+    if (c.leagueUrl) {
+      const lid = Auth.getSession()?.leagueId || '';
+      infoParts.push(`<span>🔗 <a href="${esc(c.leagueUrl)}"
+        target="_blank" style="color:var(--green);">League Link</a></span>`);
+    }
 
     // Build rules section
     let rulesHtml = '';
@@ -221,6 +234,10 @@
     const activeNames = new Set(state.players.filter(p => p.active !== false).map(p => p.name));
     const dashStandings = state.standings.filter(s => activeNames.has(s.name));
     document.getElementById('dash-standings').innerHTML = renderStandingsTable(dashStandings, true);
+    document.getElementById('dash-version').innerHTML =
+      `<div style="text-align:right; font-size:0.7rem; color:rgba(255,255,255,0.2); margin-top:10px;">
+        v${APP_VERSION} &nbsp;·&nbsp; Built ${APP_BUILD_DATE}
+      </div>`;
   }
 
   // ── Setup ──────────────────────────────────────────────────
@@ -230,6 +247,10 @@
     document.getElementById('cfg-location').value = c.location    || '';
     document.getElementById('cfg-time').value     = c.sessionTime || '';
     document.getElementById('cfg-notes').value    = c.notes       || '';
+    // Auto-populate URL if blank using current leagueId
+    const leagueId = Auth.getSession()?.leagueId || '';
+    const defaultUrl = 'https://pb-league.github.io/league/index.html?league=' + leagueId;
+    document.getElementById('cfg-league-url').value = c.leagueUrl || defaultUrl;
     document.getElementById('cfg-rules').value    = c.rules       || '';
     document.getElementById('cfg-admin-pin').value = '';
     document.getElementById('cfg-reply-to').value    = c.replyTo || '';
@@ -393,6 +414,21 @@
   // ── Pairings ───────────────────────────────────────────────
   function renderPairingsPreview() {
     const week = state.currentPairWeek;
+
+    // Update tournament advance button visibility
+    const advBtn   = document.getElementById('btn-tourn-advance');
+    const resetBtn = document.getElementById('btn-tourn-reset');
+    if (advBtn && resetBtn) {
+      const inTournament = state.tournament && state.tournament.week === week;
+      advBtn.classList.toggle('hidden', !inTournament);
+      resetBtn.classList.toggle('hidden', !inTournament);
+      if (inTournament) {
+        renderTournamentStatus();
+      } else {
+        const statusEl = document.getElementById('tourn-status');
+        if (statusEl) statusEl.innerHTML = '';
+      }
+    }
     document.getElementById('pair-week-label').textContent = `Week ${week}`;
 
     const existing = state.pairings.filter(p => parseInt(p.week) === week);
@@ -409,9 +445,9 @@
     rounds.forEach(r => {
       html += `<div class="round-header">Round ${r}</div>`;
       toShow.filter(p => p.round == r).forEach(game => {
-        if (game.type === 'bye') {
+        if (game.type === 'bye' || game.type === 'tourn-bye') {
           html += `<div class="game-card" style="grid-template-columns:1fr; background:rgba(122,155,181,0.07);">
-            <span class="text-muted" style="font-size:0.8rem;">⏸ BYE: <strong style="color:var(--white);">${esc(game.p1)}</strong></span>
+            <span class="text-muted" style="font-size:0.8rem;">⏸ BYE: <strong style="color:var(--white);">${esc(game.p1)}${game.p2 ? ' &amp; ' + esc(game.p2) : ''}</strong></span>
           </div>`;
         } else {
           html += `<div style="background:var(--card-bg); border-radius:10px; padding:10px 12px; margin-bottom:8px;">
@@ -460,7 +496,7 @@
       allWeekPairings.filter(p => p.round == r && p.type === 'bye').forEach(bye => {
         html += `<div style="padding:6px 10px; margin-bottom:6px; color:var(--muted); font-size:0.85rem;
                              background:rgba(122,155,181,0.07); border-radius:8px;">
-          ⏸ <strong style="color:var(--white);">${esc(bye.p1)}</strong> — Bye
+          ⏸ <strong style="color:var(--white);">${esc(bye.p1)}${bye.p2 ? ' &amp; ' + esc(bye.p2) : ''}</strong> — Bye
         </div>`;
       });
 
@@ -488,11 +524,13 @@
             <div style="display:flex; align-items:center; justify-content:center; gap:4px;">
               <input type="number" class="score-input" data-score="1"
                      value="${s1}" min="0" max="30" placeholder="0" ${readOnly}
-                     style="width:44px; text-align:center; padding:4px;">
+                     inputmode="numeric"
+                     style="width:44px; text-align:center; padding:4px; -moz-appearance:textfield;">
               <div style="color:var(--muted); font-size:0.8rem;">—</div>
               <input type="number" class="score-input" data-score="2"
                      value="${s2}" min="0" max="30" placeholder="0" ${readOnly}
-                     style="width:44px; text-align:center; padding:4px;">
+                     inputmode="numeric"
+                     style="width:44px; text-align:center; padding:4px; -moz-appearance:textfield;">
             </div>
             <div style="min-width:0; text-align:right;">
               <div style="${entered ? (t2win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p3)}</div>
@@ -514,6 +552,13 @@
     const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, state.currentStandWeek, state.config.rankingMethod);
     document.getElementById('standings-weekly-table').innerHTML = renderStandingsTable(weekStand);
     document.getElementById('stand-week-label').textContent = `Week ${state.currentStandWeek}`;
+
+    // Default to season tab active
+    document.querySelectorAll('#standings-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelector('#standings-tabs .tab-btn[data-tab="season"]').classList.add('active');
+    document.getElementById('standings-season').classList.add('active');
+    document.getElementById('standings-weekly').classList.remove('active');
+    document.getElementById('standings-trend').classList.remove('active');
 
     // Tab switching
     document.querySelectorAll('#standings-tabs .tab-btn').forEach(btn => {
@@ -759,8 +804,416 @@
     document.getElementById('player-report-content').innerHTML = buildPlayerReportHTML(report);
   }
 
+  // ── Edit Pairing Form ─────────────────────────────────────
+  function renderEditPairingForm() {
+    // Populate datalist with active player names
+    const dl = document.getElementById('ep-player-list');
+    if (!dl) return;
+    dl.innerHTML = state.players
+      .filter(p => p.active !== false)
+      .map(p => `<option value="${esc(p.name)}">`)
+      .join('');
+
+    // Populate court select with named courts
+    const courtSel = document.getElementById('ep-court');
+    if (courtSel) {
+      const numCourts = parseInt(state.config.courts || 3);
+      courtSel.innerHTML = '';
+      for (let cn = 1; cn <= numCourts; cn++) {
+        const opt = document.createElement('option');
+        opt.value = String(cn);
+        opt.textContent = courtName(cn);
+        courtSel.appendChild(opt);
+      }
+    }
+
+    // Default week to current pair week
+    const weekEl = document.getElementById('ep-week');
+    if (weekEl && !weekEl.value) weekEl.value = state.currentPairWeek;
+  }
+
+  function setupEditPairing() {
+    const weekEl  = document.getElementById('ep-week');
+    const roundEl = document.getElementById('ep-round');
+    const courtEl = document.getElementById('ep-court');
+    const typeEl  = document.getElementById('ep-type');
+    const fields  = document.getElementById('ep-fields');
+    if (!weekEl) return;
+
+    // Load button — find existing pairing and fill fields
+    document.getElementById('btn-ep-load').addEventListener('click', () => {
+      const week  = parseInt(weekEl.value);
+      const round = parseInt(roundEl.value);
+      const court = String(courtEl.value).trim();
+      if (!week || !round || !court) { toast('Enter week, round, and court first.', 'warn'); return; }
+
+      const existing = state.pairings.find(p =>
+        parseInt(p.week) === week &&
+        parseInt(p.round) === round &&
+        String(p.court) === court
+      );
+
+      if (existing) {
+        typeEl.value = existing.type || 'game';
+        document.getElementById('ep-p1').value = existing.p1 || '';
+        document.getElementById('ep-p2').value = existing.p2 || '';
+        document.getElementById('ep-p3').value = existing.p3 || '';
+        document.getElementById('ep-p4').value = existing.p4 || '';
+      } else {
+        typeEl.value = 'game';
+        ['ep-p1','ep-p2','ep-p3','ep-p4'].forEach(id => {
+          document.getElementById(id).value = '';
+        });
+        toast(`No existing pairing found for Week ${week} Round ${round} Court ${court} — fill in to create new.`, 'warn');
+      }
+      fields.classList.remove('hidden');
+    });
+
+    // Save button
+    document.getElementById('btn-ep-save').addEventListener('click', async () => {
+      const week  = parseInt(weekEl.value);
+      const round = parseInt(roundEl.value);
+      const court = String(courtEl.value).trim();
+      const type  = typeEl.value;
+      const p1 = document.getElementById('ep-p1').value.trim();
+      const p2 = document.getElementById('ep-p2').value.trim();
+      const p3 = document.getElementById('ep-p3').value.trim();
+      const p4 = document.getElementById('ep-p4').value.trim();
+
+      if (!week || !round || !court) { toast('Week, round, and court are required.', 'warn'); return; }
+      if (!p1) { toast('Player 1 is required.', 'warn'); return; }
+      if (type === 'game' && !p3) { toast('Player 3 is required for a game.', 'warn'); return; }
+
+      // Remove existing entry for this slot, then add new one
+      state.pairings = state.pairings.filter(p =>
+        !(parseInt(p.week) === week && parseInt(p.round) === round && String(p.court) === court)
+      );
+      const newPairing = { week, round, court, p1, p2, p3, p4, type };
+      state.pairings.push(newPairing);
+
+      // Build full week pairings sorted by round then court to preserve display order
+      const weekPairings = state.pairings
+        .filter(p => parseInt(p.week) === week)
+        .sort((a, b) => parseInt(a.round) - parseInt(b.round) || String(a.court).localeCompare(String(b.court), undefined, { numeric: true }));
+
+      showLoading(true);
+      try {
+        await API.savePairings(week, weekPairings);
+        toast(`Pairing saved — Week ${week} Round ${round} Court ${court}.`);
+        renderPairingsPreview();
+      } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+      finally { showLoading(false); }
+    });
+
+    // Delete button
+    document.getElementById('btn-ep-delete').addEventListener('click', async () => {
+      const week  = parseInt(weekEl.value);
+      const round = parseInt(roundEl.value);
+      const court = String(courtEl.value).trim();
+      if (!confirm(`Delete pairing for Week ${week} Round ${round} Court ${court}?`)) return;
+
+      state.pairings = state.pairings.filter(p =>
+        !(parseInt(p.week) === week && parseInt(p.round) === round && String(p.court) === court)
+      );
+      const weekPairings = state.pairings
+        .filter(p => parseInt(p.week) === week)
+        .sort((a, b) => parseInt(a.round) - parseInt(b.round) || String(a.court).localeCompare(String(b.court), undefined, { numeric: true }));
+
+      showLoading(true);
+      try {
+        await API.savePairings(week, weekPairings);
+        toast('Pairing deleted.');
+        document.getElementById('ep-fields').classList.add('hidden');
+        ['ep-p1','ep-p2','ep-p3','ep-p4'].forEach(id => {
+          document.getElementById(id).value = '';
+        });
+        renderPairingsPreview();
+      } catch (e) { toast('Delete failed: ' + e.message, 'error'); }
+      finally { showLoading(false); }
+    });
+  }
+
+  // ── Tournament ────────────────────────────────────────────
+  function renderTournamentStatus() {
+    const t = state.tournament;
+    if (!t) return;
+    const el = document.getElementById('tourn-status');
+    if (!el) return;
+
+    const week = t.week;
+    const modeLabel = t.mode === 'double' ? 'Double Elimination' : 'Single Elimination';
+
+    // Helper: get seed label for a player name
+    function getSeed(name) {
+      const s = t.seeds.find(s => s.name === name || s.name2 === name);
+      if (!s) return '';
+      return s.name2 ? `#${s.seed}` : `#${s.seed}`;
+    }
+
+    function teamLabel(p1, p2) {
+      const seed = getSeed(p1);
+      const names = p2 ? `${esc(p1)} &amp; ${esc(p2)}` : esc(p1);
+      return `<span style="font-size:0.7rem; color:var(--muted);">${seed}</span> ${names}`;
+    }
+
+    // Collect all rounds that have been locked (exist in state.pairings for this week)
+    const weekPairings = state.pairings.filter(p => parseInt(p.week) === week);
+    const lockedRounds = [...new Set(weekPairings.map(p => parseInt(p.round)))].sort((a,b)=>a-b);
+
+    // Separate winners and losers bracket games
+    const wGames = []; // { round, p1,p2,p3,p4, score1,score2, winner }
+    const lGames = [];
+    const byes   = [];
+
+    weekPairings.forEach(p => {
+      const score = state.scores.find(s =>
+        parseInt(s.week) === week && parseInt(s.round) === parseInt(p.round) &&
+        String(s.court) === String(p.court)
+      );
+      const s1 = score ? score.score1 : '';
+      const s2 = score ? score.score2 : '';
+      const scored = s1 !== '' && s1 !== null && s2 !== '' && s2 !== null;
+      const t1win  = scored && parseInt(s1) > parseInt(s2);
+      const entry  = { round: parseInt(p.round), p1:p.p1, p2:p.p2, p3:p.p3, p4:p.p4,
+                       score1:s1, score2:s2, scored, t1win, court: p.court };
+      if (p.type === 'bye') {
+        byes.push(entry);
+      } else {
+        wGames.push(entry);
+      }
+    });
+
+    if (!lockedRounds.length && !t.seeds.length) {
+      el.innerHTML = '';
+      return;
+    }
+
+    // ── Bracket diagram ──────────────────────────────────────
+    // One column per round, match boxes stacked vertically
+    const allRounds = lockedRounds.length ? lockedRounds : [];
+    // Add pending round label if not yet locked
+    const pendingRound = t.round;
+    const displayRounds = allRounds.includes(pendingRound) ? allRounds
+      : [...allRounds, pendingRound];
+
+    let html = `<div style="font-size:0.78rem; color:var(--muted); margin-bottom:8px;">
+      ${modeLabel} · Week ${week} · Current Round: ${t.round}
+    </div>`;
+
+    // Status summary badges
+    const active   = t.seeds.filter(s => !s.eliminated);
+    const inW      = active.filter(s => !s.inLosersBracket);
+    const inL      = active.filter(s => s.inLosersBracket);
+    html += `<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+      <span style="background:rgba(94,194,106,0.15); color:var(--green); border-radius:4px; padding:2px 8px; font-size:0.75rem;">
+        🏆 Winners: ${inW.length}
+      </span>
+      ${t.mode === 'double' && inL.length ? `<span style="background:rgba(245,200,66,0.15); color:var(--gold); border-radius:4px; padding:2px 8px; font-size:0.75rem;">⚡ Losers: ${inL.length}</span>` : ''}
+      <span style="background:rgba(255,255,255,0.06); color:var(--muted); border-radius:4px; padding:2px 8px; font-size:0.75rem;">
+        Eliminated: ${t.seeds.filter(s=>s.eliminated).length}
+      </span>
+    </div>`;
+
+    // Build bracket columns
+    if (allRounds.length) {
+      html += `<div style="overflow-x:auto; padding-bottom:8px;">
+        <div style="display:flex; gap:0; min-width:fit-content;">`;
+
+      allRounds.forEach((r, ri) => {
+        const roundGames = wGames.filter(g => g.round === r);
+        const roundByes  = byes.filter(g => g.round === r);
+        const isLast     = ri === allRounds.length - 1;
+
+        html += `<div style="display:flex; flex-direction:column; min-width:200px;">
+          <div style="font-size:0.72rem; font-weight:700; color:var(--muted); text-transform:uppercase;
+                      letter-spacing:0.05em; padding:4px 8px; margin-bottom:6px; text-align:center;">
+            Round ${r}
+          </div>`;
+
+        // Games
+        roundGames.forEach(g => {
+          const winStyle  = 'color:var(--green); font-weight:700;';
+          const loseStyle = 'color:rgba(255,255,255,0.35);';
+          const t1style = g.scored ? (g.t1win ? winStyle : loseStyle) : 'color:var(--white);';
+          const t2style = g.scored ? (!g.t1win ? winStyle : loseStyle) : 'color:var(--white);';
+          const scoreHtml = g.scored
+            ? `<span style="font-size:0.78rem; font-weight:700; color:var(--white);">${g.score1}–${g.score2}</span>`
+            : `<span style="font-size:0.72rem; color:var(--muted);">pending</span>`;
+
+          html += `<div style="background:var(--card-bg); border:1px solid rgba(255,255,255,0.08);
+                      border-radius:8px; padding:7px 10px; margin:2px 4px; position:relative;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+              <div style="${t1style} font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:130px;">
+                ${teamLabel(g.p1, g.p2)}
+              </div>
+              <div style="margin-left:6px; flex-shrink:0;">${scoreHtml}</div>
+            </div>
+            <div style="border-top:1px solid rgba(255,255,255,0.06); margin:3px 0;"></div>
+            <div style="${t2style} font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:130px; margin-top:4px;">
+              ${teamLabel(g.p3, g.p4)}
+            </div>
+          </div>`;
+        });
+
+        // Byes
+        roundByes.forEach(g => {
+          html += `<div style="background:rgba(122,155,181,0.07); border:1px dashed rgba(255,255,255,0.1);
+                      border-radius:8px; padding:7px 10px; margin:2px 4px;">
+            <div style="font-size:0.72rem; color:var(--muted); margin-bottom:2px;">⏸ BYE</div>
+            <div style="font-size:0.8rem; color:var(--white);">${teamLabel(g.p1, g.p2)}</div>
+          </div>`;
+        });
+
+        html += `</div>`;
+
+        // Connector arrow between columns
+        if (!isLast) {
+          html += `<div style="display:flex; align-items:center; padding:0 2px; color:rgba(255,255,255,0.2); font-size:1.2rem;">›</div>`;
+        }
+      });
+
+      html += `</div></div>`;
+    }
+
+    // ── Seed reference table ──────────────────────────────────
+    html += `<details style="margin-top:10px;">
+      <summary style="font-size:0.78rem; color:var(--muted); cursor:pointer; user-select:none;">
+        Seed Reference
+      </summary>
+      <table style="font-size:0.75rem; width:100%; margin-top:6px;">
+        <thead><tr><th>Seed</th><th>Team</th><th>Status</th><th>W</th><th>L</th></tr></thead>
+        <tbody>`;
+    t.seeds.forEach(s => {
+      const status = s.eliminated
+        ? `<span style="color:var(--danger);">Out</span>`
+        : s.inLosersBracket
+          ? `<span style="color:var(--gold);">Losers</span>`
+          : `<span style="color:var(--green);">Winners</span>`;
+      const w = s.wBracketWins + s.lBracketWins;
+      const l = s.wBracketLosses + s.lBracketLosses;
+      const name = s.name2 ? `${esc(s.name)} &amp; ${esc(s.name2)}` : esc(s.name);
+      html += `<tr>
+        <td>#${s.seed}</td>
+        <td style="font-weight:600;">${name}</td>
+        <td>${status}</td>
+        <td>${w}</td><td>${l}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></details>`;
+
+    el.innerHTML = html;
+  }
+
+  function setupTournament() {
+    const genBtn  = document.getElementById('btn-tourn-generate');
+    const advBtn  = document.getElementById('btn-tourn-advance');
+    const resetBtn = document.getElementById('btn-tourn-reset');
+    if (!genBtn) return;
+
+    genBtn.addEventListener('click', () => {
+      const week   = state.currentPairWeek;
+      const mode   = document.getElementById('tourn-mode').value;
+      const courts = parseInt(state.config.courts || 3);
+
+      const presentPlayers = state.players
+        .filter(p => p.active !== false)
+        .filter(p => {
+          const rec = state.attendance.find(a => a.player === p.name && String(a.week) === String(week));
+          return rec && rec.status === 'present';
+        })
+        .map(p => p.name);
+
+      const gameMode = state.config.gameMode || 'doubles';
+      const doubles  = gameMode !== 'singles';
+
+      if (presentPlayers.length < 2) {
+        toast('Need at least 2 present players for a tournament.', 'warn'); return;
+      }
+
+      // Doubles requires an even number of players so every team has 2 members
+      if (doubles && presentPlayers.length % 2 !== 0) {
+        toast(
+          `Doubles tournament requires an even number of players. ` +
+          `You currently have ${presentPlayers.length} marked present. ` +
+          `Please mark one more player as present, or mark one as absent, then try again.`,
+          'warn'
+        );
+        return;
+      }
+
+      const existing = state.pairings.filter(p => parseInt(p.week) === week);
+      if (existing.length && !confirm(`Week ${week} already has pairings. Replace with tournament bracket?`)) return;
+      const result = Tournament.generateTournament(presentPlayers, courts, week, mode, state.standings, doubles);
+      if (result.error) { toast(result.error, 'error'); return; }
+
+      state.tournament = { week, mode, round: 1, seeds: result.seeds };
+      state.pendingPairings = result.pairings;
+      document.getElementById('btn-lock-pairings').disabled = false;
+      document.getElementById('optimizer-status').classList.add('hidden');
+      renderPairingsPreview();
+      toast(`${mode === 'double' ? 'Double' : 'Single'} elimination bracket generated for ${presentPlayers.length} players.`);
+    });
+
+    advBtn.addEventListener('click', async () => {
+      const t = state.tournament;
+      if (!t) return;
+      const week = t.week;
+
+      // Check all games in current round have scores
+      const roundPairings = state.pairings.filter(p =>
+        parseInt(p.week) === week && parseInt(p.round) === t.round && (p.type === 'tourn-game' || p.type === 'game')
+      );
+      const roundScores = state.scores.filter(s => parseInt(s.week) === week && parseInt(s.round) === t.round);
+      const unscoredGames = roundPairings.filter(game =>
+        !roundScores.find(s => String(s.court) === String(game.court) &&
+          s.score1 !== '' && s.score2 !== '' && s.score1 !== null && s.score2 !== null)
+      );
+
+      if (unscoredGames.length) {
+        if (!confirm(`${unscoredGames.length} game(s) in round ${t.round} have no scores. Advance anyway? Those players will be treated as tied.`)) return;
+      }
+
+      const result = Tournament.advanceTournament(t.seeds, roundScores, t.round, parseInt(state.config.courts || 3), week, t.mode);
+
+      state.tournament.seeds = result.seeds;
+
+      if (result.done) {
+        state.tournament = null;
+        const msg = result.champion ? `🏆 Tournament complete! Champion: ${result.champion}` : '🏆 Tournament complete!';
+        toast(msg);
+        const statusEl = document.getElementById('tourn-status');
+        if (statusEl) statusEl.innerHTML = `<div style="font-size:1rem; color:var(--gold); font-weight:700; padding:8px 0;">${esc(msg)}</div>`;
+        advBtn.classList.add('hidden');
+        resetBtn.classList.add('hidden');
+        renderPairingsPreview();
+        return;
+      }
+
+      state.tournament.round++;
+      // Keep tourn- types in pendingPairings for display/advance logic,
+      // they get normalized to game/bye at lock time
+      state.pendingPairings = result.pairings;
+      document.getElementById('btn-lock-pairings').disabled = false;
+      renderPairingsPreview();
+      toast(`Round ${state.tournament.round} bracket ready — review and lock to save.`);
+    });
+
+    resetBtn.addEventListener('click', () => {
+      if (!confirm('Reset tournament? This clears tournament tracking but keeps existing pairings.')) return;
+      state.tournament = null;
+      advBtn.classList.add('hidden');
+      resetBtn.classList.add('hidden');
+      const statusEl = document.getElementById('tourn-status');
+      if (statusEl) statusEl.innerHTML = '';
+      renderPairingsPreview();
+      toast('Tournament reset.');
+    });
+  }
+
   // ── Events ─────────────────────────────────────────────────
   function setupEvents() {
+    setupEditPairing();
+    setupTournament();
     // Save config
     document.getElementById('btn-save-config').addEventListener('click', async () => {
       const weeks = parseInt(document.getElementById('cfg-weeks').value);
@@ -769,6 +1222,7 @@
         location:       document.getElementById('cfg-location').value.trim(),
         sessionTime:    document.getElementById('cfg-time').value.trim(),
         notes:          document.getElementById('cfg-notes').value.trim(),
+        leagueUrl:      document.getElementById('cfg-league-url').value.trim(),
         rules:          document.getElementById('cfg-rules').value.trim(),
         adminPin:       document.getElementById('cfg-admin-pin').value || state.config.adminPin,
         replyTo:        document.getElementById('cfg-reply-to').value.trim(),
@@ -804,6 +1258,67 @@
         renderAttendance();
       } catch (e) { toast('Save failed: ' + e.message, 'error'); }
       finally { showLoading(false); }
+    });
+
+    // Send league message
+    document.getElementById('btn-send-message').addEventListener('click', async () => {
+      const subject = document.getElementById('msg-subject').value.trim();
+      const body    = document.getElementById('msg-body').value.trim();
+      if (!subject) { toast('Please enter a subject.', 'warn'); return; }
+      if (!body)    { toast('Please enter a message.', 'warn'); return; }
+
+      const recipients = state.players.filter(p => p.active !== false && p.email);
+      if (!recipients.length) {
+        toast('No players have email addresses on file.', 'warn'); return;
+      }
+      if (!confirm(`Send to ${recipients.length} player(s)?`)) return;
+
+      // Build optional league info sections
+      const c = state.config;
+      const incName     = document.getElementById('msg-inc-name').checked;
+      const incLocation = document.getElementById('msg-inc-location').checked;
+      const incTime     = document.getElementById('msg-inc-time').checked;
+      const incRules    = document.getElementById('msg-inc-rules').checked;
+      const incDates    = document.getElementById('msg-inc-dates').checked;
+      const incUrl      = document.getElementById('msg-inc-url').checked;
+      const incPlayers  = document.getElementById('msg-inc-players').checked;
+
+      const leagueInfo = {
+        leagueName:  incName     ? (c.leagueName  || '') : '',
+        location:    incLocation ? (c.location    || '') : '',
+        sessionTime: incTime     ? (c.sessionTime || '') : '',
+        rules:       incRules    ? (c.rules       || '') : '',
+        leagueUrl:   incUrl      ? (c.leagueUrl || '') : '',
+        players:     incPlayers  ? state.players.filter(p => p.active !== false).map(p => p.name) : [],
+        dates:       incDates    ? (() => {
+          const weeks = parseInt(c.weeks || 8);
+          const d = [];
+          for (let w = 1; w <= weeks; w++) {
+            if (c['date_' + w]) d.push({ week: w, date: c['date_' + w] });
+          }
+          return d;
+        })() : [],
+      };
+
+      showLoading(true);
+      const statusEl = document.getElementById('msg-status');
+      try {
+        const result = await API.sendLeagueMessage({
+          subject,
+          body,
+          leagueInfo,
+          replyTo: c.replyTo || '',
+          recipients: recipients.map(p => ({ name: p.name, email: p.email })),
+        });
+        statusEl.textContent = `✓ Sent to ${result.sent} player(s).`;
+        statusEl.style.color = 'var(--green)';
+        if (result.errors && result.errors.length) {
+          statusEl.textContent += ' Some failed: ' + result.errors.join(', ');
+        }
+      } catch (e) {
+        statusEl.textContent = 'Send failed: ' + e.message;
+        statusEl.style.color = 'var(--danger)';
+      } finally { showLoading(false); }
     });
 
     // Add player
@@ -847,6 +1362,8 @@
     setupWeekNav('pair-week-prev', 'pair-week-next', 'currentPairWeek', () => {
       state.pendingPairings = null;
       renderPairingsPreview();
+      const epWeek = document.getElementById('ep-week');
+      if (epWeek) epWeek.value = state.currentPairWeek;
     });
     setupWeekNav('score-week-prev', 'score-week-next', 'currentScoreWeek', renderScoresheet);
     setupWeekNav('stand-week-prev', 'stand-week-next', 'currentStandWeek', () => {
@@ -998,10 +1515,20 @@
       const week = state.currentPairWeek;
       showLoading(true);
       try {
-        await API.savePairings(week, state.pendingPairings);
-        // Remove old pairings for this week from local state and add new
+        // Normalize tournament types to standard game/bye so all existing
+        // scoresheet, score entry, and standings code works unchanged
+        const normalizedPairings = state.pendingPairings.map(p => ({
+          ...p,
+          type: p.type === 'tourn-bye' ? 'bye' : 'game'
+        }));
+        // For tournament rounds, preserve existing rounds by merging all week pairings
+        // (savePairings replaces the whole week, so we must send all rounds together)
+        const existingWeekPairings = state.pairings.filter(p => parseInt(p.week) === week);
+        const allWeekPairings = [...existingWeekPairings, ...normalizedPairings];
+        await API.savePairings(week, allWeekPairings);
+        // Update local state — add new round without removing existing rounds
         state.pairings = state.pairings.filter(p => parseInt(p.week) !== week);
-        state.pairings.push(...state.pendingPairings);
+        state.pairings.push(...allWeekPairings);
         state.pendingPairings = null;
         document.getElementById('btn-lock-pairings').disabled = true;
         toast(`Pairings for Week ${week} saved!`);
@@ -1106,6 +1633,7 @@
           sessionTime:  state.config.sessionTime || '',
           notes:        state.config.notes       || '',
           replyTo:      state.config.replyTo     || '',
+          leagueUrl:    state.config.leagueUrl    || '',
           weekScores,
           weekPairings,
           weekStandings:  weekStand,
@@ -1125,6 +1653,30 @@
     // Player report select
     document.getElementById('report-player-select').addEventListener('change', e => {
       renderPlayerReport(e.target.value);
+      document.getElementById('btn-email-player-report').disabled = !e.target.value;
+    });
+
+    document.getElementById('btn-email-player-report').addEventListener('click', async () => {
+      const playerName = document.getElementById('report-player-select').value;
+      if (!playerName) return;
+      const player = state.players.find(p => p.name === playerName);
+      if (!player || !player.email) {
+        toast(`${playerName} has no email address on file.`, 'warn'); return;
+      }
+      if (!confirm(`Email report for ${playerName} to ${player.email}?`)) return;
+      const report = Reports.computePlayerReport(playerName, state.scores, state.standings);
+      showLoading(true);
+      try {
+        await API.sendPlayerReport({
+          playerName,
+          email: player.email,
+          report,
+          leagueName: state.config.leagueName || 'Pickleball League',
+          replyTo:    state.config.replyTo    || '',
+        });
+        toast(`Report emailed to ${player.email}.`);
+      } catch (e) { toast('Send failed: ' + e.message, 'error'); }
+      finally { showLoading(false); }
     });
 
     // Add league toggle
@@ -1153,7 +1705,8 @@
         const copyConfig      = document.getElementById('new-league-copy-config').checked;
         const copyPlayers     = document.getElementById('new-league-copy-players').checked;
         const canCreateLeagues = document.getElementById('new-league-can-create').checked;
-        const result = await API.addLeague(leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues);
+        const hidden = document.getElementById('new-league-hidden').checked;
+        const result = await API.addLeague(leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues, hidden);
         if (result.warnings && result.warnings.length) {
           result.warnings.forEach(w => toast('Copy warning: ' + w, 'warn'));
         }
@@ -1174,7 +1727,7 @@
     const session = Auth.getSession();
     let leagues = [];
     try {
-      const data = await API.getLeagues();
+      const data = await API.getLeaguesAll(); // admin always sees all leagues including hidden
       leagues = data.leagues || [];
     } catch (e) {
       toast('Failed to load leagues: ' + e.message, 'error');
@@ -1186,7 +1739,7 @@
     const canCreate = !thisLeague || thisLeague.canCreateLeagues !== false;
     document.getElementById('btn-show-add-league').style.display = canCreate ? '' : 'none';
     let html = `<table>
-      <thead><tr><th>ID</th><th>Name</th><th>Sheet ID</th><th>Status</th><th>Can Create</th><th></th></tr></thead>
+      <thead><tr><th>ID</th><th>Name</th><th>Sheet ID</th><th>Status</th><th>Can Create</th><th>Visibility</th><th></th></tr></thead>
       <tbody>`;
 
     if (!leagues.length) {
@@ -1201,6 +1754,7 @@
         <td><code style="font-size:0.72rem; color:var(--muted);">${esc(l.sheetId)}</code></td>
         <td><span class="badge ${l.active ? 'badge-green' : 'badge-muted'}">${l.active ? 'Active' : 'Inactive'}</span></td>
         <td><span class="badge ${l.canCreateLeagues !== false ? 'badge-green' : 'badge-muted'}">${l.canCreateLeagues !== false ? 'Yes' : 'No'}</span></td>
+        <td><span class="badge ${l.hidden ? 'badge-muted' : 'badge-green'}">${l.hidden ? 'Hidden' : 'Visible'}</span></td>
         <td style="display:flex; gap:4px;">
           <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.72rem;"
             data-toggle-league="${esc(l.leagueId)}" data-active="${l.active}">
@@ -1210,6 +1764,10 @@
             data-toggle-create="${esc(l.leagueId)}" data-can-create="${l.canCreateLeagues !== false}"
             ${!canCreate ? 'disabled title="Your league cannot create leagues"' : ''}>
             ${l.canCreateLeagues !== false ? 'Disallow Create' : 'Allow Create'}
+          </button>
+          <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.72rem;"
+            data-toggle-hidden="${esc(l.leagueId)}" data-hidden="${!!l.hidden}">
+            ${l.hidden ? 'Make Visible' : 'Hide'}
           </button>
         </td>
       </tr>`;
@@ -1225,6 +1783,18 @@
         try {
           await API.updateLeague(lid, undefined, undefined, !nowActive, undefined);
           toast(`League ${nowActive ? 'deactivated' : 'activated'}.`);
+          renderLeagues();
+        } catch (e) { toast('Failed: ' + e.message, 'error'); }
+      });
+    });
+
+    document.querySelectorAll('[data-toggle-hidden]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const lid = btn.dataset.toggleHidden;
+        const nowHidden = btn.dataset.hidden === 'true';
+        try {
+          await API.updateLeague(lid, undefined, undefined, undefined, undefined, !nowHidden);
+          toast(`League is now ${nowHidden ? 'visible' : 'hidden'}.`);
           renderLeagues();
         } catch (e) { toast('Failed: ' + e.message, 'error'); }
       });

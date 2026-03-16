@@ -1,0 +1,254 @@
+// ============================================================
+// tournament.js — Single and double elimination bracket generator
+// ============================================================
+
+const Tournament = (() => {
+
+  // ── Helpers ────────────────────────────────────────────────
+
+  // Next power of 2 >= n
+  function nextPow2(n) {
+    let p = 1;
+    while (p < n) p *= 2;
+    return p;
+  }
+
+  // Assign matches to courts round-robin
+  function assignCourts(matches, courts) {
+    return matches.map((m, i) => ({ ...m, court: (i % courts) + 1 }));
+  }
+
+  // Build a seeded bracket entry list from standings + present players
+  // For doubles, consecutive pairs of ranked players form teams
+  function buildSeeds(presentPlayers, standings, doubles) {
+    // Sort present players by rank (lower rank = better seed)
+    const ranked = presentPlayers
+      .map(name => {
+        const s = standings.find(st => st.name === name);
+        return { name, rank: s && s.rank !== '-' ? s.rank : 9999 };
+      })
+      .sort((a, b) => a.rank - b.rank);
+
+    if (!doubles) {
+      return ranked.map((p, i) => ({
+        seed: i + 1,
+        name: p.name, name2: '',
+        wBracketWins: 0, wBracketLosses: 0,
+        lBracketWins: 0, lBracketLosses: 0,
+        eliminated: false, inLosersBracket: false,
+      }));
+    }
+
+    // Doubles: pair seeds 1+2, 3+4, 5+6... into teams
+    // If odd number of players, last player teams alone
+    const teams = [];
+    for (let i = 0; i < ranked.length; i += 2) {
+      teams.push({
+        seed: Math.floor(i / 2) + 1,
+        name:  ranked[i].name,
+        name2: ranked[i + 1] ? ranked[i + 1].name : '',
+        wBracketWins: 0, wBracketLosses: 0,
+        lBracketWins: 0, lBracketLosses: 0,
+        eliminated: false, inLosersBracket: false,
+      });
+    }
+    return teams;
+  }
+
+  // ── Round 1 generation ─────────────────────────────────────
+  // Seed 1 vs lowest, 2 vs second-lowest, etc.
+  // Top seeds get byes only if needed to fill courts evenly.
+  function generateRound1(seeds, courts, round, week, mode) {
+    const n = seeds.length;
+    // Use as many courts as possible without exceeding available matches.
+    // With n seeds we can have at most floor(n/2) simultaneous matches.
+    // Byes go to top seeds only when n is odd (one player/team can't be paired).
+    const maxMatches   = Math.floor(n / 2);
+    const activeCourts = Math.min(courts, maxMatches);
+    // Players/teams that play this round = activeCourts * 2
+    // Remaining get byes (always the top seeds)
+    const playCount = activeCourts * 2;
+    const byeCount  = n - playCount;
+
+    // Top `byeCount` seeds get byes
+    const byeSeeds    = seeds.slice(0, byeCount);
+    const playSeeds   = seeds.slice(byeCount);
+
+    const pairings = [];
+
+    // Bye entries
+    byeSeeds.forEach(s => {
+      pairings.push({
+        week, round, court: 'bye',
+        p1: s.name, p2: s.name2 || '', p3: '', p4: '',
+        type: 'tourn-bye'
+      });
+    });
+
+    // Games: top half of playing seeds vs bottom half (mirrored)
+    const half = playSeeds.length / 2;
+    const matches = [];
+    for (let i = 0; i < half; i++) {
+      matches.push({
+        week, round,
+        p1: playSeeds[i].name,
+        p2: playSeeds[i].name2 || '',
+        p3: playSeeds[playSeeds.length - 1 - i].name,
+        p4: playSeeds[playSeeds.length - 1 - i].name2 || '',
+        type: 'tourn-game'
+      });
+    }
+
+    assignCourts(matches, courts).forEach(m => pairings.push(m));
+    return pairings;
+  }
+
+  // ── Advance round ──────────────────────────────────────────
+  // Given completed scores for current round, determine next round pairings.
+  // Returns { pairings, seeds, done, champion }
+  function advanceRound(seeds, weekScores, currentRound, courts, week, mode) {
+    const nextRound = currentRound + 1;
+
+    // Determine winners/losers from this round's scores
+    const roundScores = weekScores.filter(s => parseInt(s.round) === currentRound);
+
+    // Update seeds based on results
+    const updatedSeeds = seeds.map(s => ({ ...s }));
+
+    // Process byes — bye players advance automatically
+    const byePairings = weekScores
+      .filter(s => parseInt(s.round) === currentRound);
+    // Actually byes don't have scores — find them from pairings marked tourn-bye
+
+    roundScores.forEach(score => {
+      if (score.score1 === '' || score.score2 === '' ||
+          score.score1 === null || score.score2 === null) return;
+
+      const s1 = parseInt(score.score1);
+      const s2 = parseInt(score.score2);
+      const p1won = s1 > s2;
+
+      const winner = p1won ? score.p1 : score.p3;
+      const loser  = p1won ? score.p3 : score.p1;
+
+      const wSeed = updatedSeeds.find(s => s.name === winner);
+      const lSeed = updatedSeeds.find(s => s.name === loser);
+
+      if (wSeed) {
+        if (wSeed.inLosersBracket) wSeed.lBracketWins++;
+        else wSeed.wBracketWins++;
+      }
+      if (lSeed) {
+        if (mode === 'double') {
+          if (lSeed.inLosersBracket) {
+            // Already in losers bracket — second loss, eliminated
+            lSeed.lBracketLosses++;
+            lSeed.eliminated = true;
+          } else {
+            // First loss — move to losers bracket
+            lSeed.wBracketLosses++;
+            lSeed.inLosersBracket = true;
+          }
+        } else {
+          // Single elimination — out
+          lSeed.wBracketLosses++;
+          lSeed.eliminated = true;
+        }
+      }
+    });
+
+    // Who is still playing?
+    const winners  = updatedSeeds.filter(s => !s.eliminated && !s.inLosersBracket);
+    const losers   = updatedSeeds.filter(s => !s.eliminated && s.inLosersBracket);
+    const active   = updatedSeeds.filter(s => !s.eliminated);
+
+    // Check for completion
+    if (mode === 'single') {
+      if (active.length <= 1) {
+        return { pairings: [], seeds: updatedSeeds, done: true, champion: active[0] ? (active[0].name2 ? active[0].name + ' & ' + active[0].name2 : active[0].name) : null };
+      }
+    } else {
+      // Double elimination done when only 1 remains or grand final played
+      if (active.length <= 1) {
+        return { pairings: [], seeds: updatedSeeds, done: true, champion: active[0] ? (active[0].name2 ? active[0].name + ' & ' + active[0].name2 : active[0].name) : null };
+      }
+      // Grand final: exactly 1 winner and 1 loser left
+      if (winners.length === 1 && losers.length === 1) {
+        // Grand final — losers bracket champ vs winners bracket champ
+        // Winners bracket champ only needs 1 loss to be eliminated
+        const match = assignCourts([{
+          week, round: nextRound,
+          p1: winners[0].name, p2: winners[0].name2 || '',
+          p3: losers[0].name,  p4: losers[0].name2 || '',
+          type: 'tourn-grand-final'
+        }], courts);
+        return { pairings: match, seeds: updatedSeeds, done: false };
+      }
+    }
+
+    const pairings = [];
+    let courtIdx = 0;
+
+    // Winners bracket — pair by seed order
+    const wMatches = pairBracket(winners, week, nextRound, 'tourn-game');
+    wMatches.forEach(m => { m.court = (courtIdx++ % courts) + 1; pairings.push(m); });
+
+    // Losers bracket (double elim only)
+    if (mode === 'double' && losers.length > 0) {
+      if (losers.length === 1) {
+        // Lone loser gets a bye in losers bracket
+        pairings.push({ week, round: nextRound, court: 'bye', p1: losers[0].name, p2: losers[0].name2 || '', p3:'', p4:'', type:'tourn-bye' });
+      } else {
+        const lMatches = pairBracket(losers, week, nextRound, 'tourn-loser-game');
+        lMatches.forEach(m => { m.court = (courtIdx++ % courts) + 1; pairings.push(m); });
+      }
+    }
+
+    return { pairings, seeds: updatedSeeds, done: false };
+  }
+
+  // Pair players/teams: first vs last, second vs second-last.
+  // Top seed (players[0]) always gets the bye when count is odd.
+  function pairBracket(players, week, round, type) {
+    const matches = [];
+    let playing = players;
+
+    // Odd team out: top seed gets the bye, remaining seeds pair up
+    if (players.length % 2 === 1) {
+      const bye = players[0];
+      matches.push({ week, round, court: 'bye', p1: bye.name, p2: bye.name2 || '', p3:'', p4:'', type:'tourn-bye' });
+      playing = players.slice(1);
+    }
+
+    const half = playing.length / 2;
+    for (let i = 0; i < half; i++) {
+      const a = playing[i];
+      const b = playing[playing.length - 1 - i];
+      matches.push({
+        week, round,
+        p1: a.name,  p2: a.name2 || '',
+        p3: b.name,  p4: b.name2 || '',
+        type
+      });
+    }
+    return matches;
+  }
+
+  // ── Entry points ───────────────────────────────────────────
+
+  function generateTournament(presentPlayers, courts, week, mode, standings, doubles) {
+    const minPlayers = doubles ? 4 : 2;
+    if (presentPlayers.length < minPlayers) {
+      return { error: `Need at least ${minPlayers} players for a ${doubles ? 'doubles' : 'singles'} tournament.` };
+    }
+    const seeds = buildSeeds(presentPlayers, standings, doubles);
+    const pairings = generateRound1(seeds, courts, 1, week, mode);
+    return { pairings, seeds, round: 1, mode, week, doubles };
+  }
+
+  function advanceTournament(seeds, weekScores, currentRound, courts, week, mode) {
+    return advanceRound(seeds, weekScores, currentRound, courts, week, mode);
+  }
+
+  return { generateTournament, advanceTournament };
+})();

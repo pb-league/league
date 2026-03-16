@@ -12,7 +12,7 @@ const API = (() => {
   // const GAS_URL = 'https://script.google.com/macros/s/AKfycbziZPrG5fSM_ufJYei6r_DoFTCjt4ymGuof-UBJRRj84oChtHtE67r6orMUJnGk7hbk/exec';
 // const GAS_URL = 'https://script.google.com/macros/s/AKfycbyyOWnHgNGf7JOJqHteSLmu7h1fIc0ZJfmuKJ1-xIjWVuR4b07DXWgAu10LhIrnQTNTAQ/exec';
 // for released project:
- const GAS_URL = 'https://script.google.com/macros/s/AKfycbzudYO4IDqCJt92kR4gu6dVJyGN5LoKtxpD3RYR1pNHepxU_liEdpogjCnE8mWTOXqU/exec';
+   const GAS_URL = 'https://script.google.com/macros/s/AKfycbzudYO4IDqCJt92kR4gu6dVJyGN5LoKtxpD3RYR1pNHepxU_liEdpogjCnE8mWTOXqU/exec';
   // Get the active leagueId from session (set at login)
   function leagueId() {
     try {
@@ -56,8 +56,9 @@ const API = (() => {
   return {
     // League registry (no leagueId needed)
     getLeagues:       ()                      => get('getLeagues'),
-    addLeague:        (leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues) => post({ action: 'addLeague', leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues }),
-    updateLeague:          (leagueId, name, sheetId, active, canCreateLeagues) => post({ action: 'updateLeague', leagueId, name, sheetId, active, canCreateLeagues }),
+    getLeaguesAll:    ()                      => get('getLeagues', { includeHidden: true }),
+    addLeague:        (leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues, hidden) => post({ action: 'addLeague', leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues, hidden }),
+    updateLeague:          (leagueId, name, sheetId, active, canCreateLeagues, hidden) => post({ action: 'updateLeague', leagueId, name, sheetId, active, canCreateLeagues, hidden }),
     updateLeagueWithCaller: (leagueId, name, sheetId, active, canCreateLeagues, callerLeagueId) => post({ action: 'updateLeague', leagueId, name, sheetId, active, canCreateLeagues, callerLeagueId }),
 
     // League-scoped (leagueId auto-injected from session)
@@ -76,7 +77,9 @@ const API = (() => {
     setAttendance:    (player, week, status) => post({ action: 'setAttendance', player, week, status }),
     savePairings:     (week, pairings) => post({ action: 'savePairings', week, pairings }),
     saveScores:       (week, scores)   => post({ action: 'saveScores', week, scores }),
-    sendWeeklyReport: (payload)        => post({ action: 'sendWeeklyReport', ...payload }),
+    sendWeeklyReport:   (payload)      => post({ action: 'sendWeeklyReport', ...payload }),
+    sendLeagueMessage:  (payload)      => post({ action: 'sendLeagueMessage', ...payload }),
+    sendPlayerReport:   (payload)      => post({ action: 'sendPlayerReport', ...payload }),
     changePin:        (name, currentPin, newPin) => post({ action: 'changePin', name, currentPin, newPin }),
     emailPin:         (name)             => post({ action: 'emailPin', name }),
   };

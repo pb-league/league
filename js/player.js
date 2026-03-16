@@ -62,7 +62,8 @@
         document.getElementById('page-' + page)?.classList.add('active');
         if (page === 'player-report') renderPlayerReportSelect();
         if (page === 'score-entry') renderScoreEntry();
-        if (page === 'standings-trend') drawRankTrendChart('player-rank-trend-chart', 'player-rank-trend-legend', state, playerName);
+        if (page === 'standings') renderPlayerStandings();
+        if (page === 'tournament') renderTournamentBracket();
       });
     });
   }
@@ -74,10 +75,10 @@
     renderEmailPrefs();
     renderChangePin();
     renderScoresheet();
-    renderWeeklyStandings();
-    renderSeasonStandings();
+    renderPlayerStandings();
     renderFullAttendance();
     renderPlayerReportSelect();
+    renderTournamentBracket();
     if (canScore) renderScoreEntry();
   }
 
@@ -436,7 +437,7 @@
         html += `<div style="padding:6px 10px; margin-bottom:6px; font-size:0.85rem;
                               background:rgba(122,155,181,0.07); border-radius:8px;
                               ${isMe ? 'border-left:3px solid var(--gold);' : ''}">
-          ⏸ <strong style="${isMe ? 'color:var(--gold);' : 'color:var(--white);'}">${esc(bye.p1)}</strong>
+          ⏸ <strong style="${isMe ? 'color:var(--gold);' : 'color:var(--white);'}">${esc(bye.p1)}${bye.p2 ? ' &amp; ' + esc(bye.p2) : ''}</strong>
           <span style="color:var(--muted);"> — Bye</span>
         </div>`;
       });
@@ -529,11 +530,13 @@
             <div style="display:flex; align-items:center; justify-content:center; gap:4px;">
               <input type="number" class="score-input" data-score="1"
                      value="${s1}" min="0" max="30" placeholder="0"
-                     style="width:44px; text-align:center; padding:4px;">
+                     inputmode="numeric"
+                     style="width:44px; text-align:center; padding:4px; -moz-appearance:textfield;">
               <div style="color:var(--muted); font-size:0.8rem;">—</div>
               <input type="number" class="score-input" data-score="2"
                      value="${s2}" min="0" max="30" placeholder="0"
-                     style="width:44px; text-align:center; padding:4px;">
+                     inputmode="numeric"
+                     style="width:44px; text-align:center; padding:4px; -moz-appearance:textfield;">
             </div>
             <div style="min-width:0; text-align:right;">
               <div style="${entered ? (t2win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p3)}</div>
@@ -548,18 +551,51 @@
   }
 
   // ── Weekly Standings ───────────────────────────────────────
+  function renderPlayerStandings() {
+    // Season tab
+    const season = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod);
+    document.getElementById('season-standings-table').innerHTML = renderStandingsTable(season, playerName);
+
+    // Weekly tab
+    const week = state.currentWstandWeek;
+    const wstandDate = state.config['date_' + week] ? ' — ' + formatDate(state.config['date_' + week]) : '';
+    document.getElementById('wstand-label').textContent = `Week ${week}${wstandDate}`;
+    const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week, state.config.rankingMethod);
+    document.getElementById('weekly-standings-table').innerHTML = renderStandingsTable(weekStand, playerName);
+
+    // Default to season tab active
+    document.querySelectorAll('#player-standings-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+    const seasonBtn = document.querySelector('#player-standings-tabs .tab-btn[data-tab="season"]');
+    if (seasonBtn) seasonBtn.classList.add('active');
+    document.getElementById('player-stand-season')?.classList.add('active');
+    document.getElementById('player-stand-weekly')?.classList.remove('active');
+    document.getElementById('player-stand-trend')?.classList.remove('active');
+
+    // Wire tabs (guard against duplicate listeners with a flag)
+    const tabsEl = document.getElementById('player-standings-tabs');
+    if (tabsEl && !tabsEl.dataset.wired) {
+      tabsEl.dataset.wired = '1';
+      tabsEl.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          tabsEl.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const tab = btn.dataset.tab;
+          document.getElementById('player-stand-season').classList.toggle('active', tab === 'season');
+          document.getElementById('player-stand-weekly').classList.toggle('active', tab === 'weekly');
+          document.getElementById('player-stand-trend').classList.toggle('active', tab === 'trend');
+          if (tab === 'trend') drawRankTrendChart('player-rank-trend-chart', 'player-rank-trend-legend', state, playerName);
+        });
+      });
+    }
+  }
+
+  // kept for backward compat (called via week nav)
   function renderWeeklyStandings() {
     const week = state.currentWstandWeek;
     const wstandDate = state.config['date_' + week] ? ' — ' + formatDate(state.config['date_' + week]) : '';
     document.getElementById('wstand-label').textContent = `Week ${week}${wstandDate}`;
     const s = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week, state.config.rankingMethod);
     document.getElementById('weekly-standings-table').innerHTML = renderStandingsTable(s, playerName);
-  }
-
-  // ── Season Standings ───────────────────────────────────────
-  function renderSeasonStandings() {
-    const s = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod);
-    document.getElementById('season-standings-table').innerHTML = renderStandingsTable(s, playerName);
   }
 
   // ── Full Attendance ────────────────────────────────────────
@@ -593,6 +629,31 @@
 
   // ── Events ─────────────────────────────────────────────────
   function setupEvents() {
+    // Email my player report
+    document.getElementById('btn-email-my-report')?.addEventListener('click', async () => {
+      const me = state.players.find(pl => pl.name === playerName);
+      if (!me || !me.email) {
+        toast('No email address on file. Add one in the Availability page.', 'warn'); return;
+      }
+      // Email the currently selected player's report (defaults to own)
+      const sel = document.getElementById('report-player-select');
+      const targetPlayer = sel?.value || playerName;
+      const report = Reports.computePlayerReport(targetPlayer, state.scores, state.standings);
+      const btn = document.getElementById('btn-email-my-report');
+      btn.disabled = true;
+      try {
+        await API.sendPlayerReport({
+          playerName: targetPlayer,
+          email:      me.email,
+          report,
+          leagueName: state.config.leagueName || 'Pickleball League',
+          replyTo:    state.config.replyTo    || '',
+        });
+        toast(`Report emailed to ${me.email}.`);
+      } catch (e) { toast('Send failed: ' + e.message, 'error'); }
+      finally { btn.disabled = false; }
+    });
+
     // Score entry week nav
     if (canScore) {
       if (!state.currentScoreEntryWeek) state.currentScoreEntryWeek = state.currentSheetWeek;
@@ -663,6 +724,40 @@
       if (state.currentSheetWeek < max) { state.currentSheetWeek++; renderScoresheet(); }
     });
 
+    // Refresh tournament bracket
+    document.getElementById('btn-refresh-bracket')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-refresh-bracket');
+      btn.disabled = true;
+      btn.textContent = '⏳';
+      try {
+        const data = await API.getAllData();
+        state.scores   = data.scores   || [];
+        state.pairings = data.pairings || [];
+        state.standings = data.standings || [];
+        renderTournamentBracket();
+        toast('Bracket refreshed.');
+      } catch (e) { toast('Refresh failed: ' + e.message, 'error'); }
+      finally { btn.disabled = false; btn.textContent = '🔄 Refresh'; }
+    });
+
+    // Refresh button — re-fetches latest scores and pairings from server
+    document.getElementById('btn-refresh-scores').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-refresh-scores');
+      btn.disabled = true;
+      btn.textContent = '⏳';
+      try {
+        const data = await API.getAllData();
+        state.scores   = data.scores   || [];
+        state.pairings = data.pairings || [];
+        state.standings = data.standings || [];
+        renderScoresheet();
+        renderTournamentBracket();
+        renderNextGame();
+        toast('Scores refreshed.');
+      } catch (e) { toast('Refresh failed: ' + e.message, 'error'); }
+      finally { btn.disabled = false; btn.textContent = '🔄 Refresh'; }
+    });
+
     // Weekly standings week nav
     document.getElementById('wstand-prev').addEventListener('click', () => {
       if (state.currentWstandWeek > 1) { state.currentWstandWeek--; renderWeeklyStandings(); }
@@ -677,6 +772,18 @@
   function renderPlayerReportSelect() {
     const sel = document.getElementById('report-player-select');
     if (!sel) return;
+
+    // Show email button only if logged-in player has an email
+    const me = state.players.find(pl => pl.name === playerName);
+    const emailBtn = document.getElementById('btn-email-my-report');
+    if (emailBtn) {
+      if (me && me.email) {
+        emailBtn.classList.remove('hidden');
+      } else {
+        emailBtn.classList.add('hidden');
+      }
+    }
+
     const current = sel.value;
     sel.innerHTML = '<option value="">— Select Player —</option>';
     state.players.filter(p => p.active !== false).forEach(p => {
@@ -990,6 +1097,148 @@
       </span>`;
     }).join('');
   }
+  // ── Tournament Bracket ─────────────────────────────────────
+  function renderTournamentBracket() {
+    const el = document.getElementById('player-bracket-content');
+    if (!el) return;
+
+    // Use whichever week the scoresheet is currently showing
+    const week = state.currentSheetWeek;
+    const weekPairings = state.pairings.filter(p => parseInt(p.week) === week);
+    const lockedRounds = [...new Set(weekPairings.map(p => parseInt(p.round)))].sort((a,b)=>a-b);
+
+    // Show tournament nav if this week has multiple rounds (indicates a tournament)
+    const isTournament = lockedRounds.length > 1 ||
+      (lockedRounds.length === 1 && weekPairings.some(p => p.type === 'bye'));
+    const navEl = document.getElementById('nav-tournament');
+    if (navEl) navEl.classList.toggle('hidden', !isTournament);
+
+    if (!isTournament) { el.innerHTML = '<p class="text-muted">No tournament data for this week.</p>'; return; }
+    if (!lockedRounds.length) { el.innerHTML = '<p class="text-muted">No rounds played yet.</p>'; return; }
+
+    function getSeedLabel(name, pairings) {
+      // We don't have seed state in player view, so just show name
+      return esc(name);
+    }
+
+    function teamLabel(p1, p2) {
+      return p2 ? `${esc(p1)} &amp; ${esc(p2)}` : esc(p1);
+    }
+
+    let html = `<div style="font-size:0.78rem; color:var(--muted); margin-bottom:12px;">
+      Week ${week} · ${lockedRounds.length} round(s) played
+    </div>`;
+
+    html += `<div style="overflow-x:auto; padding-bottom:8px;">
+      <div style="display:flex; gap:0; min-width:fit-content;">`;
+
+    lockedRounds.forEach((r, ri) => {
+      const roundGames = weekPairings.filter(g => g.round === r && g.type === 'game');
+      const roundByes  = weekPairings.filter(g => g.round === r && g.type === 'bye');
+      const isLast     = ri === lockedRounds.length - 1;
+
+      html += `<div style="display:flex; flex-direction:column; min-width:200px;">
+        <div style="font-size:0.72rem; font-weight:700; color:var(--muted); text-transform:uppercase;
+                    letter-spacing:0.05em; padding:4px 8px; margin-bottom:6px; text-align:center;">
+          Round ${r}
+        </div>`;
+
+      roundGames.forEach(g => {
+        const score = state.scores.find(s =>
+          parseInt(s.week) === week && parseInt(s.round) === r &&
+          String(s.court) === String(g.court)
+        );
+        const s1 = score ? score.score1 : '';
+        const s2 = score ? score.score2 : '';
+        const scored = s1 !== '' && s1 !== null && s2 !== '' && s2 !== null;
+        const t1win  = scored && parseInt(s1) > parseInt(s2);
+        const isMe1  = [g.p1, g.p2].includes(playerName);
+        const isMe2  = [g.p3, g.p4].includes(playerName);
+        const winStyle  = 'color:var(--green); font-weight:700;';
+        const loseStyle = 'color:rgba(255,255,255,0.35);';
+        const meStyle   = 'color:var(--white); font-weight:700;';
+        const t1style = scored ? (t1win ? winStyle : loseStyle) : (isMe1 ? meStyle : 'color:var(--white);');
+        const t2style = scored ? (!t1win ? winStyle : loseStyle) : (isMe2 ? meStyle : 'color:var(--white);');
+        const scoreHtml = scored
+          ? `<span style="font-size:0.78rem; font-weight:700; color:var(--white);">${s1}–${s2}</span>`
+          : `<span style="font-size:0.7rem; color:var(--muted);">pending</span>`;
+        const border = (isMe1 || isMe2) ? 'border:1px solid rgba(94,194,106,0.4);' : 'border:1px solid rgba(255,255,255,0.08);';
+
+        html += `<div style="background:var(--card-bg); ${border}
+                    border-radius:8px; padding:7px 10px; margin:2px 4px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <div style="${t1style} font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:130px;">
+              ${teamLabel(g.p1, g.p2)}
+            </div>
+            <div style="margin-left:6px; flex-shrink:0;">${scoreHtml}</div>
+          </div>
+          <div style="border-top:1px solid rgba(255,255,255,0.06); margin:3px 0;"></div>
+          <div style="${t2style} font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:130px; margin-top:4px;">
+            ${teamLabel(g.p3, g.p4)}
+          </div>
+        </div>`;
+      });
+
+      roundByes.forEach(g => {
+        html += `<div style="background:rgba(122,155,181,0.07); border:1px dashed rgba(255,255,255,0.1);
+                    border-radius:8px; padding:7px 10px; margin:2px 4px;">
+          <div style="font-size:0.7rem; color:var(--muted); margin-bottom:2px;">⏸ BYE</div>
+          <div style="font-size:0.8rem; color:var(--white);">${teamLabel(g.p1, g.p2)}</div>
+        </div>`;
+      });
+
+      html += `</div>`;
+      if (!isLast) {
+        html += `<div style="display:flex; align-items:center; padding:0 2px; color:rgba(255,255,255,0.2); font-size:1.2rem;">›</div>`;
+      }
+    });
+
+    html += `</div></div>`;
+
+    // ── Champion banner ──────────────────────────────────────
+    // Find the last round and check if all games are scored
+    const lastRound = lockedRounds[lockedRounds.length - 1];
+    const lastRoundGames = weekPairings.filter(g => g.round === lastRound && g.type === 'game');
+    const lastRoundScored = lastRoundGames.length > 0 && lastRoundGames.every(g => {
+      const sc = state.scores.find(s =>
+        parseInt(s.week) === week && parseInt(s.round) === lastRound &&
+        String(s.court) === String(g.court)
+      );
+      return sc && sc.score1 !== '' && sc.score1 !== null &&
+             sc.score2 !== '' && sc.score2 !== null;
+    });
+
+    if (lastRoundScored && lastRoundGames.length === 1) {
+      const finalGame = lastRoundGames[0];
+      const finalScore = state.scores.find(s =>
+        parseInt(s.week) === week && parseInt(s.round) === lastRound &&
+        String(s.court) === String(finalGame.court)
+      );
+      if (finalScore) {
+        const t1win = parseInt(finalScore.score1) > parseInt(finalScore.score2);
+        const champP1 = t1win ? finalGame.p1 : finalGame.p3;
+        const champP2 = t1win ? finalGame.p2 : finalGame.p4;
+        const champName = champP2 ? `${esc(champP1)} &amp; ${esc(champP2)}` : esc(champP1);
+        const isMe = [champP1, champP2].includes(playerName);
+        html += `<div style="margin-top:16px; padding:14px 16px;
+          background:linear-gradient(135deg, rgba(245,200,66,0.15), rgba(245,200,66,0.05));
+          border:1px solid rgba(245,200,66,0.4); border-radius:10px; text-align:center;">
+          <div style="font-size:1.1rem; color:var(--gold); font-weight:700; margin-bottom:4px;">
+            🏆 Tournament Champion
+          </div>
+          <div style="font-size:1rem; color:${isMe ? 'var(--green)' : 'var(--white)'}; font-weight:700;">
+            ${champName}
+          </div>
+          <div style="font-size:0.78rem; color:var(--muted); margin-top:4px;">
+            Final: ${finalScore.score1} – ${finalScore.score2}
+          </div>
+        </div>`;
+      }
+    }
+
+    el.innerHTML = html;
+  }
+
   function esc(s) {
     if (!s) return '';
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');

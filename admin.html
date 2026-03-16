@@ -63,6 +63,7 @@
           <div class="card-header"><div class="card-title">Season Standings</div></div>
           <div class="table-wrap" id="dash-standings"></div>
         </div>
+        <div id="dash-version"></div>
       </section>
 
       <!-- ═══ SETUP ═══ -->
@@ -82,6 +83,12 @@
             <div class="form-group">
               <label class="form-label">Reply-To Email</label>
               <input class="form-control" id="cfg-reply-to" type="email" placeholder="league@example.com">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="flex:2;">
+              <label class="form-label">League URL <span style="color:var(--muted);font-weight:400;">(link shared with players)</span></label>
+              <input class="form-control" id="cfg-league-url" placeholder="https://pb-league.github.io/league/index.html?league=">
             </div>
           </div>
           <div class="form-row">
@@ -179,6 +186,56 @@
           </div>
           <button class="btn btn-primary mt-2" id="btn-save-config">Save Configuration</button>
         </div>
+
+        <!-- League Message Composer -->
+        <div class="card mt-2">
+          <div class="card-header"><div class="card-title">📧 Send Message to Players</div></div>
+          <p style="font-size:0.82rem; color:var(--muted); margin-bottom:14px;">
+            Sends to all active players who have provided an email address.
+          </p>
+          <div class="form-group">
+            <label class="form-label">Subject</label>
+            <input class="form-control" id="msg-subject" placeholder="e.g. League Update">
+          </div>
+          <div class="form-group" style="margin-top:10px;">
+            <label class="form-label">Message</label>
+            <textarea class="form-control" id="msg-body" rows="5"
+              placeholder="Type your message here…"
+              style="resize:vertical; font-size:0.85rem; line-height:1.6;"></textarea>
+          </div>
+          <div style="display:flex; flex-wrap:wrap; gap:10px 20px; margin:12px 0 4px; font-size:0.82rem;">
+            <label style="display:flex; align-items:center; gap:7px; cursor:pointer;">
+              <input type="checkbox" id="msg-inc-name" checked style="width:15px;height:15px;">
+              <span>League name</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:7px; cursor:pointer;">
+              <input type="checkbox" id="msg-inc-location" style="width:15px;height:15px;">
+              <span>Location</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:7px; cursor:pointer;">
+              <input type="checkbox" id="msg-inc-time" style="width:15px;height:15px;">
+              <span>Session time</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:7px; cursor:pointer;">
+              <input type="checkbox" id="msg-inc-rules" style="width:15px;height:15px;">
+              <span>League rules</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:7px; cursor:pointer;">
+              <input type="checkbox" id="msg-inc-dates" style="width:15px;height:15px;">
+              <span>Session dates</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:7px; cursor:pointer;">
+              <input type="checkbox" id="msg-inc-url" style="width:15px;height:15px;">
+              <span>App link</span>
+            </label>
+            <label style="display:flex; align-items:center; gap:7px; cursor:pointer;">
+              <input type="checkbox" id="msg-inc-players" style="width:15px;height:15px;">
+              <span>Player list</span>
+            </label>
+          </div>
+          <div id="msg-status" style="font-size:0.8rem; margin-top:8px;"></div>
+          <button class="btn btn-primary mt-1" id="btn-send-message">📧 Send Message</button>
+        </div>
       </section>
 
       <!-- ═══ PLAYERS ═══ -->
@@ -241,6 +298,87 @@
               <span id="optimizer-msg" style="font-size:0.78rem; color:var(--muted);"></span>
             </div>
             <div id="optimizer-breakdown"></div>
+          </div>
+        </div>
+        <div class="card mt-2" id="tournament-card">
+          <div class="card-header"><div class="card-title">🏆 Tournament Mode</div></div>
+          <p style="font-size:0.82rem; color:var(--muted); margin-bottom:14px;">
+            Generate a seeded elimination bracket. Top seeds get byes if needed.
+            After each round, enter scores then click <strong style="color:var(--white);">Advance Round</strong> to generate the next round.
+          </p>
+          <div class="form-row" style="align-items:flex-end; gap:12px;">
+            <div class="form-group">
+              <label class="form-label">Format</label>
+              <select class="form-control" id="tourn-mode" style="width:180px;">
+                <option value="single">Single Elimination</option>
+                <option value="double">Double Elimination</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-top:20px;">
+              <button class="btn btn-gold" id="btn-tourn-generate">🏆 Generate Bracket</button>
+            </div>
+            <div class="form-group" style="margin-top:20px;">
+              <button class="btn btn-primary hidden" id="btn-tourn-advance">▶ Advance Round</button>
+            </div>
+            <div class="form-group" style="margin-top:20px;">
+              <button class="btn btn-danger hidden" id="btn-tourn-reset">✕ Reset Tournament</button>
+            </div>
+          </div>
+          <div id="tourn-status" style="margin-top:10px; font-size:0.85rem;"></div>
+        </div>
+        <div class="card mt-2" id="edit-pairing-card">
+          <div class="card-header"><div class="card-title">✏️ Edit / Add Pairing</div></div>
+          <p style="font-size:0.82rem; color:var(--muted); margin-bottom:14px;">
+            Select a week, round, and court to load an existing pairing for editing, or fill in new values to add one.
+          </p>
+          <div class="form-row" style="align-items:flex-end;">
+            <div class="form-group">
+              <label class="form-label">Week</label>
+              <input class="form-control" id="ep-week" type="number" min="1" max="20" style="width:80px;">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Round</label>
+              <input class="form-control" id="ep-round" type="number" min="1" max="20" style="width:80px;">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Court</label>
+              <select class="form-control" id="ep-court" style="width:140px;"></select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Type</label>
+              <select class="form-control" id="ep-type" style="width:100px;">
+                <option value="game">Game</option>
+                <option value="bye">Bye</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <button class="btn btn-secondary" id="btn-ep-load" style="margin-top:20px;">Load</button>
+            </div>
+          </div>
+          <div id="ep-fields" class="hidden">
+            <div class="form-row" style="margin-top:8px;">
+              <div class="form-group">
+                <label class="form-label">Team 1 — Player 1</label>
+                <input class="form-control ep-player" id="ep-p1" list="ep-player-list" placeholder="Player name">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Team 1 — Player 2</label>
+                <input class="form-control ep-player" id="ep-p2" list="ep-player-list" placeholder="Player name (optional)">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Team 2 — Player 3</label>
+                <input class="form-control ep-player" id="ep-p3" list="ep-player-list" placeholder="Player name">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Team 2 — Player 4</label>
+                <input class="form-control ep-player" id="ep-p4" list="ep-player-list" placeholder="Player name (optional)">
+              </div>
+            </div>
+            <datalist id="ep-player-list"></datalist>
+            <div class="btn-group mt-1">
+              <button class="btn btn-primary" id="btn-ep-save">💾 Save Pairing</button>
+              <button class="btn btn-danger" id="btn-ep-delete">🗑 Delete This Game</button>
+            </div>
           </div>
         </div>
         <div id="pairings-preview"></div>
@@ -312,7 +450,10 @@
       <section id="page-player-report" class="tab-panel">
         <div class="page-header">
           <h2>Player Report</h2>
-          <select class="form-control" id="report-player-select" style="width:200px;"></select>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <select class="form-control" id="report-player-select" style="width:200px;"></select>
+            <button class="btn btn-secondary" id="btn-email-player-report" style="padding:6px 12px; font-size:0.78rem;" disabled>📧 Email Report</button>
+          </div>
         </div>
         <div id="player-report-content"></div>
       </section>
@@ -369,6 +510,11 @@
               <span>Allow new league's admin to create leagues</span>
               <span style="color:var(--muted); font-size:0.78rem;">(if unchecked, that admin cannot add further leagues)</span>
             </label>
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.85rem;">
+              <input type="checkbox" id="new-league-hidden" style="width:16px;height:16px;">
+              <span>Hidden league</span>
+              <span style="color:var(--muted); font-size:0.78rem;">(won't appear in login dropdown — access via URL with league slug only)</span>
+            </label>
           </div>
           <div class="btn-group mt-1">
             <button class="btn btn-primary" id="btn-save-new-league">Save League</button>
@@ -419,12 +565,17 @@
     from { transform: rotate(0deg); }
     to   { transform: rotate(360deg); }
   }
+  /* Hide number input spinners */
+  input[type=number].score-input::-webkit-outer-spin-button,
+  input[type=number].score-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number].score-input { -moz-appearance: textfield; }
 </style>
 
 <script src="js/api.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/pairings.js"></script>
 <script src="js/reports.js"></script>
+<script src="js/tournament.js"></script>
 <script src="js/admin.js"></script>
 <script>
 (function() {

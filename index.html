@@ -109,7 +109,15 @@
     leagueSel.innerHTML = '<option value="">— Choose League —</option>';
     if (leagues.length === 0) {
       leagueSel.innerHTML = '<option value="">No leagues configured yet</option>';
-      showToast('No leagues found. Set up a league in the admin panel.', 'warn');
+      // Show a direct admin setup button when no leagues exist
+      const setupBtn = document.createElement('button');
+      setupBtn.className = 'btn btn-primary w-full';
+      setupBtn.style.marginTop = '12px';
+      setupBtn.textContent = 'Admin Setup — Create First League';
+      setupBtn.addEventListener('click', () => {
+        window.location.href = 'admin.html?setup=1';
+      });
+      document.getElementById('step-league').appendChild(setupBtn);
     } else {
       leagues.forEach(l => {
         const opt = document.createElement('option');
@@ -175,12 +183,30 @@
   const urlLeague = urlParams.get('league');
   const urlPlayer = urlParams.get('player');
 
-  if (urlLeague && leagues.length) {
-    const match = leagues.find(l =>
+  if (urlLeague) {
+    // First try visible leagues
+    let match = leagues.find(l =>
       l.leagueId.toLowerCase() === urlLeague.toLowerCase() ||
       l.name.toLowerCase() === urlLeague.toLowerCase()
     );
+    // If not found in visible list, the league may be hidden — fetch all leagues
+    if (!match) {
+      try {
+        const allData = await API.getLeaguesAll();
+        const allLeagues = allData.leagues || [];
+        match = allLeagues.find(l =>
+          l.leagueId.toLowerCase() === urlLeague.toLowerCase()
+        );
+      } catch (e) { /* fall through */ }
+    }
     if (match) {
+      // Hidden leagues don't appear in dropdown — add a hidden option
+      if (!leagueSel.querySelector(`option[value="${match.leagueId}"]`)) {
+        const opt = document.createElement('option');
+        opt.value = match.leagueId;
+        opt.textContent = match.name;
+        leagueSel.appendChild(opt);
+      }
       leagueSel.value = match.leagueId;
       btnLeagueNext.disabled = false;
       selectLeague(match, urlPlayer || null);

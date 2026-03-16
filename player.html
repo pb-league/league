@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Player — Pickleball League</title>
   <link rel="stylesheet" href="css/style.css">
+<style>
+  input[type=number].score-input::-webkit-outer-spin-button,
+  input[type=number].score-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number].score-input { -moz-appearance: textfield; }
+</style>
 </head>
 <body class="court-bg">
 
@@ -35,9 +40,8 @@
       </div>
       <div class="nav-section">
         <div class="nav-section-label">Standings</div>
-        <div class="nav-item" data-page="standings-week"><span class="icon">📅</span> Weekly</div>
-        <div class="nav-item" data-page="standings-season"><span class="icon">🏆</span> Season</div>
-        <div class="nav-item" data-page="standings-trend"><span class="icon">📈</span> Ranking Trend</div>
+        <div class="nav-item" data-page="standings"><span class="icon">🏆</span> Standings</div>
+        <div class="nav-item hidden" id="nav-tournament" data-page="tournament"><span class="icon">🏆</span> Tournament</div>
         <div class="nav-item" data-page="attendance-all"><span class="icon">👥</span> Attendance</div>
         <div class="nav-item" data-page="player-report"><span class="icon">👤</span> Player Report</div>
       </div>
@@ -78,10 +82,13 @@
       <section id="page-scoresheet" class="tab-panel">
         <div class="page-header">
           <h2>Scoresheet</h2>
-          <div class="week-selector">
-            <button id="sheet-week-prev">‹</button>
-            <div class="week-num" id="sheet-week-label">Week 1</div>
-            <button id="sheet-week-next">›</button>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button class="btn btn-secondary" id="btn-refresh-scores" style="padding:5px 12px; font-size:0.78rem;">🔄 Refresh</button>
+            <div class="week-selector">
+              <button id="sheet-week-prev">‹</button>
+              <div class="week-num" id="sheet-week-label">Week 1</div>
+              <button id="sheet-week-next">›</button>
+            </div>
           </div>
         </div>
         <div class="card">
@@ -109,37 +116,52 @@
       </section>
 
       <!-- ═══ WEEKLY STANDINGS ═══ -->
-      <section id="page-standings-week" class="tab-panel">
+      <!-- ═══ STANDINGS ═══ -->
+      <section id="page-standings" class="tab-panel">
+        <div class="page-header"><h2>Standings</h2></div>
+        <div class="tabs" id="player-standings-tabs">
+          <button class="tab-btn active" data-tab="season">Season Overall</button>
+          <button class="tab-btn" data-tab="weekly">By Week</button>
+          <button class="tab-btn" data-tab="trend">Ranking Trend</button>
+        </div>
+        <div id="player-stand-season" class="tab-panel active">
+          <div class="card">
+            <div class="card-header"><div class="card-title">Season Standings</div></div>
+            <div class="table-wrap" id="season-standings-table"></div>
+          </div>
+        </div>
+        <div id="player-stand-weekly" class="tab-panel">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Weekly Standings</div>
+              <div class="week-selector">
+                <button id="wstand-prev">‹</button>
+                <div class="week-num" id="wstand-label" style="min-width:140px; text-align:center;">Week 1</div>
+                <button id="wstand-next">›</button>
+              </div>
+            </div>
+            <div class="table-wrap" id="weekly-standings-table"></div>
+          </div>
+        </div>
+        <div id="player-stand-trend" class="tab-panel">
+          <div class="card">
+            <div class="card-header"><div class="card-title">Overall Ranking by Week</div></div>
+            <div style="position:relative; width:100%; overflow-x:auto;">
+              <canvas id="player-rank-trend-chart" style="width:100%; min-width:320px; display:block;"></canvas>
+            </div>
+            <div id="player-rank-trend-legend" style="display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:14px; font-size:0.78rem;"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══ TOURNAMENT BRACKET ═══ -->
+      <section id="page-tournament" class="tab-panel">
         <div class="page-header">
-          <h2>Weekly Standings</h2>
-          <div class="week-selector">
-            <button id="wstand-prev">‹</button>
-            <div class="week-num" id="wstand-label" style="min-width:140px; text-align:center;">Week 1</div>
-            <button id="wstand-next">›</button>
-          </div>
+          <h2>Tournament Bracket</h2>
+          <button class="btn btn-secondary" id="btn-refresh-bracket" style="padding:5px 12px; font-size:0.78rem;">🔄 Refresh</button>
         </div>
         <div class="card">
-          <div class="table-wrap" id="weekly-standings-table"></div>
-        </div>
-      </section>
-
-      <!-- ═══ SEASON STANDINGS ═══ -->
-      <section id="page-standings-season" class="tab-panel">
-        <div class="page-header"><h2>Season Standings</h2></div>
-        <div class="card">
-          <div class="table-wrap" id="season-standings-table"></div>
-        </div>
-      </section>
-
-      <!-- ═══ RANKING TREND ═══ -->
-      <section id="page-standings-trend" class="tab-panel">
-        <div class="page-header"><h2>Ranking Trend</h2></div>
-        <div class="card">
-          <div class="card-header"><div class="card-title">Overall Ranking by Week</div></div>
-          <div style="position:relative; width:100%; overflow-x:auto;">
-            <canvas id="player-rank-trend-chart" style="width:100%; min-width:320px; display:block;"></canvas>
-          </div>
-          <div id="player-rank-trend-legend" style="display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:14px; font-size:0.78rem;"></div>
+          <div id="player-bracket-content"><p class="text-muted">No tournament in progress.</p></div>
         </div>
       </section>
 
@@ -155,7 +177,10 @@
       <section id="page-player-report" class="tab-panel">
         <div class="page-header">
           <h2>Player Report</h2>
-          <select class="form-control" id="report-player-select" style="width:200px;"></select>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <select class="form-control" id="report-player-select" style="width:200px;"></select>
+            <button class="btn btn-secondary hidden" id="btn-email-my-report" style="padding:6px 12px; font-size:0.78rem;">📧 Email My Report</button>
+          </div>
         </div>
         <div id="player-report-content"></div>
       </section>

@@ -6,13 +6,7 @@
 // ============================================================
 
 const API = (() => {
-  // !! REPLACE THIS with your deployed GAS Web App URL !!
-  
-  // for beta project:
-  // const GAS_URL = 'https://script.google.com/macros/s/AKfycbziZPrG5fSM_ufJYei6r_DoFTCjt4ymGuof-UBJRRj84oChtHtE67r6orMUJnGk7hbk/exec';
-// const GAS_URL = 'https://script.google.com/macros/s/AKfycbyyOWnHgNGf7JOJqHteSLmu7h1fIc0ZJfmuKJ1-xIjWVuR4b07DXWgAu10LhIrnQTNTAQ/exec';
-// for released project:
-   const GAS_URL = 'https://script.google.com/macros/s/AKfycbzudYO4IDqCJt92kR4gu6dVJyGN5LoKtxpD3RYR1pNHepxU_liEdpogjCnE8mWTOXqU/exec';
+  // GAS_URL is defined in settings.js, loaded before this file.
   // Get the active leagueId from session (set at login)
   function leagueId() {
     try {
@@ -62,7 +56,8 @@ const API = (() => {
     updateLeagueWithCaller: (leagueId, name, sheetId, active, canCreateLeagues, callerLeagueId) => post({ action: 'updateLeague', leagueId, name, sheetId, active, canCreateLeagues, callerLeagueId }),
 
     // League-scoped (leagueId auto-injected from session)
-    getAllData:        ()               => get('getAllData'),
+    getAllData:        (sinceWeek)      => get('getAllData', sinceWeek ? { sinceWeek } : {}),
+    getEarlyData:     ()               => get('getEarlyData'),
     getConfig:        ()               => get('getConfig'),
     getPlayers:       ()               => get('getPlayers'),
     getAttendance:    ()               => get('getAttendance'),

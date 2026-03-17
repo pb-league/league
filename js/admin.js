@@ -1,10 +1,4 @@
 // ============================================================
-// App version — update APP_VERSION and APP_BUILD_DATE when deploying
-// ============================================================
-const APP_VERSION    = "1.0.0";
-const APP_BUILD_DATE = "2026-03-16";
-
-// ============================================================
 // admin.js — Admin dashboard logic
 // ============================================================
 
@@ -58,7 +52,17 @@ const APP_BUILD_DATE = "2026-03-16";
         if (panel) panel.classList.add('active');
         if (page === 'standings') renderStandings();
         if (page === 'player-report') renderPlayerReportSelect();
-        if (page === 'scores') renderScoresheet();
+        if (page === 'scores') {
+          // Fetch latest scores from server before rendering — players may have entered scores
+          API.getScores(state.currentScoreWeek).then(data => {
+            if (data && data.scores) {
+              const week = state.currentScoreWeek;
+              state.scores = state.scores.filter(s => parseInt(s.week) !== week);
+              state.scores.push(...data.scores.filter(s => parseInt(s.week) === week));
+            }
+            renderScoresheet();
+          }).catch(() => renderScoresheet());
+        }
         if (page === 'pairings') { renderPairingsPreview(); renderEditPairingForm(); }
         if (page === 'attendance') renderAttendance();
         if (page === 'leagues') renderLeagues();
@@ -86,14 +90,14 @@ const APP_BUILD_DATE = "2026-03-16";
   let h2hWeek = 'all';
 
   function renderHeadToHead() {
-    // Populate week selector
+    // Populate session selector
     const sel = document.getElementById('h2h-week-select');
     if (sel) {
       const weeks = [...new Set(state.pairings.map(p => parseInt(p.week)))].sort((a,b) => a-b);
       sel.innerHTML = '<option value="all">All Weeks</option>' +
         weeks.map(w => {
-          const date = state.config['date_' + w] ? ' — ' + formatDate(state.config['date_' + w]) : '';
-          return `<option value="${w}" ${h2hWeek == w ? 'selected' : ''}>Week ${w}${date}</option>`;
+          const date = formatDateTime(w, state.config) ? ' — ' + formatDateTime(w, state.config) : '';
+          return `<option value="${w}" ${h2hWeek == w ? 'selected' : ''}>Session ${w}${date}</option>`;
         }).join('');
       sel.value = h2hWeek;
       sel.onchange = () => { h2hWeek = sel.value; renderH2HTable(); };
@@ -226,8 +230,8 @@ const APP_BUILD_DATE = "2026-03-16";
 
     document.getElementById('dash-stats').innerHTML = `
       <div class="stat-tile"><div class="stat-value">${activePlayers}</div><div class="stat-label">Players</div></div>
-      <div class="stat-tile"><div class="stat-value">${state.config.weeks || '—'}</div><div class="stat-label">Total Weeks</div></div>
-      <div class="stat-tile"><div class="stat-value">${weeksWithScores}</div><div class="stat-label">Weeks Played</div></div>
+      <div class="stat-tile"><div class="stat-value">${state.config.weeks || '—'}</div><div class="stat-label">Total Sessions</div></div>
+      <div class="stat-tile"><div class="stat-value">${weeksWithScores}</div><div class="stat-label">Sessions Played</div></div>
       <div class="stat-tile"><div class="stat-value">${totalGames}</div><div class="stat-label">Games Entered</div></div>
     `;
 
@@ -269,7 +273,8 @@ const APP_BUILD_DATE = "2026-03-16";
     document.getElementById('cfg-w-history-opponent').value  = c.wHistoryOpponent  ?? D.historyOpponentWeight;
     document.getElementById('cfg-w-bye-variance').value      = c.wByeVariance      ?? D.byeVarianceWeight;
     document.getElementById('cfg-w-session-bye').value       = c.wSessionBye       ?? D.sessionByeWeight;
-    document.getElementById('cfg-w-rank-balance').value      = c.wRankBalance      ?? D.rankBalanceWeight;
+    document.getElementById('cfg-w-rank-balance').value           = c.wRankBalance           ?? D.rankBalanceWeight;
+    document.getElementById('cfg-w-rank-std-dev').value            = c.wRankStdDev            ?? D.rankStdDevWeight;
 
     // Session dates
     const weeks = parseInt(c.weeks || 8);
@@ -277,8 +282,12 @@ const APP_BUILD_DATE = "2026-03-16";
     for (let w = 1; w <= weeks; w++) {
       datesHtml += `
         <div class="form-group">
-          <label class="form-label">Week ${w} Date</label>
+          <label class="form-label">Session ${w} Date</label>
           <input class="form-control" id="cfg-date-${w}" type="date" value="${normalizeDate(c['date_' + w])}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Session ${w} Time</label>
+          <input class="form-control" id="cfg-time-${w}" type="time" value="${c['time_' + w] || ''}">
         </div>`;
     }
     datesHtml += '</div>';
@@ -356,8 +365,8 @@ const APP_BUILD_DATE = "2026-03-16";
     html += '<div class="att-row">';
     html += '<div></div>';
     for (let w = 1; w <= weeks; w++) {
-      const date = state.config['date_' + w] ? formatDate(state.config['date_' + w]) : `Wk${w}`;
-      html += `<div class="att-week-header">Wk${w}<br><span style="font-size:0.6rem;font-weight:400;">${date}</span></div>`;
+      const date = formatDateTime(w, state.config) || `S${w}`;
+      html += `<div class="att-week-header">S${w}<br><span style="font-size:0.6rem;font-weight:400;">${date}</span></div>`;
     }
     html += '</div>';
 
@@ -372,7 +381,7 @@ const APP_BUILD_DATE = "2026-03-16";
       html += '</div>';
     });
 
-    // Totals row — count of players marked present per week
+    // Totals row — count of players marked present per session
     html += '<div class="att-row" style="border-top:1px solid rgba(255,255,255,0.1); margin-top:4px; padding-top:4px;">';
     html += '<div class="att-player-name" style="font-size:0.75rem; color:var(--muted); font-weight:600;">Players In</div>';
     for (let w = 1; w <= weeks; w++) {
@@ -429,14 +438,14 @@ const APP_BUILD_DATE = "2026-03-16";
         if (statusEl) statusEl.innerHTML = '';
       }
     }
-    document.getElementById('pair-week-label').textContent = `Week ${week}`;
+    document.getElementById('pair-week-label').textContent = `Session ${week}`;
 
     const existing = state.pairings.filter(p => parseInt(p.week) === week);
     const toShow = state.pendingPairings || existing;
 
     if (!toShow.length) {
       document.getElementById('pairings-preview').innerHTML =
-        '<div class="card"><p class="text-muted" style="font-size:0.88rem;">No pairings generated yet for this week.</p></div>';
+        '<div class="card"><p class="text-muted" style="font-size:0.88rem;">No pairings generated yet for this session.</p></div>';
       return;
     }
 
@@ -470,19 +479,37 @@ const APP_BUILD_DATE = "2026-03-16";
 
     document.getElementById('pairings-preview').innerHTML = html;
     document.getElementById('btn-lock-pairings').disabled = !state.pendingPairings;
+
+    // Populate round-scope dropdown with locked rounds + individual options
+    const scopeSel = document.getElementById('round-scope');
+    if (scopeSel) {
+      const cur = scopeSel.value;
+      const totalRounds = parseInt(state.config.gamesPerSession || 7);
+      const lockedRounds = [...new Set(existing.map(p => parseInt(p.round)))].sort((a,b)=>a-b);
+      scopeSel.innerHTML = '<option value="all">All rounds</option><option value="remaining">All remaining rounds</option>';
+      for (let r = 1; r <= totalRounds; r++) {
+        const opt = document.createElement('option');
+        opt.value = String(r);
+        const locked = lockedRounds.includes(r) ? ' ✓' : '';
+        opt.textContent = `Round ${r}${locked}`;
+        scopeSel.appendChild(opt);
+      }
+      // Restore selection if still valid
+      if ([...scopeSel.options].some(o => o.value === cur)) scopeSel.value = cur;
+    }
   }
 
   // ── Scoresheet ─────────────────────────────────────────────
   function renderScoresheet() {
     const week = state.currentScoreWeek;
-    document.getElementById('score-week-label').textContent = `Week ${week}`;
+    document.getElementById('score-week-label').textContent = `Session ${week}`;
 
     const allWeekPairings = state.pairings.filter(p => parseInt(p.week) === week);
     const weekPairings    = allWeekPairings.filter(p => p.type === 'game');
 
     if (!allWeekPairings.length) {
       document.getElementById('scoresheet').innerHTML =
-        '<p class="text-muted" style="font-size:0.88rem;">No pairings for this week yet. Generate pairings first.</p>';
+        '<p class="text-muted" style="font-size:0.88rem;">No pairings for this session yet. Generate pairings first.</p>';
       return;
     }
 
@@ -551,7 +578,7 @@ const APP_BUILD_DATE = "2026-03-16";
 
     const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, state.currentStandWeek, state.config.rankingMethod);
     document.getElementById('standings-weekly-table').innerHTML = renderStandingsTable(weekStand);
-    document.getElementById('stand-week-label').textContent = `Week ${state.currentStandWeek}`;
+    document.getElementById('stand-week-label').textContent = `Session ${state.currentStandWeek}`;
 
     // Default to season tab active
     document.querySelectorAll('#standings-tabs .tab-btn').forEach(b => b.classList.remove('active'));
@@ -659,8 +686,7 @@ const APP_BUILD_DATE = "2026-03-16";
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     weeksWithData.forEach((w, i) => {
       const x     = PAD.left + (i / (weeksWithData.length - 1 || 1)) * plotW;
-      const date  = chartState.config['date_' + w];
-      const label = date ? formatDate(date) : 'Wk ' + w;
+      const label = formatDateTime(w, chartState.config) || ('S' + w);
       ctx.fillText(label, x, H - PAD.bottom + 16);
     });
 
@@ -864,7 +890,7 @@ const APP_BUILD_DATE = "2026-03-16";
         ['ep-p1','ep-p2','ep-p3','ep-p4'].forEach(id => {
           document.getElementById(id).value = '';
         });
-        toast(`No existing pairing found for Week ${week} Round ${round} Court ${court} — fill in to create new.`, 'warn');
+        toast(`No existing pairing found for Session ${week} Round ${round} Court ${court} — fill in to create new.`, 'warn');
       }
       fields.classList.remove('hidden');
     });
@@ -899,7 +925,7 @@ const APP_BUILD_DATE = "2026-03-16";
       showLoading(true);
       try {
         await API.savePairings(week, weekPairings);
-        toast(`Pairing saved — Week ${week} Round ${round} Court ${court}.`);
+        toast(`Pairing saved — Session ${week} Round ${round} Court ${court}.`);
         renderPairingsPreview();
       } catch (e) { toast('Save failed: ' + e.message, 'error'); }
       finally { showLoading(false); }
@@ -910,7 +936,7 @@ const APP_BUILD_DATE = "2026-03-16";
       const week  = parseInt(weekEl.value);
       const round = parseInt(roundEl.value);
       const court = String(courtEl.value).trim();
-      if (!confirm(`Delete pairing for Week ${week} Round ${round} Court ${court}?`)) return;
+      if (!confirm(`Delete pairing for Session ${week} Round ${round} Court ${court}?`)) return;
 
       state.pairings = state.pairings.filter(p =>
         !(parseInt(p.week) === week && parseInt(p.round) === round && String(p.court) === court)
@@ -997,7 +1023,7 @@ const APP_BUILD_DATE = "2026-03-16";
       : [...allRounds, pendingRound];
 
     let html = `<div style="font-size:0.78rem; color:var(--muted); margin-bottom:8px;">
-      ${modeLabel} · Week ${week} · Current Round: ${t.round}
+      ${modeLabel} · Session ${week} · Current Round: ${t.round}
     </div>`;
 
     // Status summary badges
@@ -1142,7 +1168,7 @@ const APP_BUILD_DATE = "2026-03-16";
       }
 
       const existing = state.pairings.filter(p => parseInt(p.week) === week);
-      if (existing.length && !confirm(`Week ${week} already has pairings. Replace with tournament bracket?`)) return;
+      if (existing.length && !confirm(`Session ${week} already has pairings. Replace with tournament bracket?`)) return;
       const result = Tournament.generateTournament(presentPlayers, courts, week, mode, state.standings, doubles);
       if (result.error) { toast(result.error, 'error'); return; }
 
@@ -1239,10 +1265,13 @@ const APP_BUILD_DATE = "2026-03-16";
         wByeVariance:     parseFloat(document.getElementById('cfg-w-bye-variance').value),
         wSessionBye:      parseFloat(document.getElementById('cfg-w-session-bye').value),
         wRankBalance:     parseFloat(document.getElementById('cfg-w-rank-balance').value),
+        wRankStdDev:      parseFloat(document.getElementById('cfg-w-rank-std-dev').value),
       };
       for (let w = 1; w <= weeks; w++) {
         const el = document.getElementById('cfg-date-' + w);
         if (el) config['date_' + w] = el.value;
+        const tel = document.getElementById('cfg-time-' + w);
+        if (tel) config['time_' + w] = tel.value;
       }
       const numCourts = parseInt(document.getElementById('cfg-courts').value);
       for (let cn = 1; cn <= numCourts; cn++) {
@@ -1294,7 +1323,7 @@ const APP_BUILD_DATE = "2026-03-16";
           const weeks = parseInt(c.weeks || 8);
           const d = [];
           for (let w = 1; w <= weeks; w++) {
-            if (c['date_' + w]) d.push({ week: w, date: c['date_' + w] });
+            if (c['date_' + w] || c['time_' + w]) d.push({ week: w, date: c['date_' + w] || '', time: c['time_' + w] || '' });
           }
           return d;
         })() : [],
@@ -1365,27 +1394,80 @@ const APP_BUILD_DATE = "2026-03-16";
       const epWeek = document.getElementById('ep-week');
       if (epWeek) epWeek.value = state.currentPairWeek;
     });
-    setupWeekNav('score-week-prev', 'score-week-next', 'currentScoreWeek', renderScoresheet);
+    setupWeekNav('score-week-prev', 'score-week-next', 'currentScoreWeek', async () => {
+      // Fetch fresh scores for the newly selected week
+      try {
+        const data = await API.getScores(state.currentScoreWeek);
+        if (data && data.scores) {
+          const week = state.currentScoreWeek;
+          state.scores = state.scores.filter(s => parseInt(s.week) !== week);
+          state.scores.push(...data.scores.filter(s => parseInt(s.week) === week));
+        }
+      } catch (e) { /* use cached */ }
+      renderScoresheet();
+    });
+
+    document.getElementById('btn-refresh-scoresheet').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-refresh-scoresheet');
+      btn.disabled = true; btn.textContent = '⏳';
+      try {
+        const data = await API.getScores(state.currentScoreWeek);
+        if (data && data.scores) {
+          const week = state.currentScoreWeek;
+          state.scores = state.scores.filter(s => parseInt(s.week) !== week);
+          state.scores.push(...data.scores.filter(s => parseInt(s.week) === week));
+        }
+        renderScoresheet();
+        toast('Scores refreshed.');
+      } catch (e) { toast('Refresh failed: ' + e.message, 'error'); }
+      finally { btn.disabled = false; btn.textContent = '🔄 Refresh'; }
+    });
     setupWeekNav('stand-week-prev', 'stand-week-next', 'currentStandWeek', () => {
       const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, state.currentStandWeek, state.config.rankingMethod);
       document.getElementById('standings-weekly-table').innerHTML = renderStandingsTable(weekStand);
-      document.getElementById('stand-week-label').textContent = `Week ${state.currentStandWeek}`;
+      const swDate = formatDateTime(state.currentStandWeek, state.config);
+      document.getElementById('stand-week-label').textContent = `Session ${state.currentStandWeek}${swDate ? ' — ' + swDate : ''}`;
     });
 
     // Generate pairings
     document.getElementById('btn-generate').addEventListener('click', () => {
       const week = state.currentPairWeek;
+      const scope = document.getElementById('round-scope')?.value || 'all';
+      const totalRounds = parseInt(state.config.gamesPerSession || 7);
+      const lockedRounds = [...new Set(
+        state.pairings.filter(p => parseInt(p.week) === week).map(p => parseInt(p.round))
+      )].sort((a,b)=>a-b);
 
-      // Block generation if scores already exist for this week
-      const hasScores = state.scores.some(s => parseInt(s.week) === week);
+      // Determine which rounds to generate
+      let startRound, rounds;
+      if (scope === 'all') {
+        startRound = 1;
+        rounds = totalRounds;
+      } else if (scope === 'remaining') {
+        const nextRound = lockedRounds.length ? Math.max(...lockedRounds) + 1 : 1;
+        startRound = nextRound;
+        rounds = totalRounds - nextRound + 1;
+        if (rounds <= 0) {
+          toast(`All ${totalRounds} rounds are already generated for Session ${week}.`, 'warn'); return;
+        }
+      } else {
+        // Specific round
+        startRound = parseInt(scope);
+        rounds = 1;
+      }
+
+      // Block generation if scores exist for the rounds being generated
+      const hasScores = state.scores.some(s =>
+        parseInt(s.week) === week && parseInt(s.round) >= startRound &&
+        parseInt(s.round) < startRound + rounds
+      );
       if (hasScores) {
-        toast(`Week ${week} already has scores entered. Use the 🗑 Clear Week button to remove all pairings and scores before generating new pairings.`, 'warn');
+        toast(`Scores already exist for the selected round(s). Clear them first.`, 'warn');
         return;
       }
 
       const weeks = parseInt(state.config.weeks || 8);
       const courts = parseInt(state.config.courts || 3);
-      const rounds = parseInt(state.config.gamesPerSession || 7);
       const tries = parseInt(state.config.optimizerTries || 100);
 
       // Get present players for this week
@@ -1401,7 +1483,12 @@ const APP_BUILD_DATE = "2026-03-16";
       const singles      = gameMode === 'singles';
       const playersPerCourt = singles ? 2 : 4;
       if (presentPlayers.length < courts * playersPerCourt) {
-        toast(`Need at least ${courts * playersPerCourt} players, only ${presentPlayers.length} available.`, 'warn');
+        const maxCourts = Math.floor(presentPlayers.length / playersPerCourt);
+        if (maxCourts === 0) {
+          toast(`Not enough players to fill even one court (${presentPlayers.length} present, need ${playersPerCourt}). No pairings generated.`, 'warn');
+          return;
+        }
+        toast(`Only ${presentPlayers.length} players present — pairings generated for ${maxCourts} of ${courts} court${maxCourts !== 1 ? 's' : ''}. Remaining players will receive a bye.`, 'warn');
       }
 
       // Show pickleball spinner and defer heavy work so browser paints first
@@ -1413,7 +1500,11 @@ const APP_BUILD_DATE = "2026-03-16";
 
       setTimeout(() => {
         try {
+          // Include already-locked rounds of this week as session history for the optimizer
           const pastPairings = state.pairings.filter(p => parseInt(p.week) < week);
+          const lockedThisWeek = state.pairings.filter(p =>
+            parseInt(p.week) === week && parseInt(p.round) < startRound
+          );
 
           const weights = {
             sessionPartnerWeight:  state.config.wSessionPartner  ?? Pairings.DEFAULTS.sessionPartnerWeight,
@@ -1422,7 +1513,8 @@ const APP_BUILD_DATE = "2026-03-16";
             historyOpponentWeight: state.config.wHistoryOpponent ?? Pairings.DEFAULTS.historyOpponentWeight,
             byeVarianceWeight:     state.config.wByeVariance     ?? Pairings.DEFAULTS.byeVarianceWeight,
             sessionByeWeight:      state.config.wSessionBye      ?? Pairings.DEFAULTS.sessionByeWeight,
-            rankBalanceWeight:     state.config.wRankBalance     ?? Pairings.DEFAULTS.rankBalanceWeight,
+            rankBalanceWeight:          state.config.wRankBalance           ?? Pairings.DEFAULTS.rankBalanceWeight,
+            rankStdDevWeight:           state.config.wRankStdDev            ?? Pairings.DEFAULTS.rankStdDevWeight,
           };
 
           const playerGroups = {};
@@ -1433,6 +1525,8 @@ const APP_BUILD_DATE = "2026-03-16";
             standings: state.standings,
             gameMode,
             playerGroups,
+            startRound,
+            sessionHistory: lockedThisWeek,
           });
 
           overlay.classList.add('hidden');
@@ -1444,7 +1538,18 @@ const APP_BUILD_DATE = "2026-03-16";
             toast(`⚠️ Mixed doubles: ${breakdown.mixedViolations.raw} same-gender partnership(s) could not be avoided — check player groups and attendance.`, 'warn');
           }
 
-          state.pendingPairings = result.map(p => ({ ...p, week }));
+          // Merge newly generated rounds with already-locked rounds of this week
+          const otherRounds = state.pairings.filter(p =>
+            parseInt(p.week) === week &&
+            (parseInt(p.round) < startRound || parseInt(p.round) >= startRound + rounds)
+          );
+          const newRounds = result.map(p => ({ ...p, week,
+            round: p.round + startRound - 1  // offset round numbers to correct position
+          }));
+          state.pendingPairings = [
+            ...otherRounds,
+            ...newRounds,
+          ].sort((a,b) => parseInt(a.round)-parseInt(b.round) || String(a.court).localeCompare(String(b.court), undefined, {numeric:true}));
 
           document.getElementById('optimizer-status').classList.remove('hidden');
           document.getElementById('optimizer-score').textContent = score.toFixed(1);
@@ -1459,7 +1564,8 @@ const APP_BUILD_DATE = "2026-03-16";
         historyOpponent: 'Repeat Opponent (prior weeks)',
         sessionBye:      'Byes this session',
         byeVariance:     'Bye spread (season)',
-        rankBalance:     'Rank imbalance',
+        rankBalance:         'Rank imbalance',
+        rankStdDev:          'Rank std dev (all-player spread)',
       };
           if (breakdown) {
         // Map criterion key -> user weight and normalized weight
@@ -1470,7 +1576,8 @@ const APP_BUILD_DATE = "2026-03-16";
           historyOpponent: 'historyOpponentWeight',
           sessionBye:      'sessionByeWeight',
           byeVariance:     'byeVarianceWeight',
-          rankBalance:     'rankBalanceWeight',
+          rankBalance:         'rankBalanceWeight',
+          rankStdDev:          'rankStdDevWeight',
         };
         let bhtml = `<table style="font-size:0.78rem; width:100%; border-collapse:collapse; margin-top:4px;">
           <thead><tr>
@@ -1531,7 +1638,7 @@ const APP_BUILD_DATE = "2026-03-16";
         state.pairings.push(...allWeekPairings);
         state.pendingPairings = null;
         document.getElementById('btn-lock-pairings').disabled = true;
-        toast(`Pairings for Week ${week} saved!`);
+        toast(`Pairings for Session ${week} saved!`);
         renderPairingsPreview();
         renderScoresheet();
       } catch (e) { toast('Save failed: ' + e.message, 'error'); }
@@ -1541,22 +1648,63 @@ const APP_BUILD_DATE = "2026-03-16";
     // Clear pairings (and scores for that week)
     document.getElementById('btn-clear-pairings').addEventListener('click', async () => {
       const week = state.currentPairWeek;
-      const hasScores = state.scores.some(s => parseInt(s.week) === week);
-      const msg = hasScores
-        ? `Clear all pairings AND scores for Week ${week}? This cannot be undone.`
-        : `Clear all pairings for Week ${week}?`;
+      const scope = document.getElementById('round-scope')?.value || 'all';
+      const totalRounds = parseInt(state.config.gamesPerSession || 7);
+      const lockedRounds = [...new Set(
+        state.pairings.filter(p => parseInt(p.week) === week).map(p => parseInt(p.round))
+      )].sort((a,b)=>a-b);
+
+      // Determine which rounds to clear
+      let clearRounds;
+      if (scope === 'all') {
+        clearRounds = null; // all rounds
+      } else if (scope === 'remaining') {
+        const nextRound = lockedRounds.length ? Math.max(...lockedRounds) + 1 : 1;
+        clearRounds = Array.from({length: totalRounds - nextRound + 1}, (_, i) => nextRound + i);
+      } else {
+        clearRounds = [parseInt(scope)];
+      }
+
+      const scopeLabel = scope === 'all' ? `all rounds of Session ${week}`
+        : scope === 'remaining' ? `remaining rounds of Session ${week}`
+        : `Round ${scope} of Session ${week}`;
+
+      const affectedScores = state.scores.filter(s =>
+        parseInt(s.week) === week &&
+        (!clearRounds || clearRounds.includes(parseInt(s.round)))
+      );
+      const msg = affectedScores.length
+        ? `Clear pairings AND scores for ${scopeLabel}? This cannot be undone.`
+        : `Clear pairings for ${scopeLabel}?`;
       if (!confirm(msg)) return;
+
       showLoading(true);
       try {
-        await API.savePairings(week, []);
-        state.pairings = state.pairings.filter(p => parseInt(p.week) !== week);
+        if (clearRounds) {
+          // Partial clear — keep other rounds, save updated set
+          const kept = state.pairings.filter(p =>
+            parseInt(p.week) !== week || !clearRounds.includes(parseInt(p.round))
+          );
+          const weekKept = kept.filter(p => parseInt(p.week) === week);
+          await API.savePairings(week, weekKept);
+          state.pairings = kept;
+        } else {
+          // Clear entire week
+          await API.savePairings(week, []);
+          state.pairings = state.pairings.filter(p => parseInt(p.week) !== week);
+        }
         state.pendingPairings = null;
-        if (hasScores) {
-          await API.saveScores(week, []);
-          state.scores = state.scores.filter(s => parseInt(s.week) !== week);
+
+        if (affectedScores.length) {
+          const keptScores = state.scores.filter(s =>
+            parseInt(s.week) !== week || !(!clearRounds || clearRounds.includes(parseInt(s.round)))
+          );
+          const weekKeptScores = keptScores.filter(s => parseInt(s.week) === week);
+          await API.saveScores(week, weekKeptScores);
+          state.scores = keptScores;
           state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod);
         }
-        toast(`Week ${week} cleared.`);
+        toast(`${scopeLabel.charAt(0).toUpperCase() + scopeLabel.slice(1)} cleared.`);
         renderPairingsPreview();
         renderScoresheet();
       } catch (e) { toast('Failed: ' + e.message, 'error'); }
@@ -1587,6 +1735,24 @@ const APP_BUILD_DATE = "2026-03-16";
         }
       });
 
+      // Warn if any scores being saved would overwrite existing different scores
+      const overwritten = scores.filter(s => {
+        const existing = state.scores.find(e =>
+          parseInt(e.week) === week && parseInt(e.round) === s.round && String(e.court) === String(s.court)
+        );
+        return existing &&
+          (String(existing.score1) !== String(s.score1) || String(existing.score2) !== String(s.score2));
+      });
+      if (overwritten.length) {
+        const msg = overwritten.map(s => {
+          const ex = state.scores.find(e =>
+            parseInt(e.week) === week && parseInt(e.round) === s.round && String(e.court) === String(s.court)
+          );
+          return `Round ${s.round} ${courtName(s.court)}: existing ${ex.score1}–${ex.score2} → new ${s.score1}–${s.score2}`;
+        }).join('\n');
+        if (!confirm(`⚠️ These scores already exist and will be overwritten:\n${msg}\n\nSave anyway?`)) return;
+      }
+
       // Warn on tied scores before saving
       const ties = scores.filter(s => s.score1 === s.score2);
       if (ties.length) {
@@ -1601,12 +1767,12 @@ const APP_BUILD_DATE = "2026-03-16";
         state.scores.push(...scores);
         // Refresh standings
         state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod);
-        toast(`Scores for Week ${week} saved!`);
+        toast(`Scores for Session ${week} saved!`);
       } catch (e) { toast('Save failed: ' + e.message, 'error'); }
       finally { showLoading(false); }
     });
 
-    // Send weekly email report
+    // Send session email report
     document.getElementById('btn-send-report').addEventListener('click', async () => {
       const week = state.currentScoreWeek;
       const recipients = state.players.filter(p => p.active !== false && p.notify && p.email);
@@ -1614,14 +1780,14 @@ const APP_BUILD_DATE = "2026-03-16";
         toast('No players have email notifications enabled.', 'warn');
         return;
       }
-      if (!confirm(`Send Week ${week} results to ${recipients.length} player(s)?`)) return;
+      if (!confirm(`Send Session ${week} results to ${recipients.length} player(s)?`)) return;
 
       // Build report data
       const weekScores   = state.scores.filter(s => parseInt(s.week) === week);
       const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && p.type === 'game');
       const weekStand    = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week);
       const seasonStand  = Reports.computeStandings(state.scores, state.players, state.pairings);
-      const weekDate     = state.config['date_' + week] ? formatDate(state.config['date_' + week]) : '';
+      const weekDate     = formatDateTime(week, state.config);
 
       showLoading(true);
       try {
@@ -1645,7 +1811,7 @@ const APP_BUILD_DATE = "2026-03-16";
             ])
           ),
         });
-        toast(`Week ${week} results sent to ${recipients.length} player(s)!`);
+        toast(`Session ${week} results sent to ${recipients.length} player(s)!`);
       } catch (e) { toast('Send failed: ' + e.message, 'error'); }
       finally { showLoading(false); }
     });
@@ -1695,8 +1861,8 @@ const APP_BUILD_DATE = "2026-03-16";
       const name     = document.getElementById('new-league-name').value.trim();
       const sheetId  = document.getElementById('new-league-sheet').value.trim();
 
-      if (!leagueId || !name || !sheetId) {
-        toast('All three fields are required.', 'warn'); return;
+      if (!leagueId || !name) {
+        toast('League ID and Display Name are required.', 'warn'); return;
       }
 
       showLoading(true);
@@ -1710,7 +1876,11 @@ const APP_BUILD_DATE = "2026-03-16";
         if (result.warnings && result.warnings.length) {
           result.warnings.forEach(w => toast('Copy warning: ' + w, 'warn'));
         }
-        toast(`League "${name}" added!`);
+        if (result.sheetUrl) {
+          toast(`League "${name}" added! Sheet created: ${result.sheetUrl}`);
+        } else {
+          toast(`League "${name}" added!`);
+        }
         document.getElementById('new-league-id').value = '';
         document.getElementById('new-league-name').value = '';
         document.getElementById('new-league-sheet').value = '';
@@ -1838,7 +2008,7 @@ const APP_BUILD_DATE = "2026-03-16";
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Wk</th><th>Rd</th><th>Partner</th><th>Opponents</th><th>Score</th><th>Result</th></tr></thead>
+          <thead><tr><th>Ses</th><th>Rd</th><th>Partner</th><th>Opponents</th><th>Score</th><th>Result</th></tr></thead>
           <tbody>`;
 
     report.games.forEach(g => {
@@ -1880,6 +2050,25 @@ const APP_BUILD_DATE = "2026-03-16";
       const parts = d.split('-');
       return `${parseInt(parts[1])}/${parseInt(parts[2])}`;
     } catch { return d; }
+  }
+
+  function formatDateTime(w, config) {
+    const d = config['date_' + w];
+    const t = config['time_' + w];
+    if (!d && !t) return '';
+    let s = d ? formatDate(d) : '';
+    if (t) s += (s ? ' ' : '') + formatTime(t);
+    return s;
+  }
+
+  function formatTime(t) {
+    if (!t) return '';
+    try {
+      const [h, m] = t.split(':').map(Number);
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 || 12;
+      return m === 0 ? `${h12}${ampm}` : `${h12}:${String(m).padStart(2,'0')}${ampm}`;
+    } catch { return t; }
   }
 
   function esc(s) {

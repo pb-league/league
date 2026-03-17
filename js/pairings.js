@@ -26,6 +26,7 @@ const Pairings = (() => {
     byeVarianceWeight:      20,   // variance of season bye counts
     sessionByeWeight:       30,   // penalty per bye a player takes this session
     rankBalanceWeight:      15,   // penalty per rank-point difference between team averages
+    rankStdDevWeight:          8,   // penalty for std dev of all four player ranks in a game
   };
 
   // ── Helpers ────────────────────────────────────────────────
@@ -93,6 +94,17 @@ const Pairings = (() => {
       // Rank balance (singles — compare individual ranks)
       if (w.rankBalanceWeight > 0 && w.rankMap) {
         s += Math.abs((w.rankMap[p1]||999) - (w.rankMap[p3]||999)) * w.rankBalanceWeight;
+      }
+    }
+
+    // Rank std dev — penalize standard deviation of all players' ranks in a game
+    // Captures overall spread more evenly than range alone
+    if (w.rankStdDevWeight > 0 && w.rankMap) {
+      const ranks = [p1, p2, p3, p4].filter(Boolean).map(p => w.rankMap[p] || 999).filter(r => r < 999);
+      if (ranks.length > 1) {
+        const mean = ranks.reduce((a, b) => a + b, 0) / ranks.length;
+        const variance = ranks.reduce((a, b) => a + (b - mean) ** 2, 0) / ranks.length;
+        s += Math.sqrt(variance) * w.rankStdDevWeight;
       }
     }
 
@@ -178,7 +190,8 @@ const Pairings = (() => {
       }
     }
 
-    return result;
+    // Any players still in pool couldn't fill a court — return them as unassigned
+    return { games: result, unassigned: pool };
   }
 
   // ── Bye selection ───────────────────────────────────────────
@@ -208,10 +221,10 @@ const Pairings = (() => {
 
   // ── Full week construction ──────────────────────────────────
 
-  function constructWeek(presentPlayers, courts, rounds, history, byeCounts, weightsWithRank) {
+  function constructWeek(presentPlayers, courts, rounds, history, byeCounts, weightsWithRank, initPartners = {}, initOpponents = {}) {
     const result          = [];
-    const sessionPartners  = {};
-    const sessionOpponents = {};
+    const sessionPartners  = Object.assign({}, initPartners);
+    const sessionOpponents = Object.assign({}, initOpponents);
     const sessionByes      = {};
 
     for (let round = 1; round <= rounds; round++) {
@@ -221,14 +234,16 @@ const Pairings = (() => {
 
       // Build games — passes session state objects by reference so
       // each court within the round updates them before the next court
-      const games = buildRound(
+      const { games, unassigned } = buildRound(
         round, playing, courts,
         sessionPartners, sessionOpponents, history, weightsWithRank
       );
       result.push(...games);
 
-      // Record byes for this round
-      sitting.forEach(p => {
+      // Record byes for this round — both pre-selected sitters and
+      // any players left over because courts couldn't be filled
+      const allByes = [...sitting, ...unassigned];
+      allByes.forEach(p => {
         result.push({ round, court: 'bye', p1: p, p2: '', p3: '', p4: '', type: 'bye' });
         sessionByes[p] = (sessionByes[p] || 0) + 1;
       });
@@ -244,7 +259,7 @@ const Pairings = (() => {
     const raw = {
       sessionPartner: 0, sessionOpponent: 0,
       historyPartner: 0, historyOpponent: 0,
-      sessionBye: 0, byeVariance: 0, rankBalance: 0,
+      sessionBye: 0, byeVariance: 0, rankBalance: 0, rankStdDev: 0,
     };
     const sessionPartners  = {};
     const sessionOpponents = {};
@@ -282,6 +297,13 @@ const Pairings = (() => {
           const r1=w.rankMap[p1]||999, r2=p2?w.rankMap[p2]||999:w.rankMap[p1]||999;
           const r3=w.rankMap[p3]||999, r4=p4?w.rankMap[p4]||999:w.rankMap[p3]||999;
           raw.rankBalance += Math.abs((r1+r2)/2-(r3+r4)/2);
+        }
+        if (w.rankStdDevWeight > 0 && w.rankMap) {
+          const ranks = [p1, p2, p3, p4].filter(Boolean).map(p => w.rankMap[p] || 999).filter(r => r < 999);
+          if (ranks.length > 1) {
+            const mean = ranks.reduce((a, b) => a + b, 0) / ranks.length;
+            raw.rankStdDev += Math.sqrt(ranks.reduce((a, b) => a + (b - mean) ** 2, 0) / ranks.length);
+          }
         }
       });
 
@@ -322,7 +344,8 @@ const Pairings = (() => {
       historyOpponent: { raw: raw.historyOpponent, weight: w.historyOpponentWeight, weighted: raw.historyOpponent * w.historyOpponentWeight },
       sessionBye:      { raw: raw.sessionBye,      weight: w.sessionByeWeight,      weighted: raw.sessionBye      * w.sessionByeWeight      },
       byeVariance:     { raw: raw.byeVariance,      weight: w.byeVarianceWeight,    weighted: raw.byeVariance     * w.byeVarianceWeight     },
-      rankBalance:     { raw: raw.rankBalance,      weight: w.rankBalanceWeight,    weighted: raw.rankBalance     * w.rankBalanceWeight     },
+      rankBalance:          { raw: raw.rankBalance,          weight: w.rankBalanceWeight,          weighted: raw.rankBalance          * w.rankBalanceWeight          },
+      rankStdDev:           { raw: raw.rankStdDev,           weight: w.rankStdDevWeight,           weighted: raw.rankStdDev           * w.rankStdDevWeight           },
     };
 
     const total = Object.values(breakdown).reduce((s,v)=>s+v.weighted, 0);
@@ -445,7 +468,7 @@ const Pairings = (() => {
   // Weights are normalized via calibration so user weights reflect
   // true relative importance regardless of criterion magnitude.
 
-  function optimize({ presentPlayers, courts, rounds, pastPairings, tries = 100, weights = {}, standings = [], gameMode = 'doubles', playerGroups = {} }) {
+  function optimize({ presentPlayers, courts, rounds, pastPairings, tries = 100, weights = {}, standings = [], gameMode = 'doubles', playerGroups = {}, startRound = 1, sessionHistory = [] }) {
     const singles      = gameMode === 'singles';
     const mixedDoubles = gameMode === 'mixed-doubles';
     const playersPerCourt = singles ? 2 : 4;
@@ -471,10 +494,29 @@ const Pairings = (() => {
     let bestBreakdown = null;
     let bestScore     = Infinity;
 
+    // Pre-warm session state from already-locked rounds (e.g. when generating remaining/specific rounds)
+    const priorSessionPartners  = {};
+    const priorSessionOpponents = {};
+    sessionHistory.forEach(g => {
+      if (g.type !== 'game') return;
+      const { p1, p2, p3, p4 } = g;
+      if (p2) {
+        const pk1 = [p1,p2].sort().join('|');
+        const pk2 = [p3,p4].sort().join('|');
+        priorSessionPartners[pk1] = (priorSessionPartners[pk1]||0) + 1;
+        priorSessionPartners[pk2] = (priorSessionPartners[pk2]||0) + 1;
+      }
+      [[p1,p3],[p1,p4],[p2,p3],[p2,p4]].filter(([a,b])=>a&&b).forEach(([a,b]) => {
+        const k = [a,b].sort().join('|');
+        priorSessionOpponents[k] = (priorSessionOpponents[k]||0) + 1;
+      });
+    });
+
     for (let i = 0; i < tries; i++) {
       // Construct using normalized weights so greedy choices reflect true priorities
       const candidate = constructWeek(
-        presentPlayers, courts, rounds, history, byeCounts, normalizedWeights
+        presentPlayers, courts, rounds, history, byeCounts, normalizedWeights,
+        priorSessionPartners, priorSessionOpponents
       );
 
       const candidateByeCounts = { ...byeCounts };

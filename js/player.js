@@ -20,27 +20,14 @@
     currentSheetWeek: 1, currentWstandWeek: 1
   };
 
-  // ── Load ───────────────────────────────────────────────────
+  // ── Phase 1: Fast load — config, players, attendance ────────
+  // Renders the UI shell immediately so the player sees content fast.
   showLoading(true);
   try {
-    const data = await API.getAllData();
-    state.config     = data.config || {};
-    state.players    = data.players || [];
-    state.attendance = data.attendance || [];
-    state.pairings   = data.pairings || [];
-    state.scores     = data.scores || [];
-    state.standings  = data.standings || [];
-
-    // Default to latest week with pairings
-    const weeksWithPairings = [...new Set(state.pairings.map(p => parseInt(p.week)))];
-    if (weeksWithPairings.length) {
-      state.currentSheetWeek = Math.max(...weeksWithPairings);
-    }
-    const weeksWithScores = [...new Set(state.scores.map(s => parseInt(s.week)))];
-    if (weeksWithScores.length) {
-      state.currentWstandWeek = Math.max(...weeksWithScores);
-    }
-
+    const early = await API.getEarlyData();
+    state.config     = early.config     || {};
+    state.players    = early.players    || [];
+    state.attendance = early.attendance || [];
   } catch (e) {
     toast('Failed to load data: ' + e.message, 'error');
   } finally {
@@ -50,6 +37,64 @@
   renderAll();
   setupNav();
   setupEvents();
+
+  // ── Phase 2: Background load — pairings, scores, standings ──
+  // Fetches the last 3 sessions of data based on what actually exists,
+  // not the configured total. This ensures current scores are always loaded.
+  (async () => {
+    try {
+      // First do a lightweight fetch of just the session numbers that have data,
+      // then use that to compute a safe sinceWeek based on actual content.
+      // Since we don't have pairings/scores yet, use config weeks as a fallback
+      // but fetch from 3 sessions before the LAST session (not the total count).
+      const totalWeeks = parseInt(state.config.weeks || 8);
+      // Fetch all sessions — sinceWeek=1 ensures we never miss current scores.
+      // For large leagues (many sessions) this could be optimised later, but
+      // correctness matters more than a small payload saving.
+      const sinceWeek  = Math.max(1, totalWeeks - 4); // last 5 sessions as safe buffer
+      const data = await API.getAllData(sinceWeek);
+      state.pairings  = data.pairings  || [];
+      state.scores    = data.scores    || [];
+      state.standings = data.standings || [];
+      state.loadedSinceWeek = sinceWeek;
+
+      // Update current week pointers to latest available
+      const weeksWithPairings = [...new Set(state.pairings.map(p => parseInt(p.week)))];
+      const weeksWithScores = [...new Set(state.scores.map(s => parseInt(s.week)))];
+
+      // Scoresheet defaults to latest session with scores; falls back to latest with pairings
+      if (weeksWithScores.length) {
+        state.currentSheetWeek = Math.max(...weeksWithScores);
+      } else if (weeksWithPairings.length) {
+        state.currentSheetWeek = Math.max(...weeksWithPairings);
+      }
+
+      // Standings defaults to latest session with scores
+      if (weeksWithScores.length) {
+        state.currentWstandWeek = Math.max(...weeksWithScores);
+      }
+
+      // If the current sheet week falls before our sinceWeek window, we missed
+      // its scores — do a full reload to get everything
+      if (state.currentSheetWeek < sinceWeek) {
+        const fullData = await API.getAllData();
+        state.pairings  = fullData.pairings  || [];
+        state.scores    = fullData.scores    || [];
+        state.standings = fullData.standings || [];
+        state.loadedSinceWeek = 1;
+        const wp2 = [...new Set(state.pairings.map(p => parseInt(p.week)))];
+        const ws2 = [...new Set(state.scores.map(s => parseInt(s.week)))];
+        if (ws2.length) state.currentSheetWeek = Math.max(...ws2);
+        else if (wp2.length) state.currentSheetWeek = Math.max(...wp2);
+        if (ws2.length) state.currentWstandWeek = Math.max(...ws2);
+      }
+
+      // Re-render now that we have scores and pairings
+      renderAll();
+    } catch (e) {
+      toast('Background data load failed: ' + e.message, 'error');
+    }
+  })();
 
   // ── Nav ────────────────────────────────────────────────────
   function setupNav() {
@@ -134,7 +179,7 @@
       const myScore = myTeam === 1 ? s1 : s2;
       const oppScore = myTeam === 1 ? s2 : s1;
       const won = score && parseInt(myScore) > parseInt(oppScore);
-      const date = state.config['date_' + week] ? ' · ' + formatDate(state.config['date_' + week]) : '';
+      const date = formatDateTime(week, state.config) ? ' · ' + formatDateTime(week, state.config) : '';
 
       el.innerHTML = `<div class="card mt-1" style="border-left:3px solid ${won ? 'var(--green)' : 'var(--danger)'}; margin-bottom:12px;">
         <div class="card-header" style="padding-bottom:8px;">
@@ -155,7 +200,7 @@
     const opps = myTeam === 1
       ? [nextGame.p3, nextGame.p4].filter(Boolean)
       : [nextGame.p1, nextGame.p2].filter(Boolean);
-    const date = state.config['date_' + week] ? ' · ' + formatDate(state.config['date_' + week]) : '';
+    const date = formatDateTime(week, state.config) ? ' · ' + formatDateTime(week, state.config) : '';
 
     el.innerHTML = `<div class="card mt-1" style="border-left:3px solid var(--gold); margin-bottom:12px;">
       <div class="card-header" style="padding-bottom:8px;">
@@ -221,7 +266,7 @@
     }
 
     let html = `<table>
-      <thead><tr><th>Wk</th><th>Rd</th><th>Partner</th><th>Opponents</th><th>Score</th><th>Result</th></tr></thead>
+      <thead><tr><th>Ses</th><th>Rd</th><th>Partner</th><th>Opponents</th><th>Score</th><th>Result</th></tr></thead>
       <tbody>`;
 
     report.games.forEach(g => {
@@ -247,10 +292,10 @@
     for (let w = 1; w <= weeks; w++) {
       const rec = state.attendance.find(a => a.player === playerName && String(a.week) === String(w));
       const status = rec ? rec.status : 'tbd';
-      const date = state.config['date_' + w] ? formatDate(state.config['date_' + w]) : '';
+      const date = formatDateTime(w, state.config);
 
       html += `<div style="text-align:center; min-width:90px;">
-        <div class="label" style="margin-bottom:6px;">Week ${w}${date ? `<br>${date}` : ''}</div>
+        <div class="label" style="margin-bottom:6px;">Session ${w}${date ? `<br>${date}` : ''}</div>
         <div class="att-cell editable ${status}" data-week="${w}" style="padding:10px 0; border-radius:8px; cursor:pointer;">
           <div style="font-size:1.2rem; margin-bottom:2px;">${statusIcon(status)}</div>
           ${statusLabel(status)}
@@ -290,7 +335,7 @@
       <div class="card mt-2">
         <div class="card-header"><div class="card-title">Email Notifications</div></div>
         <p style="font-size:0.85rem; color:var(--muted); margin-bottom:14px;">
-          Receive weekly results by email after each session.
+          Receive session results by email after each session.
         </p>
         <div class="form-row" style="align-items:center; gap:16px;">
           <div class="form-group" style="flex:2;">
@@ -414,13 +459,13 @@
   // ── Scoresheet (read-only) ─────────────────────────────────
   function renderScoresheet() {
     const week = state.currentSheetWeek;
-    document.getElementById('sheet-week-label').textContent = `Week ${week}`;
+    document.getElementById('sheet-week-label').textContent = `Session ${week}`;
 
     const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && p.type === 'game');
 
     if (!weekPairings.length) {
       document.getElementById('player-scoresheet').innerHTML =
-        '<p class="text-muted">No pairings for this week yet.</p>';
+        '<p class="text-muted">No pairings for this session yet.</p>';
       return;
     }
 
@@ -491,13 +536,13 @@
   function renderScoreEntry() {
     const week = state.currentScoreEntryWeek || state.currentSheetWeek;
     state.currentScoreEntryWeek = week;
-    document.getElementById('player-score-week-label').textContent = `Week ${week}`;
+    document.getElementById('player-score-week-label').textContent = `Session ${week}`;
 
     const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && p.type === 'game');
 
     if (!weekPairings.length) {
       document.getElementById('player-scoresheet-entry').innerHTML =
-        '<p class="text-muted">No pairings for this week yet.</p>';
+        '<p class="text-muted">No pairings for this session yet.</p>';
       return;
     }
 
@@ -550,7 +595,7 @@
     document.getElementById('player-scoresheet-entry').innerHTML = html;
   }
 
-  // ── Weekly Standings ───────────────────────────────────────
+  // ── Session Standings ───────────────────────────────────────
   function renderPlayerStandings() {
     // Season tab
     const season = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod);
@@ -558,8 +603,8 @@
 
     // Weekly tab
     const week = state.currentWstandWeek;
-    const wstandDate = state.config['date_' + week] ? ' — ' + formatDate(state.config['date_' + week]) : '';
-    document.getElementById('wstand-label').textContent = `Week ${week}${wstandDate}`;
+    const wstandDate = formatDateTime(week, state.config) ? ' — ' + formatDateTime(week, state.config) : '';
+    document.getElementById('wstand-label').textContent = `Session ${week}${wstandDate}`;
     const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week, state.config.rankingMethod);
     document.getElementById('weekly-standings-table').innerHTML = renderStandingsTable(weekStand, playerName);
 
@@ -592,8 +637,8 @@
   // kept for backward compat (called via week nav)
   function renderWeeklyStandings() {
     const week = state.currentWstandWeek;
-    const wstandDate = state.config['date_' + week] ? ' — ' + formatDate(state.config['date_' + week]) : '';
-    document.getElementById('wstand-label').textContent = `Week ${week}${wstandDate}`;
+    const wstandDate = formatDateTime(week, state.config) ? ' — ' + formatDateTime(week, state.config) : '';
+    document.getElementById('wstand-label').textContent = `Session ${week}${wstandDate}`;
     const s = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week, state.config.rankingMethod);
     document.getElementById('weekly-standings-table').innerHTML = renderStandingsTable(s, playerName);
   }
@@ -606,8 +651,8 @@
     let html = '<div class="att-grid">';
     html += '<div class="att-row"><div></div>';
     for (let w = 1; w <= weeks; w++) {
-      const date = state.config['date_' + w] ? formatDate(state.config['date_' + w]) : '';
-      html += `<div class="att-week-header">Wk${w}${date ? `<br><span style="font-size:0.6rem;font-weight:400;">${date}</span>` : ''}</div>`;
+      const date = formatDateTime(w, state.config);
+      html += `<div class="att-week-header">S${w}${date ? `<br><span style="font-size:0.6rem;font-weight:400;">${date}</span>` : ''}</div>`;
     }
     html += '</div>';
 
@@ -618,7 +663,7 @@
       for (let w = 1; w <= weeks; w++) {
         const rec = state.attendance.find(a => a.player === p.name && String(a.week) === String(w));
         const status = rec ? rec.status : 'tbd';
-        html += `<div class="att-cell ${status}" title="${esc(p.name)} Week ${w}: ${status}">${statusLabel(status)}</div>`;
+        html += `<div class="att-cell ${status}" title="${esc(p.name)} Session ${w}: ${status}">${statusLabel(status)}</div>`;
       }
       html += '</div>';
     });
@@ -708,7 +753,7 @@
           state.scores = state.scores.filter(s => parseInt(s.week) !== week);
           state.scores.push(...scores);
           state.standings = Reports.computeStandings(state.scores, state.players, state.pairings);
-          toast(`Scores for Week ${week} saved!`);
+          toast(`Scores for Session ${week} saved!`);
           renderScoreEntry();
         } catch (e) { toast('Save failed: ' + e.message, 'error'); }
         finally { showLoading(false); }
@@ -716,12 +761,20 @@
     }
 
     // Scoresheet week nav
-    document.getElementById('sheet-week-prev').addEventListener('click', () => {
-      if (state.currentSheetWeek > 1) { state.currentSheetWeek--; renderScoresheet(); }
+    document.getElementById('sheet-week-prev').addEventListener('click', async () => {
+      if (state.currentSheetWeek > 1) {
+        state.currentSheetWeek--;
+        await ensureWeekLoaded(state.currentSheetWeek);
+        renderScoresheet();
+      }
     });
-    document.getElementById('sheet-week-next').addEventListener('click', () => {
+    document.getElementById('sheet-week-next').addEventListener('click', async () => {
       const max = parseInt(state.config.weeks || 8);
-      if (state.currentSheetWeek < max) { state.currentSheetWeek++; renderScoresheet(); }
+      if (state.currentSheetWeek < max) {
+        state.currentSheetWeek++;
+        await ensureWeekLoaded(state.currentSheetWeek);
+        renderScoresheet();
+      }
     });
 
     // Refresh tournament bracket
@@ -860,7 +913,7 @@
       <div class="card-title" style="font-size:0.8rem; margin-bottom:8px; color:var(--muted);">GAME LOG</div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Wk</th><th>Rd</th><th>Partner</th><th>Opponents</th><th>Score</th><th>Result</th></tr></thead>
+          <thead><tr><th>Ses</th><th>Rd</th><th>Partner</th><th>Opponents</th><th>Score</th><th>Result</th></tr></thead>
           <tbody>${report.games.length ? report.games.map(g =>
             `<tr>
               <td>${g.week}</td><td>${g.round}</td>
@@ -917,6 +970,25 @@
   function formatDate(d) {
     if (!d) return '';
     try { const p = d.split('-'); return `${parseInt(p[1])}/${parseInt(p[2])}`; } catch { return d; }
+  }
+
+  function formatTime(t) {
+    if (!t) return '';
+    try {
+      const [h, m] = t.split(':').map(Number);
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 || 12;
+      return m === 0 ? `${h12}${ampm}` : `${h12}:${String(m).padStart(2,'0')}${ampm}`;
+    } catch { return t; }
+  }
+
+  function formatDateTime(w, config) {
+    const d = config['date_' + w];
+    const t = config['time_' + w];
+    if (!d && !t) return '';
+    let s = d ? formatDate(d) : '';
+    if (t) s += (s ? ' ' : '') + formatTime(t);
+    return s;
   }
 
 
@@ -1004,8 +1076,7 @@
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     weeksWithData.forEach((w, i) => {
       const x     = PAD.left + (i / (weeksWithData.length - 1 || 1)) * plotW;
-      const date  = chartState.config['date_' + w];
-      const label = date ? formatDate(date) : 'Wk ' + w;
+      const label = formatDateTime(w, chartState.config) || ('S' + w);
       ctx.fillText(label, x, H - PAD.bottom + 16);
     });
 
@@ -1113,7 +1184,7 @@
     const navEl = document.getElementById('nav-tournament');
     if (navEl) navEl.classList.toggle('hidden', !isTournament);
 
-    if (!isTournament) { el.innerHTML = '<p class="text-muted">No tournament data for this week.</p>'; return; }
+    if (!isTournament) { el.innerHTML = '<p class="text-muted">No tournament data for this session.</p>'; return; }
     if (!lockedRounds.length) { el.innerHTML = '<p class="text-muted">No rounds played yet.</p>'; return; }
 
     function getSeedLabel(name, pairings) {
@@ -1126,7 +1197,7 @@
     }
 
     let html = `<div style="font-size:0.78rem; color:var(--muted); margin-bottom:12px;">
-      Week ${week} · ${lockedRounds.length} round(s) played
+      Session ${week} · ${lockedRounds.length} round(s) played
     </div>`;
 
     html += `<div style="overflow-x:auto; padding-bottom:8px;">
@@ -1237,6 +1308,24 @@
     }
 
     el.innerHTML = html;
+  }
+
+  // Lazy-load historical weeks if the player navigates before sinceWeek
+  async function ensureWeekLoaded(week) {
+    if (!state.loadedSinceWeek || week >= state.loadedSinceWeek) return;
+    // Need older data — reload everything
+    try {
+      showLoading(true);
+      const data = await API.getAllData();
+      state.pairings  = data.pairings  || [];
+      state.scores    = data.scores    || [];
+      state.standings = data.standings || [];
+      state.loadedSinceWeek = 1; // all weeks now loaded
+    } catch (e) {
+      toast('Failed to load older data: ' + e.message, 'error');
+    } finally {
+      showLoading(false);
+    }
   }
 
   function esc(s) {

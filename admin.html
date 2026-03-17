@@ -35,7 +35,7 @@
         <div class="nav-item" data-page="leagues"><span class="icon">🌐</span> All Leagues</div>
       </div>
       <div class="nav-section">
-        <div class="nav-section-label">Weekly</div>
+        <div class="nav-section-label">Sessions</div>
         <div class="nav-item" data-page="attendance"><span class="icon">📋</span> Attendance</div>
         <div class="nav-item" data-page="pairings"><span class="icon">🎲</span> Pairings</div>
         <div class="nav-item" data-page="scores"><span class="icon">✏️</span> Score Entry</div>
@@ -113,7 +113,7 @@
           </div>
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">Number of Weeks</label>
+              <label class="form-label">Number of Sessions</label>
               <input class="form-control" id="cfg-weeks" type="number" min="1" max="20" value="8">
             </div>
             <div class="form-group">
@@ -181,6 +181,10 @@
               <div class="form-group">
                 <label class="form-label">Rank Balance (team avg rank diff)</label>
                 <input class="form-control" id="cfg-w-rank-balance" type="number" min="0" max="500" step="1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Rank Std Dev (spread of all 4 ranks)</label>
+                <input class="form-control" id="cfg-w-rank-std-dev" type="number" min="0" max="500" step="1">
               </div>
             </div>
           </div>
@@ -284,13 +288,20 @@
             <div class="card-title">Generate Pairings</div>
           </div>
           <p style="font-size:0.88rem; color:var(--muted); margin-bottom:16px;">
-            Only players marked <strong style="color:var(--green);">present</strong> for this week will be included.
+            Only players marked <strong style="color:var(--green);">present</strong> for this session will be included.
             The optimizer will try to minimize repeat partners/opponents and equalize byes.
           </p>
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
+            <label class="form-label" style="margin:0; white-space:nowrap;">Rounds to generate/clear:</label>
+            <select class="form-control" id="round-scope" style="width:200px;">
+              <option value="all">All rounds</option>
+              <option value="remaining">All remaining rounds</option>
+            </select>
+          </div>
           <div class="btn-group">
             <button class="btn btn-gold" id="btn-generate">🎲 Generate Best Pairings</button>
             <button class="btn btn-primary" id="btn-lock-pairings" disabled>🔒 Lock &amp; Save</button>
-            <button class="btn btn-danger" id="btn-clear-pairings">🗑 Clear Week</button>
+            <button class="btn btn-danger" id="btn-clear-pairings">🗑 Clear Rounds</button>
           </div>
           <div class="optimizer-status mt-1 hidden" id="optimizer-status">
             <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:8px;">
@@ -329,11 +340,11 @@
         <div class="card mt-2" id="edit-pairing-card">
           <div class="card-header"><div class="card-title">✏️ Edit / Add Pairing</div></div>
           <p style="font-size:0.82rem; color:var(--muted); margin-bottom:14px;">
-            Select a week, round, and court to load an existing pairing for editing, or fill in new values to add one.
+            Select a session, round, and court to load an existing pairing for editing, or fill in new values to add one.
           </p>
           <div class="form-row" style="align-items:flex-end;">
             <div class="form-group">
-              <label class="form-label">Week</label>
+              <label class="form-label">Session</label>
               <input class="form-control" id="ep-week" type="number" min="1" max="20" style="width:80px;">
             </div>
             <div class="form-group">
@@ -388,10 +399,13 @@
       <section id="page-scores" class="tab-panel">
         <div class="page-header">
           <h2>Score Entry</h2>
-          <div class="week-selector">
-            <button id="score-week-prev">‹</button>
-            <div class="week-num" id="score-week-label">Week 1</div>
-            <button id="score-week-next">›</button>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button class="btn btn-secondary" id="btn-refresh-scoresheet" style="padding:5px 12px; font-size:0.78rem;">🔄 Refresh</button>
+            <div class="week-selector">
+              <button id="score-week-prev">‹</button>
+              <div class="week-num" id="score-week-label">Week 1</div>
+              <button id="score-week-next">›</button>
+            </div>
           </div>
         </div>
         <div class="card">
@@ -413,7 +427,7 @@
         </div>
         <div class="tabs" id="standings-tabs">
           <button class="tab-btn active" data-tab="season">Season Overall</button>
-          <button class="tab-btn" data-tab="weekly">By Week</button>
+          <button class="tab-btn" data-tab="weekly">By Session</button>
           <button class="tab-btn" data-tab="trend">Ranking Trend</button>
         </div>
         <div id="standings-season" class="tab-panel active">
@@ -425,7 +439,7 @@
         <div id="standings-weekly" class="tab-panel">
           <div class="card">
             <div class="card-header">
-              <div class="card-title">Weekly Standings</div>
+              <div class="card-title">Session Standings</div>
               <div class="week-selector">
                 <button id="stand-week-prev">‹</button>
                 <div class="week-num" id="stand-week-label">Week 1</div>
@@ -437,7 +451,7 @@
         </div>
         <div id="standings-trend" class="tab-panel">
           <div class="card">
-            <div class="card-header"><div class="card-title">Ranking Trend by Week</div></div>
+            <div class="card-header"><div class="card-title">Ranking Trend by Session</div></div>
             <div style="position:relative; width:100%; overflow-x:auto;">
               <canvas id="rank-trend-chart" style="width:100%; min-width:320px; display:block;"></canvas>
             </div>
@@ -468,17 +482,14 @@
         <!-- Add league form (hidden by default) -->
         <div class="card hidden" id="add-league-form">
           <div class="card-header"><div class="card-title">Add New League</div></div>
-          <div style="background:rgba(255,255,255,0.04); border-left:3px solid var(--gold); border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:0.82rem; color:var(--muted); line-height:1.7;">
-            <strong style="color:var(--white);">Before adding a league:</strong>
-            create a new blank Google Sheet at
-            <a href="https://sheets.google.com" target="_blank" style="color:var(--green);">sheets.google.com</a>,
-            then paste its ID here.<br>
-            The Sheet ID is the text in the URL between <code style="color:var(--gold); background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:3px;">d/</code>
-            and <code style="color:var(--gold); background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:3px;">/edit</code>
-            — for example:<br>
-            <span style="font-family:monospace; font-size:0.78rem; color:var(--muted);">
-              docs.google.com/spreadsheets/d/<span style="color:var(--gold);">1VPWAWqN1376ewwWUz7laZ8e-_oKbFA2cjv3p0yTvGZ4</span>/edit
-            </span>
+          <div style="background:rgba(255,255,255,0.04); border-left:3px solid var(--green); border-radius:6px; padding:10px 14px; margin-bottom:14px; font-size:0.82rem; color:var(--muted); line-height:1.7;">
+            <strong style="color:var(--white);">Google Sheet ID is optional.</strong>
+            Leave it blank and a new Google Sheet will be created automatically in your Drive.<br>
+            Or create a sheet manually at
+            <a href="https://sheets.google.com" target="_blank" style="color:var(--green);">sheets.google.com</a>
+            and paste its ID here. The Sheet ID is the text in the URL between
+            <code style="color:var(--gold); background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:3px;">d/</code>
+            and <code style="color:var(--gold); background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:3px;">/edit</code>.
           </div>
           <div class="form-row">
             <div class="form-group">
@@ -490,8 +501,8 @@
               <input class="form-control" id="new-league-name" placeholder="e.g. Spring 2026">
             </div>
             <div class="form-group">
-              <label class="form-label">Google Sheet ID</label>
-              <input class="form-control" id="new-league-sheet" placeholder="Paste Sheet ID from URL">
+              <label class="form-label">Google Sheet ID <span style="color:var(--muted); font-weight:400;">(optional — leave blank to auto-create)</span></label>
+              <input class="form-control" id="new-league-sheet" placeholder="Leave blank to auto-create">
             </div>
           </div>
           <div style="display:flex; flex-wrap:wrap; gap:16px; margin:12px 0 4px;">
@@ -532,7 +543,7 @@
         <div class="page-header">
           <h2>Head-to-Head</h2>
           <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-size:0.8rem; color:var(--muted);">Week:</span>
+            <span style="font-size:0.8rem; color:var(--muted);">Session:</span>
             <select class="form-control" id="h2h-week-select" style="width:120px; font-size:0.82rem; padding:4px 8px;"></select>
           </div>
         </div>
@@ -571,6 +582,7 @@
   input[type=number].score-input { -moz-appearance: textfield; }
 </style>
 
+<script src="js/settings.js"></script>
 <script src="js/api.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/pairings.js"></script>

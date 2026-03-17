@@ -83,6 +83,7 @@
 
 <div id="toast-container"></div>
 
+<script src="js/settings.js"></script>
 <script src="js/api.js"></script>
 <script src="js/auth.js"></script>
 <script>
@@ -128,7 +129,7 @@
     }
   } catch (e) {
     leagueSel.innerHTML = '<option value="">Could not load leagues</option>';
-    showToast('Could not connect. Check GAS_URL in api.js.', 'error');
+    showToast('Could not connect. Check GAS_URL in settings.js.', 'error');
   }
 
   leagueSel.addEventListener('change', () => {

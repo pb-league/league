@@ -468,7 +468,7 @@ const Pairings = (() => {
   // Weights are normalized via calibration so user weights reflect
   // true relative importance regardless of criterion magnitude.
 
-  function optimize({ presentPlayers, courts, rounds, pastPairings, tries = 100, weights = {}, standings = [], gameMode = 'doubles', playerGroups = {}, startRound = 1, sessionHistory = [] }) {
+  function optimize({ presentPlayers, courts, rounds, pastPairings, tries = 100, weights = {}, standings = [], gameMode = 'doubles', playerGroups = {}, startRound = 1, sessionHistory = [], players = [] }) {
     const singles      = gameMode === 'singles';
     const mixedDoubles = gameMode === 'mixed-doubles';
     const playersPerCourt = singles ? 2 : 4;
@@ -481,8 +481,32 @@ const Pairings = (() => {
 
     const rankMap = {};
     standings.forEach(s => { if (s.name && s.rank) rankMap[s.name] = s.rank; });
-    const midRank = standings.length > 0 ? Math.ceil(standings.length / 2) : 5;
-    presentPlayers.forEach(p => { if (!rankMap[p]) rankMap[p] = midRank; });
+
+    // Build an effective rank for players not yet in standings.
+    // Use initialRank if set, converting it to a position relative to standings.
+    // Duplicate initialRanks: sort those players alphabetically as tiebreak.
+    const unranked = presentPlayers.filter(n => !rankMap[n]);
+    if (unranked.length) {
+      // Collect initialRank for each unranked player
+      const withInit = unranked.map(name => {
+        const pl = players.find(pl => pl.name === name);
+        return { name, initialRank: (pl && pl.initialRank) ? pl.initialRank : null };
+      });
+      // Sort: those with initialRank first (ascending), then null (alphabetical tiebreak)
+      withInit.sort((a, b) => {
+        if (a.initialRank !== null && b.initialRank !== null) {
+          return a.initialRank !== b.initialRank
+            ? a.initialRank - b.initialRank
+            : a.name.localeCompare(b.name);
+        }
+        if (a.initialRank !== null) return -1;
+        if (b.initialRank !== null) return  1;
+        return a.name.localeCompare(b.name);
+      });
+      // Assign sequential ranks starting after the last standing rank
+      const baseRank = standings.length > 0 ? standings.length : 0;
+      withInit.forEach((p, i) => { rankMap[p.name] = baseRank + i + 1; });
+    }
     const weightsWithRank = Object.assign({}, DEFAULTS, weights, { rankMap, mixedDoubles, playerGroups, singles, playersPerCourt });
 
     // Calibrate weights so user values reflect true relative importance

@@ -20,14 +20,33 @@ const Tournament = (() => {
 
   // Build a seeded bracket entry list from standings + present players
   // For doubles, consecutive pairs of ranked players form teams
-  function buildSeeds(presentPlayers, standings, doubles) {
-    // Sort present players by rank (lower rank = better seed)
+  function buildSeeds(presentPlayers, standings, doubles, players) {
+    // Sort present players by rank.
+    // Priority: season standings rank > initialRank > alphabetical
     const ranked = presentPlayers
       .map(name => {
-        const s = standings.find(st => st.name === name);
-        return { name, rank: s && s.rank !== '-' ? s.rank : 9999 };
+        const s   = standings.find(st => st.name === name);
+        const pl  = players  && players.find(p => p.name === name);
+        const standRank = s && s.rank && s.rank !== '-' ? s.rank : null;
+        const initRank  = pl && pl.initialRank ? pl.initialRank : null;
+        return { name, standRank, initRank };
       })
-      .sort((a, b) => a.rank - b.rank);
+      .sort((a, b) => {
+        // Both have season standings — use those
+        if (a.standRank && b.standRank) return a.standRank - b.standRank;
+        // One has standings, one doesn't — ranked player seeds higher
+        if (a.standRank) return -1;
+        if (b.standRank) return  1;
+        // Neither has standings — use initialRank
+        if (a.initRank !== null && b.initRank !== null) {
+          return a.initRank !== b.initRank
+            ? a.initRank - b.initRank
+            : a.name.localeCompare(b.name); // alphabetical tiebreak for duplicates
+        }
+        if (a.initRank !== null) return -1;
+        if (b.initRank !== null) return  1;
+        return a.name.localeCompare(b.name);
+      });
 
     if (!doubles) {
       return ranked.map((p, i) => ({

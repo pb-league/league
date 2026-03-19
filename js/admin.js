@@ -16,7 +16,7 @@
     config: {}, players: [], attendance: [],
     pairings: [], scores: [], standings: [],
     currentPairWeek: 1, currentScoreWeek: 1,
-    currentStandWeek: 1, pendingPairings: null,
+    currentStandWeek: 1, currentTournWeek: 1, pendingPairings: null,
     tournament: null  // { week, mode, round, seeds }
   };
 
@@ -51,6 +51,7 @@
         const panel = document.getElementById('page-' + page);
         if (panel) panel.classList.add('active');
         if (page === 'standings') renderStandings();
+        if (page === 'tourn-results') renderAdminTournamentResults();
         if (page === 'player-report') renderPlayerReportSelect();
         if (page === 'scores') {
           // Fetch latest scores from server before rendering — players may have entered scores
@@ -80,6 +81,7 @@
     renderPairingsPreview();
     renderEditPairingForm();
     renderScoresheet();
+    updateTournamentResultsNav();
     renderStandings();
     renderPlayerReportSelect();
     renderLeagues();
@@ -128,8 +130,8 @@
 
     // Filter pairings by selected week (or all weeks)
     const h2hPairings = h2hWeek === 'all'
-      ? state.pairings.filter(g => g.type === 'game')
-      : state.pairings.filter(g => g.type === 'game' && parseInt(g.week) === parseInt(h2hWeek));
+      ? state.pairings.filter(g => g.type === 'game' || g.type === 'tourn-game')
+      : state.pairings.filter(g => (g.type === 'game' || g.type === 'tourn-game') && parseInt(g.week) === parseInt(h2hWeek));
 
     h2hPairings.forEach(g => {
       if (!g.p1) return;
@@ -314,7 +316,7 @@
     state.players.forEach((p, i) => {
       const row = document.createElement('div');
       row.className = 'player-row';
-      row.style.gridTemplateColumns = '1fr 100px 120px 200px 60px 60px 80px 40px';
+      row.style.gridTemplateColumns = 'minmax(120px,1fr) 68px 90px minmax(140px,180px) 44px 44px 54px 72px 34px';
       row.innerHTML = `
         <input class="form-control" data-field="name" data-idx="${i}" value="${esc(p.name)}" placeholder="Player name">
         <input class="form-control" data-field="pin" data-idx="${i}" type="text" value="${esc(String(p.pin || ''))}" placeholder="PIN" maxlength="8">
@@ -324,8 +326,9 @@
           <option value="Either" ${p.group==='Either'?'selected':''}>Either</option>
         </select>
         <input class="form-control" data-field="email" data-idx="${i}" type="email" value="${esc(p.email || '')}" placeholder="email@example.com">
-        <input type="checkbox" data-field="notify" data-idx="${i}" ${p.notify ? 'checked' : ''} style="width:20px;height:20px;margin:auto;">
-        <input type="checkbox" data-field="canScore" data-idx="${i}" ${p.canScore ? 'checked' : ''} style="width:20px;height:20px;margin:auto;">
+        <input type="checkbox" data-field="notify" data-idx="${i}" ${p.notify ? 'checked' : ''} style="width:18px;height:18px;margin:auto;">
+        <input type="checkbox" data-field="canScore" data-idx="${i}" ${p.canScore ? 'checked' : ''} style="width:18px;height:18px;margin:auto;">
+        <input class="form-control" data-field="initialRank" data-idx="${i}" type="number" min="1" value="${p.initialRank || ''}" placeholder="—" style="text-align:center;">
         <select class="form-control" data-field="active" data-idx="${i}">
           <option value="true" ${p.active!==false?'selected':''}>Active</option>
           <option value="false" ${p.active===false?'selected':''}>Inactive</option>
@@ -342,6 +345,7 @@
         const field = el.dataset.field;
         let val = el.type === 'checkbox' ? el.checked : el.value;
         if (field === 'active') val = val === 'true';
+        if (field === 'initialRank') val = val ? parseInt(val) : null;
         state.players[idx][field] = val;
       });
     });
@@ -427,10 +431,12 @@
     // Update tournament advance button visibility
     const advBtn   = document.getElementById('btn-tourn-advance');
     const resetBtn = document.getElementById('btn-tourn-reset');
+    const lockBtn  = document.getElementById('btn-tourn-lock');
     if (advBtn && resetBtn) {
       const inTournament = state.tournament && state.tournament.week === week;
       advBtn.classList.toggle('hidden', !inTournament);
       resetBtn.classList.toggle('hidden', !inTournament);
+      if (lockBtn) lockBtn.classList.toggle('hidden', !inTournament || !state.pendingPairings);
       if (inTournament) {
         renderTournamentStatus();
       } else {
@@ -505,7 +511,7 @@
     document.getElementById('score-week-label').textContent = `Session ${week}`;
 
     const allWeekPairings = state.pairings.filter(p => parseInt(p.week) === week);
-    const weekPairings    = allWeekPairings.filter(p => p.type === 'game');
+    const weekPairings    = allWeekPairings.filter(p => p.type === 'game' || p.type === 'tourn-game');
 
     if (!allWeekPairings.length) {
       document.getElementById('scoresheet').innerHTML =
@@ -959,6 +965,162 @@
     });
   }
 
+  // ── Shared bracket renderer ───────────────────────────────
+  // Builds bracket HTML from pairings + scores.
+  // seeds: array of { seed, name, name2 } for labelling (optional)
+  // highlightPlayer: name to highlight in green border (optional)
+  function buildBracketHTML(weekPairings, scores, week, seeds, highlightPlayer) {
+    const lockedRounds = [...new Set(weekPairings.map(p => parseInt(p.round)))].sort((a,b)=>a-b);
+    if (!lockedRounds.length) return '<p class="text-muted">No rounds played yet.</p>';
+
+    // Build seed lookup from provided seeds array
+    // If no seeds provided, derive from round 1 pairing order
+    const seedMap = {}; // name -> { seed, name2 }
+    if (seeds && seeds.length) {
+      seeds.forEach(s => {
+        seedMap[s.name] = s;
+        if (s.name2) seedMap[s.name2] = s;
+      });
+    } else {
+      // Derive seeds from round 1 game order: game 1 team1=seed1, team2=seed2, game 2 team1=seed3 etc.
+      const r1games = weekPairings
+        .filter(p => parseInt(p.round) === lockedRounds[0] && (p.type === 'game' || p.type === 'tourn-game'))
+        .sort((a,b) => String(a.court).localeCompare(String(b.court), undefined, {numeric:true}));
+      // Also include byes — top seeds get byes in round 1
+      const r1byes = weekPairings.filter(p => parseInt(p.round) === lockedRounds[0] && p.type === 'bye');
+      let seed = 1;
+      // Bye recipients are top seeds
+      r1byes.forEach(b => {
+        if (b.p1 && !seedMap[b.p1]) { seedMap[b.p1] = { seed, name: b.p1, name2: b.p2 || '' }; seed++; }
+      });
+      r1games.forEach(g => {
+        if (g.p1 && !seedMap[g.p1]) { seedMap[g.p1] = { seed, name: g.p1, name2: g.p2 || '' }; seed++; }
+        if (g.p3 && !seedMap[g.p3]) { seedMap[g.p3] = { seed, name: g.p3, name2: g.p4 || '' }; seed++; }
+      });
+    }
+
+    function getSeed(name) {
+      const s = seedMap[name];
+      return s ? `<span style="font-size:0.7rem; color:var(--muted);">#${s.seed}</span> ` : '';
+    }
+
+    function teamLabel(p1, p2) {
+      return `${getSeed(p1)}${p2 ? esc(p1) + ' <span style="color:var(--muted);">&amp;</span> ' + esc(p2) : esc(p1)}`;
+    }
+
+    let html = `<div style="overflow-x:auto; padding-bottom:8px;">
+      <div style="display:flex; gap:0; min-width:fit-content;">`;
+
+    lockedRounds.forEach((r, ri) => {
+      const roundGames = weekPairings.filter(g => g.round === r && (g.type === 'game' || g.type === 'tourn-game'));
+      const roundByes  = weekPairings.filter(g => g.round === r && g.type === 'bye');
+      const isLast     = ri === lockedRounds.length - 1;
+
+      html += `<div style="display:flex; flex-direction:column; min-width:210px;">
+        <div style="font-size:0.72rem; font-weight:700; color:var(--muted); text-transform:uppercase;
+                    letter-spacing:0.05em; padding:4px 8px; margin-bottom:6px; text-align:center;">
+          Round ${r}
+        </div>`;
+
+      roundGames.forEach(g => {
+        const score = scores.find(s =>
+          parseInt(s.week) === week && parseInt(s.round) === r &&
+          String(s.court) === String(g.court)
+        );
+        const s1 = score ? score.score1 : '';
+        const s2 = score ? score.score2 : '';
+        const scored = s1 !== '' && s1 !== null && s2 !== '' && s2 !== null;
+        const t1win  = scored && parseInt(s1) > parseInt(s2);
+        const isMe1  = highlightPlayer && [g.p1, g.p2].includes(highlightPlayer);
+        const isMe2  = highlightPlayer && [g.p3, g.p4].includes(highlightPlayer);
+        const winStyle  = 'color:var(--green); font-weight:700;';
+        const loseStyle = 'color:rgba(255,255,255,0.35);';
+        const defStyle  = 'color:var(--white);';
+        const t1style = scored ? (t1win ? winStyle : loseStyle) : (isMe1 ? 'color:var(--white); font-weight:700;' : defStyle);
+        const t2style = scored ? (!t1win ? winStyle : loseStyle) : (isMe2 ? 'color:var(--white); font-weight:700;' : defStyle);
+        const scoreHtml = scored
+          ? `<span style="font-size:0.78rem; font-weight:700; color:var(--white);">${s1}–${s2}</span>`
+          : `<span style="font-size:0.72rem; color:var(--muted);">pending</span>`;
+        const border = (isMe1 || isMe2)
+          ? 'border:1px solid rgba(94,194,106,0.4);'
+          : 'border:1px solid rgba(255,255,255,0.08);';
+
+        html += `<div style="background:var(--card-bg); ${border} border-radius:8px; padding:7px 10px; margin:2px 4px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <div style="${t1style} font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px;">
+              ${teamLabel(g.p1, g.p2)}
+            </div>
+            <div style="margin-left:6px; flex-shrink:0;">${scoreHtml}</div>
+          </div>
+          <div style="border-top:1px solid rgba(255,255,255,0.06); margin:3px 0;"></div>
+          <div style="${t2style} font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px; margin-top:4px;">
+            ${teamLabel(g.p3, g.p4)}
+          </div>
+        </div>`;
+      });
+
+      roundByes.forEach(g => {
+        html += `<div style="background:rgba(122,155,181,0.07); border:1px dashed rgba(255,255,255,0.1);
+                    border-radius:8px; padding:7px 10px; margin:2px 4px;">
+          <div style="font-size:0.7rem; color:var(--muted); margin-bottom:2px;">⏸ BYE</div>
+          <div style="font-size:0.8rem; color:var(--white);">${teamLabel(g.p1, g.p2)}</div>
+        </div>`;
+      });
+
+      html += `</div>`;
+      if (!isLast) {
+        html += `<div style="display:flex; align-items:center; padding:0 2px; color:rgba(255,255,255,0.2); font-size:1.2rem;">›</div>`;
+      }
+    });
+
+    html += `</div></div>`;
+
+    // Champion banner
+    const lastRound = lockedRounds[lockedRounds.length - 1];
+    const lastGames = weekPairings.filter(g => g.round === lastRound && (g.type === 'game' || g.type === 'tourn-game'));
+    if (lastGames.length === 1) {
+      const fg = lastGames[0];
+      const fs = scores.find(s => parseInt(s.week) === week && parseInt(s.round) === lastRound && String(s.court) === String(fg.court));
+      if (fs && fs.score1 !== '' && fs.score1 !== null && fs.score2 !== '' && fs.score2 !== null) {
+        const t1win = parseInt(fs.score1) > parseInt(fs.score2);
+        const cP1 = t1win ? fg.p1 : fg.p3;
+        const cP2 = t1win ? fg.p2 : fg.p4;
+        const champName = cP2 ? `${esc(cP1)} &amp; ${esc(cP2)}` : esc(cP1);
+        const isMe = highlightPlayer && [cP1, cP2].includes(highlightPlayer);
+        html += `<div style="margin-top:16px; padding:14px 16px;
+          background:linear-gradient(135deg, rgba(245,200,66,0.15), rgba(245,200,66,0.05));
+          border:1px solid rgba(245,200,66,0.4); border-radius:10px; text-align:center;">
+          <div style="font-size:1.1rem; color:var(--gold); font-weight:700; margin-bottom:4px;">🏆 Tournament Champion</div>
+          <div style="font-size:1rem; color:${isMe ? 'var(--green)' : 'var(--white)'}; font-weight:700;">${champName}</div>
+          <div style="font-size:0.78rem; color:var(--muted); margin-top:4px;">Final: ${fs.score1} – ${fs.score2}</div>
+        </div>`;
+      }
+    }
+
+    return html;
+  }
+
+  // ── Admin Tournament Results page ─────────────────────────
+  function renderAdminTournamentResults() {
+    const week = state.currentTournWeek || state.currentSheetWeek;
+    state.currentTournWeek = week;
+    document.getElementById('tourn-week-label').textContent = `Session ${week}`;
+
+    const weekPairings = state.pairings.filter(p => parseInt(p.week) === week);
+    const isTournament = weekPairings.some(p => p.type === 'tourn-game');
+    const el = document.getElementById('admin-tourn-bracket');
+
+    if (!isTournament) {
+      el.innerHTML = '<p class="text-muted">No tournament data for this session.</p>';
+      return;
+    }
+
+    // Use seeds from active tournament state if available, else derive from pairings
+    const seeds = (state.tournament && state.tournament.week === week) ? state.tournament.seeds : null;
+    const weekScores = state.scores.filter(s => parseInt(s.week) === week);
+    el.innerHTML = buildBracketHTML(weekPairings, weekScores, week, seeds, null);
+  }
+
   // ── Tournament ────────────────────────────────────────────
   function renderTournamentStatus() {
     const t = state.tournament;
@@ -1040,65 +1202,9 @@
       </span>
     </div>`;
 
-    // Build bracket columns
+    // Build bracket using shared renderer
     if (allRounds.length) {
-      html += `<div style="overflow-x:auto; padding-bottom:8px;">
-        <div style="display:flex; gap:0; min-width:fit-content;">`;
-
-      allRounds.forEach((r, ri) => {
-        const roundGames = wGames.filter(g => g.round === r);
-        const roundByes  = byes.filter(g => g.round === r);
-        const isLast     = ri === allRounds.length - 1;
-
-        html += `<div style="display:flex; flex-direction:column; min-width:200px;">
-          <div style="font-size:0.72rem; font-weight:700; color:var(--muted); text-transform:uppercase;
-                      letter-spacing:0.05em; padding:4px 8px; margin-bottom:6px; text-align:center;">
-            Round ${r}
-          </div>`;
-
-        // Games
-        roundGames.forEach(g => {
-          const winStyle  = 'color:var(--green); font-weight:700;';
-          const loseStyle = 'color:rgba(255,255,255,0.35);';
-          const t1style = g.scored ? (g.t1win ? winStyle : loseStyle) : 'color:var(--white);';
-          const t2style = g.scored ? (!g.t1win ? winStyle : loseStyle) : 'color:var(--white);';
-          const scoreHtml = g.scored
-            ? `<span style="font-size:0.78rem; font-weight:700; color:var(--white);">${g.score1}–${g.score2}</span>`
-            : `<span style="font-size:0.72rem; color:var(--muted);">pending</span>`;
-
-          html += `<div style="background:var(--card-bg); border:1px solid rgba(255,255,255,0.08);
-                      border-radius:8px; padding:7px 10px; margin:2px 4px; position:relative;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-              <div style="${t1style} font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:130px;">
-                ${teamLabel(g.p1, g.p2)}
-              </div>
-              <div style="margin-left:6px; flex-shrink:0;">${scoreHtml}</div>
-            </div>
-            <div style="border-top:1px solid rgba(255,255,255,0.06); margin:3px 0;"></div>
-            <div style="${t2style} font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:130px; margin-top:4px;">
-              ${teamLabel(g.p3, g.p4)}
-            </div>
-          </div>`;
-        });
-
-        // Byes
-        roundByes.forEach(g => {
-          html += `<div style="background:rgba(122,155,181,0.07); border:1px dashed rgba(255,255,255,0.1);
-                      border-radius:8px; padding:7px 10px; margin:2px 4px;">
-            <div style="font-size:0.72rem; color:var(--muted); margin-bottom:2px;">⏸ BYE</div>
-            <div style="font-size:0.8rem; color:var(--white);">${teamLabel(g.p1, g.p2)}</div>
-          </div>`;
-        });
-
-        html += `</div>`;
-
-        // Connector arrow between columns
-        if (!isLast) {
-          html += `<div style="display:flex; align-items:center; padding:0 2px; color:rgba(255,255,255,0.2); font-size:1.2rem;">›</div>`;
-        }
-      });
-
-      html += `</div></div>`;
+      html += buildBracketHTML(weekPairings, state.scores, week, t.seeds, null);
     }
 
     // ── Seed reference table ──────────────────────────────────
@@ -1133,6 +1239,7 @@
   function setupTournament() {
     const genBtn  = document.getElementById('btn-tourn-generate');
     const advBtn  = document.getElementById('btn-tourn-advance');
+    const lockBtn = document.getElementById('btn-tourn-lock');
     const resetBtn = document.getElementById('btn-tourn-reset');
     if (!genBtn) return;
 
@@ -1169,12 +1276,13 @@
 
       const existing = state.pairings.filter(p => parseInt(p.week) === week);
       if (existing.length && !confirm(`Session ${week} already has pairings. Replace with tournament bracket?`)) return;
-      const result = Tournament.generateTournament(presentPlayers, courts, week, mode, state.standings, doubles);
+      const result = Tournament.generateTournament(presentPlayers, courts, week, mode, state.standings, doubles, state.players);
       if (result.error) { toast(result.error, 'error'); return; }
 
       state.tournament = { week, mode, round: 1, seeds: result.seeds };
       state.pendingPairings = result.pairings;
       document.getElementById('btn-lock-pairings').disabled = false;
+      if (lockBtn) lockBtn.classList.remove('hidden');
       document.getElementById('optimizer-status').classList.add('hidden');
       renderPairingsPreview();
       toast(`${mode === 'double' ? 'Double' : 'Single'} elimination bracket generated for ${presentPlayers.length} players.`);
@@ -1187,7 +1295,7 @@
 
       // Check all games in current round have scores
       const roundPairings = state.pairings.filter(p =>
-        parseInt(p.week) === week && parseInt(p.round) === t.round && (p.type === 'tourn-game' || p.type === 'game')
+        parseInt(p.week) === week && parseInt(p.round) === t.round && (p.type === 'game' || p.type === 'tourn-game')
       );
       const roundScores = state.scores.filter(s => parseInt(s.week) === week && parseInt(s.round) === t.round);
       const unscoredGames = roundPairings.filter(game =>
@@ -1211,6 +1319,7 @@
         if (statusEl) statusEl.innerHTML = `<div style="font-size:1rem; color:var(--gold); font-weight:700; padding:8px 0;">${esc(msg)}</div>`;
         advBtn.classList.add('hidden');
         resetBtn.classList.add('hidden');
+        if (lockBtn) lockBtn.classList.add('hidden');
         renderPairingsPreview();
         return;
       }
@@ -1220,8 +1329,15 @@
       // they get normalized to game/bye at lock time
       state.pendingPairings = result.pairings;
       document.getElementById('btn-lock-pairings').disabled = false;
+      if (lockBtn) lockBtn.classList.remove('hidden');
       renderPairingsPreview();
       toast(`Round ${state.tournament.round} bracket ready — review and lock to save.`);
+    });
+
+    lockBtn?.addEventListener('click', () => {
+      // Trigger the main lock & save button — identical behaviour
+      document.getElementById('btn-lock-pairings').click();
+      lockBtn.classList.add('hidden');
     });
 
     resetBtn.addEventListener('click', () => {
@@ -1229,6 +1345,7 @@
       state.tournament = null;
       advBtn.classList.add('hidden');
       resetBtn.classList.add('hidden');
+      if (lockBtn) lockBtn.classList.add('hidden');
       const statusEl = document.getElementById('tourn-status');
       if (statusEl) statusEl.innerHTML = '';
       renderPairingsPreview();
@@ -1369,9 +1486,10 @@
             pin:    row.querySelector('[data-field="pin"]').value.trim(),
             group:  row.querySelector('[data-field="group"]').value,
             email:  row.querySelector('[data-field="email"]').value.trim(),
-            notify:   row.querySelector('[data-field="notify"]').checked,
-            canScore: row.querySelector('[data-field="canScore"]').checked,
-            active:   row.querySelector('[data-field="active"]').value === 'true'
+            notify:       row.querySelector('[data-field="notify"]').checked,
+            canScore:     row.querySelector('[data-field="canScore"]').checked,
+            initialRank:  (() => { const v = row.querySelector('[data-field="initialRank"]').value; return v ? parseInt(v) : null; })(),
+            active:       row.querySelector('[data-field="active"]').value === 'true'
           });
         }
       });
@@ -1422,6 +1540,46 @@
       } catch (e) { toast('Refresh failed: ' + e.message, 'error'); }
       finally { btn.disabled = false; btn.textContent = '🔄 Refresh'; }
     });
+    // Tournament results week nav
+    setupWeekNav('tourn-week-prev', 'tourn-week-next', 'currentTournWeek', renderAdminTournamentResults);
+
+    // Refresh button for tournament results
+    document.getElementById('btn-refresh-tourn-results').addEventListener('click', () => {
+      renderAdminTournamentResults();
+      toast('Bracket refreshed.');
+    });
+
+    // Email tournament bracket results
+    document.getElementById('btn-send-tourn-report').addEventListener('click', async () => {
+      const week = state.currentTournWeek || state.currentSheetWeek;
+      const recipients = state.players.filter(p => p.active !== false && p.notify && p.email);
+      if (!recipients.length) {
+        toast('No players have email notifications enabled.', 'warn'); return;
+      }
+      if (!confirm(`Send Session ${week} tournament bracket to ${recipients.length} player(s)?`)) return;
+
+      const weekScores   = state.scores.filter(s => parseInt(s.week) === week);
+      const weekPairings = state.pairings.filter(p => parseInt(p.week) === week &&
+        (p.type === 'game' || p.type === 'tourn-game' || p.type === 'bye'));
+      const weekDate     = formatDateTime(week, state.config);
+
+      showLoading(true);
+      try {
+        await API.sendTournamentReport({
+          week,
+          weekDate,
+          leagueName: state.config.leagueName || 'Pickleball League',
+          replyTo:    state.config.replyTo    || '',
+          leagueUrl:  state.config.leagueUrl  || '',
+          weekScores,
+          weekPairings,
+          recipients: recipients.map(p => ({ name: p.name, email: p.email })),
+        });
+        toast(`Session ${week} tournament bracket sent to ${recipients.length} player(s)!`);
+      } catch (e) { toast('Send failed: ' + e.message, 'error'); }
+      finally { showLoading(false); }
+    });
+
     setupWeekNav('stand-week-prev', 'stand-week-next', 'currentStandWeek', () => {
       const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, state.currentStandWeek, state.config.rankingMethod);
       document.getElementById('standings-weekly-table').innerHTML = renderStandingsTable(weekStand);
@@ -1593,7 +1751,7 @@
           // User weight from the weights object passed to optimize
           const userW = wKey ? (weights[wKey] ?? Pairings.DEFAULTS[wKey] ?? '—') : '—';
           // Normalized weight from calibration (v.weight is now the normalized value)
-          const normW = (wKey && normalizedWeights) ? normalizedWeights[wKey].toFixed(2) : '—';
+          const normW = (wKey && normalizedWeights && normalizedWeights[wKey] != null) ? normalizedWeights[wKey].toFixed(2) : '—';
           bhtml += `<tr style="${nonzero ? 'color:var(--white);' : 'color:var(--muted);'}">
             <td style="padding:3px 8px;">${LABELS[key] || key}</td>
             <td style="text-align:right; padding:3px 8px;">${v.raw.toFixed(2)}</td>
@@ -1622,11 +1780,13 @@
       const week = state.currentPairWeek;
       showLoading(true);
       try {
-        // Normalize tournament types to standard game/bye so all existing
-        // scoresheet, score entry, and standings code works unchanged
+        // Preserve tourn-game as a distinct type so tournament sessions
+        // can be detected later. Only tourn-bye normalizes to bye.
         const normalizedPairings = state.pendingPairings.map(p => ({
           ...p,
-          type: p.type === 'tourn-bye' ? 'bye' : 'game'
+          type: p.type === 'tourn-bye' ? 'bye'
+              : (p.type === 'tourn-game' || p.type === 'tourn-loser-game' || p.type === 'tourn-grand-final') ? 'tourn-game'
+              : p.type
         }));
         // For tournament rounds, preserve existing rounds by merging all week pairings
         // (savePairings replaces the whole week, so we must send all rounds together)
@@ -1714,7 +1874,7 @@
     // Save scores
     document.getElementById('btn-save-scores').addEventListener('click', async () => {
       const week = state.currentScoreWeek;
-      const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && p.type === 'game');
+      const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && (p.type === 'game' || p.type === 'tourn-game'));
       const scores = [];
 
       document.querySelectorAll('#scoresheet [data-round]').forEach(card => {
@@ -1784,7 +1944,7 @@
 
       // Build report data
       const weekScores   = state.scores.filter(s => parseInt(s.week) === week);
-      const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && p.type === 'game');
+      const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && (p.type === 'game' || p.type === 'tourn-game'));
       const weekStand    = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week);
       const seasonStand  = Reports.computeStandings(state.scores, state.players, state.pairings);
       const weekDate     = formatDateTime(week, state.config);
@@ -1893,6 +2053,19 @@
   }
 
   // ── Leagues ────────────────────────────────────────────────
+  function updateTournamentResultsNav() {
+    const hasTournament = state.pairings.some(p => p.type === 'tourn-game');
+    const navEl = document.getElementById('nav-tourn-results');
+    if (navEl) navEl.classList.toggle('hidden', !hasTournament);
+    if (hasTournament && !state.currentTournWeek) {
+      // Default to latest tournament week
+      const tournWeeks = [...new Set(
+        state.pairings.filter(p => p.type === 'tourn-game').map(p => parseInt(p.week))
+      )].sort((a,b)=>b-a);
+      if (tournWeeks.length) state.currentTournWeek = tournWeeks[0];
+    }
+  }
+
   async function renderLeagues() {
     const session = Auth.getSession();
     let leagues = [];

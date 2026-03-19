@@ -39,6 +39,7 @@
         <div class="nav-item" data-page="attendance"><span class="icon">📋</span> Attendance</div>
         <div class="nav-item" data-page="pairings"><span class="icon">🎲</span> Pairings</div>
         <div class="nav-item" data-page="scores"><span class="icon">✏️</span> Score Entry</div>
+        <div class="nav-item hidden" id="nav-tourn-results" data-page="tourn-results"><span class="icon">🏆</span> Tournament</div>
       </div>
       <div class="nav-section">
         <div class="nav-section-label">Reports</div>
@@ -249,17 +250,20 @@
           <button class="btn btn-primary" id="btn-add-player">+ Add Player</button>
         </div>
         <div class="card">
-          <div style="display:grid; grid-template-columns:1fr 100px 120px 200px 60px 60px 80px 40px; gap:8px; padding:0 4px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">
+          <div style="overflow-x:auto;">
+          <div style="display:grid; grid-template-columns:minmax(120px,1fr) 68px 90px minmax(140px,180px) 44px 44px 54px 72px 34px; gap:6px; padding:0 4px 8px; border-bottom:1px solid rgba(255,255,255,0.06); min-width:680px;">
             <span class="label">Name</span>
             <span class="label">PIN</span>
             <span class="label">Group</span>
             <span class="label">Email</span>
-            <span class="label">Notify</span>
-            <span class="label">Scores</span>
-            <span class="label">Active</span>
+            <span class="label" title="Email notifications">Ntfy</span>
+            <span class="label" title="Can enter scores">Scr</span>
+            <span class="label" title="Initial ranking used before season standings are established">Rank&#x2070;</span>
+            <span class="label">Status</span>
             <span></span>
           </div>
-          <div id="player-list"></div>
+          <div id="player-list" style="min-width:680px;"></div>
+          </div><!-- end overflow-x:auto -->
           <button class="btn btn-primary mt-2" id="btn-save-players">Save Players</button>
         </div>
       </section>
@@ -330,6 +334,9 @@
             </div>
             <div class="form-group" style="margin-top:20px;">
               <button class="btn btn-primary hidden" id="btn-tourn-advance">▶ Advance Round</button>
+            </div>
+            <div class="form-group" style="margin-top:20px;">
+              <button class="btn btn-secondary hidden" id="btn-tourn-lock">🔒 Lock &amp; Save Round</button>
             </div>
             <div class="form-group" style="margin-top:20px;">
               <button class="btn btn-danger hidden" id="btn-tourn-reset">✕ Reset Tournament</button>
@@ -417,6 +424,25 @@
             </div>
           </div>
           <div id="scoresheet"></div>
+        </div>
+      </section>
+
+      <!-- ═══ TOURNAMENT RESULTS ═══ -->
+      <section id="page-tourn-results" class="tab-panel">
+        <div class="page-header">
+          <h2>Tournament Results</h2>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button class="btn btn-secondary" id="btn-refresh-tourn-results" style="padding:5px 12px; font-size:0.78rem;">🔄 Refresh</button>
+            <button class="btn btn-secondary" id="btn-send-tourn-report" style="padding:5px 12px; font-size:0.78rem;">📧 Email Results</button>
+            <div class="week-selector">
+              <button id="tourn-week-prev">‹</button>
+              <div class="week-num" id="tourn-week-label">Session 1</div>
+              <button id="tourn-week-next">›</button>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div id="admin-tourn-bracket"></div>
         </div>
       </section>
 

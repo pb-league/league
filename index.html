@@ -132,8 +132,17 @@
     showToast('Could not connect. Check GAS_URL in settings.js.', 'error');
   }
 
+  // Prefetch map: leagueId -> players promise (starts fetching when user selects)
+  const playerPrefetch = {};
+
   leagueSel.addEventListener('change', () => {
     btnLeagueNext.disabled = !leagueSel.value;
+    // Start fetching players eagerly as soon as a league is selected
+    const lid = leagueSel.value;
+    if (lid && !playerPrefetch[lid]) {
+      Auth.setSession('', false, lid, ''); // set leagueId so getPlayers works
+      playerPrefetch[lid] = API.getPlayers().catch(() => null);
+    }
   });
 
   // Shared function: select a league and load its players
@@ -146,8 +155,10 @@
     goTo('step-player');
 
     try {
-      const data = await API.getPlayers();
-      const players = (data.players || []).filter(p => p.active !== false);
+      // Use prefetched data if available, otherwise fetch now
+      const prefetch = playerPrefetch[league.leagueId];
+      const data = prefetch ? await prefetch : await API.getPlayers();
+      const players = (data ? data.players || [] : []).filter(p => p.active !== false);
       playerSel.innerHTML = '<option value="">— Choose Player —</option>';
       players.forEach(p => {
         const opt = document.createElement('option');
@@ -185,32 +196,66 @@
   const urlPlayer = urlParams.get('player');
 
   if (urlLeague) {
-    // First try visible leagues
-    let match = leagues.find(l =>
-      l.leagueId.toLowerCase() === urlLeague.toLowerCase() ||
-      l.name.toLowerCase() === urlLeague.toLowerCase()
-    );
-    // If not found in visible list, the league may be hidden — fetch all leagues
-    if (!match) {
-      try {
-        const allData = await API.getLeaguesAll();
-        const allLeagues = allData.leagues || [];
-        match = allLeagues.find(l =>
-          l.leagueId.toLowerCase() === urlLeague.toLowerCase()
-        );
-      } catch (e) { /* fall through */ }
-    }
-    if (match) {
-      // Hidden leagues don't appear in dropdown — add a hidden option
-      if (!leagueSel.querySelector(`option[value="${match.leagueId}"]`)) {
-        const opt = document.createElement('option');
-        opt.value = match.leagueId;
-        opt.textContent = match.name;
-        leagueSel.appendChild(opt);
+    // Use combined endpoint — fetches league list AND players in one round-trip
+    try {
+      const combined = await API.getLeagueAndPlayers(urlLeague);
+
+      // Merge returned leagues into our list (handles hidden leagues too)
+      if (combined.leagues && combined.leagues.length) {
+        leagues = combined.leagues;
+        leagueSel.innerHTML = '<option value="">— Choose League —</option>';
+        leagues.forEach(l => {
+          const opt = document.createElement('option');
+          opt.value = l.leagueId;
+          opt.textContent = l.name;
+          leagueSel.appendChild(opt);
+        });
       }
-      leagueSel.value = match.leagueId;
-      btnLeagueNext.disabled = false;
-      selectLeague(match, urlPlayer || null);
+
+      let match = leagues.find(l =>
+        l.leagueId.toLowerCase() === urlLeague.toLowerCase() ||
+        l.name.toLowerCase() === urlLeague.toLowerCase()
+      );
+
+      // May be hidden — try fetching all leagues if not found
+      if (!match) {
+        try {
+          const allData = await API.getLeaguesAll();
+          const allLeagues = allData.leagues || [];
+          match = allLeagues.find(l =>
+            l.leagueId.toLowerCase() === urlLeague.toLowerCase()
+          );
+        } catch (e) { /* fall through */ }
+      }
+
+      if (match) {
+        if (!leagueSel.querySelector(`option[value="${match.leagueId}"]`)) {
+          const opt = document.createElement('option');
+          opt.value = match.leagueId;
+          opt.textContent = match.name;
+          leagueSel.appendChild(opt);
+        }
+        leagueSel.value = match.leagueId;
+        btnLeagueNext.disabled = false;
+
+        // Pre-populate the prefetch cache with the players we already fetched
+        if (combined.players && combined.players.length) {
+          playerPrefetch[match.leagueId] = Promise.resolve({ players: combined.players });
+        }
+
+        selectLeague(match, urlPlayer || null);
+      }
+    } catch (e) {
+      // Fall back to original sequential approach
+      let match = leagues.find(l =>
+        l.leagueId.toLowerCase() === urlLeague.toLowerCase() ||
+        l.name.toLowerCase() === urlLeague.toLowerCase()
+      );
+      if (match) {
+        leagueSel.value = match.leagueId;
+        btnLeagueNext.disabled = false;
+        selectLeague(match, urlPlayer || null);
+      }
     }
   }
 

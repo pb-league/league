@@ -523,17 +523,41 @@
     let html = '';
 
     rounds.forEach(r => {
-      html += `<div class="round-header">Round ${r}</div>`;
+      const roundGames = weekPairings.filter(p => p.round == r);
+      const roundByes  = allWeekPairings.filter(p => p.round == r && p.type === 'bye');
+      const total      = roundGames.length;
+      const scored     = roundGames.filter(g => {
+        const sc = state.scores.find(s => parseInt(s.week) === week && parseInt(s.round) === r && String(s.court) === String(g.court));
+        return sc && sc.score1 !== '' && sc.score1 !== null && sc.score2 !== '' && sc.score2 !== null;
+      }).length;
+      const remaining  = total - scored;
+      const allDone    = remaining === 0 && total > 0;
 
-      // Show byes for this round first
-      allWeekPairings.filter(p => p.round == r && p.type === 'bye').forEach(bye => {
-        html += `<div style="padding:6px 10px; margin-bottom:6px; color:var(--muted); font-size:0.85rem;
-                             background:rgba(122,155,181,0.07); border-radius:8px;">
+      // Summary badge: green when all done, gold when in progress, muted when not started
+      const badgeColor = allDone ? 'var(--green)' : scored > 0 ? 'var(--gold)' : 'var(--muted)';
+      const badgeText  = allDone ? `${scored}/${total} ✓`
+                       : scored > 0 ? `${scored}/${total} · ${remaining} left`
+                       : `${total} game${total !== 1 ? 's' : ''}`;
+
+      html += `<details ${!allDone ? 'open' : ''} style="margin-bottom:6px;">
+        <summary style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;
+                        padding:5px 8px; border-radius:7px; background:var(--card-bg);
+                        list-style:none; user-select:none;"
+                 class="round-summary">
+          <span style="font-size:0.78rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">Round ${r}</span>
+          <span style="font-size:0.73rem; color:${badgeColor}; font-weight:600;">${badgeText}</span>
+        </summary>
+        <div style="padding-top:4px;">`;
+
+      // Byes
+      roundByes.forEach(bye => {
+        html += `<div style="padding:3px 8px; margin-bottom:3px; color:var(--muted); font-size:0.82rem;
+                             background:rgba(122,155,181,0.07); border-radius:6px;">
           ⏸ <strong style="color:var(--white);">${esc(bye.p1)}${bye.p2 ? ' &amp; ' + esc(bye.p2) : ''}</strong> — Bye
         </div>`;
       });
 
-      weekPairings.filter(p => p.round == r).forEach(game => {
+      roundGames.forEach(game => {
         const existingScore = state.scores.find(
           s => parseInt(s.week) === week && parseInt(s.round) === parseInt(game.round) && String(s.court) === String(game.court)
         );
@@ -546,15 +570,15 @@
         const loseStyle = 'color:var(--muted);';
         const readOnly  = !session.isAdmin ? 'readonly style="opacity:0.5;pointer-events:none;"' : '';
 
-        html += `<div style="background:var(--card-bg); border-radius:10px; padding:10px 12px; margin-bottom:8px;"
+        html += `<div style="background:var(--card-bg); border-radius:7px; padding:5px 10px; margin-bottom:4px;"
             data-week="${week}" data-round="${game.round}" data-court="${game.court}">
-          <div class="court-label" style="font-size:0.7rem; margin-bottom:6px;">${courtName(game.court)}</div>
-          <div style="display:grid; grid-template-columns:1fr 110px 1fr; align-items:center; gap:6px;">
+          <div style="display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:6px;">
             <div style="min-width:0;">
               <div style="${entered ? (t1win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p1)}</div>
               ${game.p2 ? `<div style="${entered ? (t1win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p2)}</div>` : ''}
+              <div style="font-size:0.65rem; color:var(--muted); margin-top:1px;">${courtName(game.court)}</div>
             </div>
-            <div style="display:flex; align-items:center; justify-content:center; gap:4px;">
+            <div style="display:flex; align-items:center; justify-content:center; gap:4px; flex-shrink:0;">
               <input type="number" class="score-input" data-score="1"
                      value="${s1}" min="0" max="30" placeholder="0" ${readOnly}
                      inputmode="numeric"
@@ -572,6 +596,8 @@
           </div>
         </div>`;
       });
+
+      html += `</div></details>`;
     });
 
     document.getElementById('scoresheet').innerHTML = html;

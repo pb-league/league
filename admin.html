@@ -39,11 +39,11 @@
         <div class="nav-item" data-page="attendance"><span class="icon">📋</span> Attendance</div>
         <div class="nav-item" data-page="pairings"><span class="icon">🎲</span> Pairings</div>
         <div class="nav-item" data-page="scores"><span class="icon">✏️</span> Score Entry</div>
-        <div class="nav-item hidden" id="nav-tourn-results" data-page="tourn-results"><span class="icon">🏆</span> Tournament</div>
       </div>
       <div class="nav-section">
         <div class="nav-section-label">Reports</div>
         <div class="nav-item" data-page="standings"><span class="icon">🏆</span> Standings</div>
+        <div class="nav-item hidden" id="nav-tourn-results" data-page="tourn-results"><span class="icon">🥇</span> Tournament</div>
         <div class="nav-item" data-page="player-report"><span class="icon">👤</span> Player Report</div>
         <div class="nav-item" data-page="head-to-head"><span class="icon">⚔️</span> Head-to-Head</div>
       </div>
@@ -288,10 +288,13 @@
           </div>
         </div>
         <div class="card">
-          <div class="card-header">
+          <details open>
+          <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;">
             <div class="card-title">Generate Pairings</div>
-          </div>
-          <p style="font-size:0.88rem; color:var(--muted); margin-bottom:16px;">
+            <span class="collapse-arrow" style="font-size:0.7rem; color:var(--muted);">▲</span>
+          </summary>
+          <div class="collapsible-body">
+          <p style="font-size:0.88rem; color:var(--muted); margin-bottom:16px; margin-top:12px;">
             Only players marked <strong style="color:var(--green);">present</strong> for this session will be included.
             The optimizer will try to minimize repeat partners/opponents and equalize byes.
           </p>
@@ -314,10 +317,17 @@
             </div>
             <div id="optimizer-breakdown"></div>
           </div>
+          </div>
+          </details>
         </div>
         <div class="card mt-2" id="tournament-card">
-          <div class="card-header"><div class="card-title">🏆 Tournament Mode</div></div>
-          <p style="font-size:0.82rem; color:var(--muted); margin-bottom:14px;">
+          <details>
+          <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;">
+            <div class="card-title">🏆 Tournament Mode</div>
+            <span class="collapse-arrow" style="font-size:0.7rem; color:var(--muted);">▼</span>
+          </summary>
+          <div class="collapsible-body">
+          <p style="font-size:0.82rem; color:var(--muted); margin-bottom:14px; margin-top:12px;">
             Generate a seeded elimination bracket. Top seeds get byes if needed.
             After each round, enter scores then click <strong style="color:var(--white);">Advance Round</strong> to generate the next round.
           </p>
@@ -343,10 +353,17 @@
             </div>
           </div>
           <div id="tourn-status" style="margin-top:10px; font-size:0.85rem;"></div>
+          </div>
+          </details>
         </div>
         <div class="card mt-2" id="edit-pairing-card">
-          <div class="card-header"><div class="card-title">✏️ Edit / Add Pairing</div></div>
-          <p style="font-size:0.82rem; color:var(--muted); margin-bottom:14px;">
+          <details>
+          <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;">
+            <div class="card-title">✏️ Edit / Add Pairing</div>
+            <span class="collapse-arrow" style="font-size:0.7rem; color:var(--muted);">▼</span>
+          </summary>
+          <div class="collapsible-body">
+          <p style="font-size:0.82rem; color:var(--muted); margin-bottom:14px; margin-top:12px;">
             Select a session, round, and court to load an existing pairing for editing, or fill in new values to add one.
           </p>
           <div class="form-row" style="align-items:flex-end;">
@@ -398,6 +415,8 @@
               <button class="btn btn-danger" id="btn-ep-delete">🗑 Delete This Game</button>
             </div>
           </div>
+          </div>
+          </details>
         </div>
         <div id="pairings-preview"></div>
       </section>
@@ -606,8 +625,40 @@
   input[type=number].score-input::-webkit-outer-spin-button,
   input[type=number].score-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   input[type=number].score-input { -moz-appearance: textfield; }
+  /* Collapsible round headers */
+  details summary.round-summary::-webkit-details-marker { display:none; }
+  details summary.round-summary::marker { display:none; }
+  details summary.round-summary:hover { background:rgba(255,255,255,0.06) !important; }
+  /* Collapsible card headers */
+  summary.collapsible-header::-webkit-details-marker { display:none; }
+  summary.collapsible-header::marker { display:none; }
+  summary.collapsible-header:hover { opacity:0.85; }
+  details:not([open]) .collapse-arrow { content:"▼"; }
+  details[open] .collapse-arrow { content:"▲"; }
+  /* Tighter collapsed card: remove bottom margin/padding from summary when closed */
+  .card:has(details:not([open])) { padding-bottom: 4px; padding-top: 4px; margin-bottom: 6px; }
+  .card:has(details:not([open])) summary.collapsible-header { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+  /* Tighter expanded body */
+  .collapsible-body { padding-top: 0; }
+  .collapsible-body .form-row { margin-top: 8px; gap: 8px; }
+  .collapsible-body .form-group { margin-bottom: 8px; }
+  .collapsible-body .btn-group { gap: 6px; }
+  .collapsible-body p { margin-top: 8px; margin-bottom: 10px; }
+  details[open] summary.round-summary {
+    border-bottom-left-radius:0; border-bottom-right-radius:0;
+    margin-bottom:0;
+  }
 </style>
 
+<script>
+  // Flip collapse arrows on details toggle
+  document.addEventListener('toggle', e => {
+    if (e.target.tagName === 'DETAILS') {
+      const arrow = e.target.querySelector('.collapse-arrow');
+      if (arrow) arrow.textContent = e.target.open ? '▲' : '▼';
+    }
+  }, true);
+</script>
 <script src="js/settings.js"></script>
 <script src="js/api.js"></script>
 <script src="js/auth.js"></script>

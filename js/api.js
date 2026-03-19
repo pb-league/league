@@ -49,8 +49,9 @@ const API = (() => {
 
   return {
     // League registry (no leagueId needed)
-    getLeagues:       ()                      => get('getLeagues'),
-    getLeaguesAll:    ()                      => get('getLeagues', { includeHidden: true }),
+    getLeagues:             ()           => get('getLeagues'),
+    getLeaguesAll:          ()           => get('getLeagues', { includeHidden: true }),
+    getLeagueAndPlayers:    (leagueId)   => get('getLeagueAndPlayers', { leagueId }),
     addLeague:        (leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues, hidden) => post({ action: 'addLeague', leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues, hidden }),
     updateLeague:          (leagueId, name, sheetId, active, canCreateLeagues, hidden) => post({ action: 'updateLeague', leagueId, name, sheetId, active, canCreateLeagues, hidden }),
     updateLeagueWithCaller: (leagueId, name, sheetId, active, canCreateLeagues, callerLeagueId) => post({ action: 'updateLeague', leagueId, name, sheetId, active, canCreateLeagues, callerLeagueId }),

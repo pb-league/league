@@ -3,6 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0d1b2a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="PB League">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
   <title>Player — Pickleball League</title>
   <link rel="stylesheet" href="css/style.css">
 <style>
@@ -23,7 +29,7 @@
       <span></span><span></span><span></span>
     </button>
     <div class="topbar-right">
-      <div class="user-chip"><span class="name" id="topbar-name"></span></div>
+      <div class="user-chip"><span class="name" id="topbar-name"></span><span id="topbar-role" style="font-size:0.68rem; padding:2px 8px; border-radius:5px; background:rgba(255,255,255,0.07); color:var(--muted); margin-left:6px; display:none;"></span></div>
       <button class="btn btn-secondary" onclick="Auth.logout()" style="padding:6px 14px; font-size:0.75rem;">Logout</button>
     </div>
   </header>
@@ -193,6 +199,27 @@
 <div class="loading-overlay hidden" id="loading"><div class="spinner"></div></div>
 
 <script src="js/settings.js"></script>
+  <!-- Google Analytics — loads only if GA_MEASUREMENT_ID is set in settings.js -->
+  <script>
+    window.__gaReady = false;
+    document.addEventListener('DOMContentLoaded', () => {
+      if (typeof GA_MEASUREMENT_ID === 'undefined' || !GA_MEASUREMENT_ID) return;
+      const s = document.createElement('script');
+      s.async = true;
+      s.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA_MEASUREMENT_ID;
+      document.head.appendChild(s);
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){ dataLayer.push(arguments); }
+      window.gtag = gtag;
+      gtag('js', new Date());
+      gtag('config', GA_MEASUREMENT_ID, {
+        page_title: document.title,
+        page_location: window.location.href,
+        anonymize_ip: true,
+      });
+      window.__gaReady = true;
+    });
+  </script>
 <script src="js/api.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/reports.js"></script>
@@ -226,6 +253,14 @@
     });
   });
 })();
+</script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .catch(err => console.warn('SW registration failed:', err));
+    });
+  }
 </script>
 </body>
 </html>

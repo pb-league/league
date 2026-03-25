@@ -253,6 +253,154 @@ const Tournament = (() => {
     return matches;
   }
 
+
+  // ── Round Robin Reseeded ───────────────────────────────────
+  // Everyone plays every round. After each round players are
+  // re-ranked by wins (initial seed as tiebreak). Teams reform
+  // each round. Bye rotates to whoever has sat out fewest times.
+
+  function buildRRSeeds(presentPlayers, standings, players) {
+    // Rank individuals (not pairs) by season standings > initialRank > alpha
+    return presentPlayers
+      .map(name => {
+        const s  = standings.find(st => st.name === name);
+        const pl = players && players.find(p => p.name === name);
+        const standRank = s && s.rank && s.rank !== '-' ? s.rank : null;
+        const initRank  = pl && pl.initialRank ? pl.initialRank : null;
+        return { name, standRank, initRank };
+      })
+      .sort((a, b) => {
+        if (a.standRank && b.standRank) return a.standRank - b.standRank;
+        if (a.standRank) return -1;
+        if (b.standRank) return  1;
+        if (a.initRank !== null && b.initRank !== null)
+          return a.initRank !== b.initRank ? a.initRank - b.initRank : a.name.localeCompare(b.name);
+        if (a.initRank !== null) return -1;
+        if (b.initRank !== null) return  1;
+        return a.name.localeCompare(b.name);
+      })
+      .map((p, i) => ({
+        name: p.name,
+        seed: i + 1,     // initial seed (tiebreak, never changes)
+        wins: 0,
+        losses: 0,
+        byes: 0,
+      }));
+  }
+
+  function generateRRRound(rrSeeds, courts, round, week, doubles) {
+    // Sort by wins desc, then initial seed asc (lower seed = better)
+    const ranked = [...rrSeeds].sort((a, b) =>
+      b.wins !== a.wins ? b.wins - a.wins : a.seed - b.seed
+    );
+
+    // Choose bye recipient: fewest byes, tiebreak = lowest current rank position
+    let byePlayer = null;
+    if (ranked.length % 2 === 1) {
+      // Find player with fewest byes; among ties pick lowest ranked (last in array)
+      const minByes = Math.min(...ranked.map(p => p.byes));
+      // Start from the bottom of rankings for the bye (weakest current player)
+      for (let i = ranked.length - 1; i >= 0; i--) {
+        if (ranked[i].byes === minByes) { byePlayer = ranked[i]; break; }
+      }
+    }
+
+    const playing = byePlayer ? ranked.filter(p => p.name !== byePlayer.name) : ranked;
+    const pairings = [];
+
+    if (byePlayer) {
+      pairings.push({
+        week, round, court: 'bye',
+        p1: byePlayer.name, p2: '', p3: '', p4: '',
+        type: 'tourn-bye'
+      });
+    }
+
+    if (doubles) {
+      // Re-pair: rank1+rank2 vs rank3+rank4, rank5+rank6 vs rank7+rank8, etc.
+      // top half teams vs bottom half teams (best team vs worst team)
+      const teams = [];
+      for (let i = 0; i < playing.length; i += 2) {
+        teams.push({
+          p1: playing[i].name,
+          p2: playing[i + 1] ? playing[i + 1].name : '',
+        });
+      }
+      const half = Math.floor(teams.length / 2);
+      const matches = [];
+      for (let i = 0; i < half; i++) {
+        matches.push({
+          week, round,
+          p1: teams[i].p1, p2: teams[i].p2,
+          p3: teams[teams.length - 1 - i].p1,
+          p4: teams[teams.length - 1 - i].p2,
+          type: 'tourn-game'
+        });
+      }
+      assignCourts(matches, courts).forEach(m => pairings.push(m));
+    } else {
+      // Singles: rank1 vs rankLast, rank2 vs rank2ndLast...
+      const half = playing.length / 2;
+      const matches = [];
+      for (let i = 0; i < half; i++) {
+        matches.push({
+          week, round,
+          p1: playing[i].name, p2: '',
+          p3: playing[playing.length - 1 - i].name, p4: '',
+          type: 'tourn-game'
+        });
+      }
+      assignCourts(matches, courts).forEach(m => pairings.push(m));
+    }
+
+    return pairings;
+  }
+
+  function advanceRoundRR(rrSeeds, weekPairings, weekScores, currentRound, courts, week, doubles) {
+    const nextRound = currentRound + 1;
+
+    // Update win/loss/bye counts from current round
+    const updated = rrSeeds.map(s => ({ ...s }));
+    const roundPairings = weekPairings.filter(p => parseInt(p.round) === currentRound);
+
+    roundPairings.forEach(p => {
+      if (p.type === 'tourn-bye' || p.type === 'bye') {
+        const pl = updated.find(s => s.name === p.p1);
+        if (pl) pl.byes++;
+        return;
+      }
+      const score = weekScores.find(s =>
+        parseInt(s.round) === currentRound && String(s.court) === String(p.court)
+      );
+      if (!score || score.score1 === '' || score.score1 === null) return;
+
+      const s1 = parseInt(score.score1), s2 = parseInt(score.score2);
+
+      if (doubles) {
+        // Winners are p1+p2 team
+        const t1win = s1 > s2;
+        [p.p1, p.p2].filter(Boolean).forEach(name => {
+          const pl = updated.find(s => s.name === name);
+          if (pl) { if (t1win) pl.wins++; else pl.losses++; }
+        });
+        [p.p3, p.p4].filter(Boolean).forEach(name => {
+          const pl = updated.find(s => s.name === name);
+          if (pl) { if (!t1win) pl.wins++; else pl.losses++; }
+        });
+      } else {
+        const winner = s1 > s2 ? p.p1 : p.p3;
+        const loser  = s1 > s2 ? p.p3 : p.p1;
+        const wp = updated.find(s => s.name === winner);
+        const lp = updated.find(s => s.name === loser);
+        if (wp) wp.wins++;
+        if (lp) lp.losses++;
+      }
+    });
+
+    const pairings = generateRRRound(updated, courts, nextRound, week, doubles);
+    return { pairings, rrSeeds: updated };
+  }
+
   // ── Entry points ───────────────────────────────────────────
 
   function generateTournament(presentPlayers, courts, week, mode, standings, doubles) {
@@ -269,5 +417,5 @@ const Tournament = (() => {
     return advanceRound(seeds, weekScores, currentRound, courts, week, mode);
   }
 
-  return { generateTournament, advanceTournament };
+  return { generateTournament, advanceTournament, advanceRoundRR };
 })();

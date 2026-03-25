@@ -3,6 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0d1b2a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="PB League">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
   <title>Pickleball League — Login</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -13,7 +19,7 @@
   <div class="login-box">
 
     <div class="login-logo">
-      <span class="ball">🥒</span>
+      <img src="img/pb_rot.gif" style="width:72px; height:72px; object-fit:contain; display:block; margin:0 auto 8px;" alt="">
       <h1>PICKLE<span>BALL</span></h1>
       <div class="league-name">League Manager</div>
     </div>
@@ -27,6 +33,27 @@
         </select>
       </div>
       <button class="btn btn-primary w-full" id="btn-league-next" disabled>Continue →</button>
+
+      <div id="league-lookup-section" style="margin-top:16px; border-top:1px solid rgba(255,255,255,0.08); padding-top:14px;">
+        <div style="font-size:0.75rem; color:var(--muted); margin-bottom:10px; text-align:center;">
+          Don&#39;t see your league? Enter your details below.
+        </div>
+        <div class="form-group" style="margin-bottom:8px;">
+          <label class="form-label" style="font-size:0.78rem;">Organization ID <span style="color:var(--muted); font-weight:400;">(provided by your league admin)</span></label>
+          <input class="form-control" id="lookup-org-id" placeholder="e.g. springfield-pickleball" autocomplete="off" style="font-size:0.88rem;">
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; margin:6px 0;">
+          <div style="flex:1; height:1px; background:rgba(255,255,255,0.08);"></div>
+          <div style="font-size:0.7rem; font-weight:600; letter-spacing:0.1em; color:var(--muted);">OR</div>
+          <div style="flex:1; height:1px; background:rgba(255,255,255,0.08);"></div>
+        </div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label class="form-label" style="font-size:0.78rem;">League name <span style="color:var(--muted); font-weight:400;">(or part of it)</span></label>
+          <input class="form-control" id="lookup-league-name" placeholder="e.g. Tuesday Doubles" autocomplete="off" style="font-size:0.88rem;">
+        </div>
+        <button class="btn btn-secondary w-full" id="btn-lookup-league" style="font-size:0.82rem;">🔍 Find My League</button>
+        <div id="lookup-error" style="font-size:0.78rem; color:var(--danger); margin-top:8px; display:none;"></div>
+      </div>
     </div>
 
     <!-- Step 2: Select Player -->
@@ -45,9 +72,116 @@
 
       <div class="login-divider">or</div>
 
-      <button class="btn btn-secondary w-full" id="btn-admin-entry">Admin Login</button>
+      <button class="btn btn-secondary w-full" id="btn-admin-entry" style="border-color:rgba(45,122,58,0.4);">🔐 Admin Login</button>
+
+      <button class="btn btn-secondary w-full hidden" id="btn-show-register"
+              style="border-color:rgba(94,194,106,0.4); color:var(--green); margin-top:4px;">
+        + Register as New Player
+      </button>
 
       <button class="btn btn-secondary w-full mt-1" id="btn-back-league" style="margin-top:8px; opacity:0.6; font-size:0.75rem;">← Change League</button>
+    </div>
+
+    <!-- Step: Register -->
+    <div id="step-register" class="hidden">
+      <div style="margin-bottom:14px;">
+        <div class="label">League</div>
+        <div id="reg-league-name" style="font-weight:600; color:var(--green); font-size:1rem;"></div>
+      </div>
+      <div style="background:rgba(45,122,58,0.08); border:1px solid rgba(45,122,58,0.2);
+        border-radius:8px; padding:10px 14px; margin-bottom:16px; font-size:0.8rem;
+        color:rgba(240,244,240,0.7); line-height:1.6;">
+        Fill in the form below. Your account will be <strong style="color:var(--white);">pending approval</strong>
+        by the league admin before you can log in. If you provide an email address, you'll
+        receive a notification when your account is approved with instructions on how to log in.
+      </div>
+      <div class="form-group">
+        <label class="form-label">Invite Code <span style="color:var(--danger);">*</span></label>
+        <input class="form-control" id="reg-code" placeholder="Enter the code provided by your league admin" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Player Handle <span style="color:var(--danger);">*</span></label>
+        <input class="form-control" id="reg-name" placeholder="Name others will recognise you by" autocomplete="nickname">
+        <div style="font-size:0.72rem; color:var(--muted); margin-top:4px;">Must be unique in the league. Doesn't have to be your full name.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email <span style="color:var(--muted); font-weight:400;">(optional)</span></label>
+        <input class="form-control" id="reg-email" type="email" placeholder="email@example.com" autocomplete="email">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.82rem; margin-top:8px;">
+          <input type="checkbox" id="reg-notify" style="width:16px;height:16px;">
+          <span>Email me session results <span style="color:var(--muted); font-size:0.75rem;">(requires email above)</span></span>
+        </label>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Gender Group <span style="color:var(--muted); font-weight:400; font-size:0.78rem;">(used for mixed-doubles pairings only)</span></label>
+        <select class="form-control" id="reg-group">
+          <option value="M">Male</option>
+          <option value="F">Female</option>
+          <option value="Either">Either</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">I am registering as a</label>
+        <div style="display:flex; gap:10px;">
+          <label style="flex:1; display:flex; align-items:center; gap:10px; cursor:pointer;
+                        background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1);
+                        border-radius:8px; padding:12px; transition:border-color 0.2s;"
+                 id="reg-role-player-label">
+            <input type="radio" name="reg-role" id="reg-role-player" value="player" checked style="accent-color:var(--green);">
+            <div>
+              <div style="font-weight:600; font-size:0.88rem;">Player</div>
+              <div style="font-size:0.75rem; color:var(--muted);">Participate in matches and track standings</div>
+            </div>
+          </label>
+          <label style="flex:1; display:flex; align-items:center; gap:10px; cursor:pointer;
+                        background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1);
+                        border-radius:8px; padding:12px; transition:border-color 0.2s;"
+                 id="reg-role-spectator-label">
+            <input type="radio" name="reg-role" id="reg-role-spectator" value="spectator" style="accent-color:var(--gold);">
+            <div>
+              <div style="font-weight:600; font-size:0.88rem;">Spectator</div>
+              <div style="font-size:0.75rem; color:var(--muted);">View scores and standings only</div>
+            </div>
+          </label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Choose a PIN <span style="color:var(--danger);">*</span></label>
+        <input class="form-control" id="reg-pin" type="password" maxlength="8"
+               inputmode="numeric" placeholder="4–8 digits" autocomplete="new-password">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirm PIN</label>
+        <input class="form-control" id="reg-pin2" type="password" maxlength="8"
+               inputmode="numeric" placeholder="Re-enter PIN" autocomplete="new-password">
+      </div>
+      <div id="reg-error" style="color:var(--danger); font-size:0.82rem; margin-bottom:10px; display:none;"></div>
+      <div class="btn-group">
+        <button class="btn btn-secondary" id="btn-reg-back">← Back</button>
+        <button class="btn btn-primary" id="btn-reg-submit" style="flex:1;">Register</button>
+      </div>
+    </div>
+
+    <!-- Step: Admin Login -->
+    <div id="step-admin" class="hidden">
+      <div style="margin-bottom:14px;">
+        <div class="label">League</div>
+        <div id="admin-league-name" style="font-weight:600; color:var(--green); font-size:1rem;"></div>
+      </div>
+      <div id="admin-role-tabs" style="display:flex; gap:8px; margin-bottom:20px;">
+        <button id="btn-role-admin" class="btn btn-primary" style="flex:1; font-size:0.82rem; padding:8px;">League Admin</button>
+        <button id="btn-role-manager" class="btn btn-secondary" style="flex:1; font-size:0.82rem; padding:8px;">App Manager</button>
+      </div>
+      <div class="form-group">
+        <label class="form-label" id="admin-pw-label">Admin Password</label>
+        <input class="form-control" id="admin-password" type="password"
+               placeholder="Enter password" autocomplete="current-password">
+      </div>
+      <div id="admin-error" style="color:var(--danger); font-size:0.82rem; margin-bottom:10px; display:none;"></div>
+      <div class="btn-group">
+        <button class="btn btn-secondary" id="btn-admin-back">← Back</button>
+        <button class="btn btn-primary" id="btn-admin-login" style="flex:1;">Login →</button>
+      </div>
     </div>
 
     <!-- Step 3: Enter PIN -->
@@ -74,24 +208,142 @@
     </div>
 
   </div>
-  <div style="text-align:center; margin-top:20px; font-size:0.72rem; color:rgba(255,255,255,0.3); line-height:1.5;">
+  <div style="text-align:center; margin-top:24px; font-size:0.72rem; color:rgba(255,255,255,0.3); line-height:1.8;">
+    <a href="marketing.html" style="color:rgba(94,194,106,0.7); font-size:0.78rem; font-weight:500; text-decoration:none; letter-spacing:0.03em;" onmouseover="this.style.color='rgba(94,194,106,1)'" onmouseout="this.style.color='rgba(94,194,106,0.7)'">
+      &#9656; Learn about Pickleball League Manager
+    </a><br>
     Created by Doug Tucker for non-commercial use<br>by the Pickleball community<br>
-    Contact Doug at <a href="mailto:dougjt@yahoo.com" style="color:rgba(255,255,255,0.4);">dougjt@yahoo.com</a> if you are interested in using it.
+    Contact Doug at <a href="mailto:dougjt@yahoo.com" style="color:rgba(255,255,255,0.4);">dougjt@yahoo.com</a> if you are interested in using it,
+    or <a href="#" id="btn-apply" style="color:rgba(94,194,106,0.7); text-decoration:none; font-weight:500;"
+       onmouseover="this.style.color='rgba(94,194,106,1)'" onmouseout="this.style.color='rgba(94,194,106,0.7)'">apply here</a>.
+    <br><span id="index-version" style="font-size:0.68rem; color:rgba(255,255,255,0.18);"></span>
   </div>
+  </div>
+</div>
+
+<!-- Application modal -->
+<div id="apply-modal" style="display:none; position:fixed; inset:0; z-index:200;
+  background:rgba(0,0,0,0.7); backdrop-filter:blur(4px);
+  align-items:flex-start; justify-content:center; overflow-y:auto; padding:40px 16px;">
+  <div style="background:#152232; border:1px solid rgba(255,255,255,0.1); border-radius:14px;
+    max-width:480px; width:100%; padding:28px 28px 24px; position:relative; margin:auto;">
+    <button id="btn-apply-close" style="position:absolute; top:14px; right:16px;
+      background:none; border:none; color:rgba(255,255,255,0.35); font-size:1.3rem; cursor:pointer; line-height:1;">✕</button>
+    <div style="font-family:'DM Sans',sans-serif;">
+      <div style="font-size:1.1rem; font-weight:700; color:#f0f4f0; margin-bottom:4px;">Apply to Use Pickleball League Manager</div>
+      <div style="font-size:0.78rem; color:rgba(255,255,255,0.4); margin-bottom:18px; line-height:1.6;">
+        Due to limited hosting bandwidth, the number of organizations that can be
+        supported is restricted. Fill in the form below and the developer will let
+        you know soon if your application is approved.
+      </div>
+      <div id="apply-success" style="display:none; background:rgba(45,122,58,0.15);
+        border:1px solid rgba(45,122,58,0.3); border-radius:8px; padding:14px 16px;
+        font-size:0.85rem; color:#3fa050; line-height:1.7; margin-bottom:16px;">
+        ✅ Application submitted! Check your email for a confirmation.
+        The developer will be in touch soon.
+      </div>
+      <div id="apply-form-body">
+        <div style="margin-bottom:12px;">
+          <label style="display:block; font-size:0.75rem; font-weight:600; color:rgba(255,255,255,0.5);
+            text-transform:uppercase; letter-spacing:0.07em; margin-bottom:5px;">
+            Your Name <span style="color:#e05555;">*</span>
+          </label>
+          <input id="apply-name" class="form-control" placeholder="First and last name" autocomplete="name">
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="display:block; font-size:0.75rem; font-weight:600; color:rgba(255,255,255,0.5);
+            text-transform:uppercase; letter-spacing:0.07em; margin-bottom:5px;">
+            Email Address <span style="color:#e05555;">*</span>
+          </label>
+          <input id="apply-email" class="form-control" type="email" placeholder="you@example.com" autocomplete="email">
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="display:block; font-size:0.75rem; font-weight:600; color:rgba(255,255,255,0.5);
+            text-transform:uppercase; letter-spacing:0.07em; margin-bottom:5px;">Type of League</label>
+          <select id="apply-type" class="form-control">
+            <option value="">— Select —</option>
+            <option value="Town / Community">Town / Community</option>
+            <option value="Private Group">Private Group</option>
+            <option value="Charity Event">Charity Event</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="display:block; font-size:0.75rem; font-weight:600; color:rgba(255,255,255,0.5);
+            text-transform:uppercase; letter-spacing:0.07em; margin-bottom:5px;">Location / Venue</label>
+          <select id="apply-location" class="form-control">
+            <option value="">— Select —</option>
+            <option value="Town / Public Courts">Town / Public Courts</option>
+            <option value="Pickleball Club">Pickleball Club</option>
+            <option value="Recreation Centre">Recreation Centre</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
+          <div>
+            <label style="display:block; font-size:0.75rem; font-weight:600; color:rgba(255,255,255,0.5);
+              text-transform:uppercase; letter-spacing:0.07em; margin-bottom:5px;">Approx. Players</label>
+            <select id="apply-players" class="form-control">
+              <option value="">—</option>
+              <option value="Under 10">Under 10</option>
+              <option value="10–20">10–20</option>
+              <option value="20–40">20–40</option>
+              <option value="40–60">40–60</option>
+              <option value="60+">60+</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; font-weight:600; color:rgba(255,255,255,0.5);
+              text-transform:uppercase; letter-spacing:0.07em; margin-bottom:5px;">Approx. Sessions</label>
+            <select id="apply-sessions" class="form-control">
+              <option value="">—</option>
+              <option value="1–5">1–5</option>
+              <option value="5–10">5–10</option>
+              <option value="10–20">10–20</option>
+              <option value="Ongoing">Ongoing / year-round</option>
+            </select>
+          </div>
+        </div>
+        <div id="apply-error" style="font-size:0.78rem; color:#e05555; margin-bottom:10px; display:none;"></div>
+        <button id="btn-apply-submit" class="btn btn-primary w-full" style="font-size:0.9rem;">Submit Application</button>
+      </div>
+    </div>
   </div>
 </div>
 
 <div id="toast-container"></div>
 
 <script src="js/settings.js"></script>
+  <!-- Google Analytics — loads only if GA_MEASUREMENT_ID is set in settings.js -->
+  <script>
+    window.__gaReady = false;
+    document.addEventListener('DOMContentLoaded', () => {
+      if (typeof GA_MEASUREMENT_ID === 'undefined' || !GA_MEASUREMENT_ID) return;
+      const s = document.createElement('script');
+      s.async = true;
+      s.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA_MEASUREMENT_ID;
+      document.head.appendChild(s);
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){ dataLayer.push(arguments); }
+      window.gtag = gtag;
+      gtag('js', new Date());
+      gtag('config', GA_MEASUREMENT_ID, {
+        page_title: document.title,
+        page_location: window.location.href,
+        anonymize_ip: true,
+      });
+      window.__gaReady = true;
+    });
+  </script>
 <script src="js/api.js"></script>
 <script src="js/auth.js"></script>
 <script>
 (async function init() {
   // If already logged in with a valid league, redirect
   const session = Auth.getSession();
-  if (session && session.leagueId) {
-    window.location.href = session.isAdmin ? 'admin.html' : 'player.html';
+  if (session && session.leagueId && session.name) {
+    // Only redirect if this is a real completed login (has a player name)
+    window.location.href = (session.isAdmin || ['admin','manager','assistant'].includes(session.role)) ? 'admin.html' : 'player.html';
     return;
   }
 
@@ -99,15 +351,25 @@
   let selectedLeague = null;
   let selectedPlayer = null;
 
+  // Read URL params early — needed before API.getLeagues call
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlLeague     = urlParams.get('league');
+  const urlPlayer     = urlParams.get('player');
+  const urlCustomerId = urlParams.get('id') || null;
+
   // ── Step 1: Load leagues ────────────────────────────────────
   const leagueSel = document.getElementById('league-select');
   const btnLeagueNext = document.getElementById('btn-league-next');
 
   try {
-    const data = await API.getLeagues();
+    const data = await API.getLeagues(urlCustomerId);
     leagues = data.leagues || [];
 
     leagueSel.innerHTML = '<option value="">— Choose League —</option>';
+    // Hide lookup section if org ID was in URL (user already scoped)
+    if (urlCustomerId) {
+      document.getElementById('league-lookup-section').style.display = 'none';
+    }
     if (leagues.length === 0) {
       leagueSel.innerHTML = '<option value="">No leagues configured yet</option>';
       // Show a direct admin setup button when no leagues exist
@@ -145,7 +407,126 @@
     }
   });
 
-  // Shared function: select a league and load its players
+  // ── Application modal ──────────────────────────────────────
+  document.getElementById('btn-apply')?.addEventListener('click', e => {
+    e.preventDefault();
+    document.getElementById('apply-success').style.display = 'none';
+    document.getElementById('apply-form-body').style.display = '';
+    document.getElementById('apply-error').style.display = 'none';
+    ['apply-name','apply-email','apply-type','apply-location','apply-players','apply-sessions']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    document.getElementById('apply-modal').style.display = 'flex';
+  });
+  document.getElementById('btn-apply-close')?.addEventListener('click', () => {
+    document.getElementById('apply-modal').style.display = 'none';
+  });
+  document.getElementById('apply-modal')?.addEventListener('click', e => {
+    if (e.target === document.getElementById('apply-modal'))
+      document.getElementById('apply-modal').style.display = 'none';
+  });
+  document.getElementById('btn-apply-submit')?.addEventListener('click', async () => {
+    const name        = document.getElementById('apply-name').value.trim();
+    const email       = document.getElementById('apply-email').value.trim();
+    const leagueType  = document.getElementById('apply-type').value;
+    const location    = document.getElementById('apply-location').value;
+    const playerCount = document.getElementById('apply-players').value;
+    const sessionCount= document.getElementById('apply-sessions').value;
+    const errEl       = document.getElementById('apply-error');
+
+    if (!name || !email) {
+      errEl.textContent = 'Name and email address are required.';
+      errEl.style.display = 'block'; return;
+    }
+    errEl.style.display = 'none';
+
+    const btn = document.getElementById('btn-apply-submit');
+    btn.disabled = true; btn.textContent = '⏳ Sending…';
+    try {
+      const result = await API.submitApplication({ name, email, leagueType, location, playerCount, sessionCount });
+      if (result.success) {
+        document.getElementById('apply-form-body').style.display = 'none';
+        document.getElementById('apply-success').style.display = 'block';
+      } else {
+        errEl.textContent = result.error || 'Submission failed. Please try emailing dougjt@yahoo.com directly.';
+        errEl.style.display = 'block';
+      }
+    } catch (e) {
+      errEl.textContent = 'Could not submit. Please email dougjt@yahoo.com directly.';
+      errEl.style.display = 'block';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Submit Application';
+    }
+  });
+
+  // ── League lookup ───────────────────────────────────────────
+  document.getElementById('btn-lookup-league').addEventListener('click', async () => {
+    const orgId      = document.getElementById('lookup-org-id').value.trim();
+    const leagueName = document.getElementById('lookup-league-name').value.trim().toLowerCase();
+    const errEl      = document.getElementById('lookup-error');
+    errEl.style.display = 'none';
+
+    if (!orgId && !leagueName) {
+      errEl.textContent = 'Enter an Organization ID, a league name, or both.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    const btn = document.getElementById('btn-lookup-league');
+    btn.disabled = true; btn.textContent = '⏳ Searching…';
+
+    try {
+      // Fetch leagues filtered by org ID (if provided)
+      const data = await API.getLeagues(orgId || null);
+      let found = data.leagues || [];
+
+      // Further filter by league name if provided
+      if (leagueName) {
+        found = found.filter(l => l.name.toLowerCase().includes(leagueName));
+      }
+
+      if (!found.length) {
+        errEl.textContent = 'No leagues found. Check your Organization ID and league name.';
+        errEl.style.display = 'block';
+        return;
+      }
+
+      // Merge found leagues into dropdown
+      found.forEach(l => {
+        if (!leagueSel.querySelector(`option[value="${l.leagueId}"]`)) {
+          const opt = document.createElement('option');
+          opt.value = l.leagueId;
+          opt.textContent = l.name;
+          leagueSel.appendChild(opt);
+        }
+      });
+
+      // Merge into leagues array
+      found.forEach(l => { if (!leagues.find(x => x.leagueId === l.leagueId)) leagues.push(l); });
+
+      // Auto-select if only one result
+      if (found.length === 1) {
+        leagueSel.value = found[0].leagueId;
+        btnLeagueNext.disabled = false;
+        showToast(`Found: ${found[0].name}`, 'success');
+      } else {
+        showToast(`Found ${found.length} leagues — select yours from the dropdown.`);
+      }
+
+      // Hide lookup section now that leagues are populated
+      document.getElementById('league-lookup-section').style.display = 'none';
+
+    } catch (e) {
+      errEl.textContent = 'Search failed: ' + e.message;
+      errEl.style.display = 'block';
+    } finally {
+      btn.disabled = false; btn.textContent = '🔍 Find My League';
+    }
+  });
+
+  // Hide lookup section if leagues are already visible from URL params
+  // (will be shown/hidden dynamically based on whether leagues loaded)
+
+  // ── Shared function: select a league and load its players
   async function selectLeague(league, preselectedPlayer) {
     selectedLeague = league;
     Auth.setSession('', false, league.leagueId, league.name);
@@ -159,6 +540,13 @@
       const prefetch = playerPrefetch[league.leagueId];
       const data = prefetch ? await prefetch : await API.getPlayers();
       const players = (data ? data.players || [] : []).filter(p => p.active !== false);
+
+      // Show register button if league allows it — fetch config
+      document.getElementById('btn-show-register').classList.add('hidden');
+      API.getConfig().then(cfg => {
+        registrationEnabled = !!(cfg && cfg.config && cfg.config.allowRegistration);
+        document.getElementById('btn-show-register').classList.toggle('hidden', !registrationEnabled);
+      }).catch(() => {});
       playerSel.innerHTML = '<option value="">— Choose Player —</option>';
       players.forEach(p => {
         const opt = document.createElement('option');
@@ -183,6 +571,156 @@
     }
   }
 
+  // ── Registration ─────────────────────────────────────────
+  let registrationEnabled = false;
+
+  function showRegister() {
+    document.getElementById('reg-league-name').textContent =
+      selectedLeague ? selectedLeague.name : '';
+    document.getElementById('reg-error').style.display = 'none';
+    ['reg-code','reg-name','reg-email','reg-pin','reg-pin2'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('reg-notify').checked = false;
+    document.getElementById('reg-role-player').checked = true;
+    goTo('step-register');
+  }
+
+  document.getElementById('btn-show-register').addEventListener('click', showRegister);
+  document.getElementById('btn-reg-back').addEventListener('click', () => goTo('step-player'));
+
+  document.getElementById('btn-reg-submit').addEventListener('click', async () => {
+    const code  = document.getElementById('reg-code').value.trim();
+    const name  = document.getElementById('reg-name').value.trim();
+    const email = document.getElementById('reg-email').value.trim();
+    const group = document.getElementById('reg-group').value;
+    const notify = document.getElementById('reg-notify').checked;
+    const role  = document.querySelector('input[name="reg-role"]:checked')?.value || 'player';
+    const pin   = document.getElementById('reg-pin').value.trim();
+    const pin2  = document.getElementById('reg-pin2').value.trim();
+    const errEl = document.getElementById('reg-error');
+
+    errEl.style.display = 'none';
+
+    if (!code) { errEl.textContent = 'Invite code is required.'; errEl.style.display = 'block'; return; }
+    if (!name) { errEl.textContent = 'Player name is required.'; errEl.style.display = 'block'; return; }
+    if (!pin)  { errEl.textContent = 'PIN is required.'; errEl.style.display = 'block'; return; }
+    if (pin !== pin2) { errEl.textContent = 'PINs do not match.'; errEl.style.display = 'block'; return; }
+    if (pin.length < 4) { errEl.textContent = 'PIN must be at least 4 digits.'; errEl.style.display = 'block'; return; }
+
+    const btn = document.getElementById('btn-reg-submit');
+    btn.disabled = true; btn.textContent = 'Registering…';
+
+    try {
+      // Temporarily store leagueId for the API call without creating a real session
+      sessionStorage.setItem('pb_reg_league', selectedLeague.leagueId);
+      const result = await API.registerPlayer({ playerName: name, email, group, notify, pin, inviteCode: code, role, leagueId: selectedLeague.leagueId });
+      sessionStorage.removeItem('pb_reg_league');
+      if (result.success) {
+        // Show success message in place of form
+        document.getElementById('step-register').innerHTML = `
+          <div style="text-align:center; padding:20px 0;">
+            <div style="font-size:2rem; margin-bottom:12px;">&#10003;</div>
+            <div style="font-weight:700; color:var(--green); font-size:1.1rem; margin-bottom:8px;">
+              Registration submitted!
+            </div>
+            <div style="color:var(--muted); font-size:0.85rem; line-height:1.6;">
+              Your account has been created but is <strong style="color:var(--white);">pending approval</strong>
+              by the league admin. If you provided an email address, you'll receive a notification
+              with login instructions as soon as your account is activated.
+            </div>
+            <button class="btn btn-secondary w-full" style="margin-top:20px;"
+              onclick="window.location.reload()">&#8592; Back to Login</button>
+          </div>`;
+      } else if (result.error === 'taken') {
+        errEl.textContent = 'That name is already taken — please choose a different one.';
+        errEl.style.display = 'block';
+        btn.disabled = false; btn.textContent = 'Register';
+      } else {
+        errEl.textContent = result.error || 'Registration failed.';
+        errEl.style.display = 'block';
+        btn.disabled = false; btn.textContent = 'Register';
+      }
+    } catch (e) {
+      errEl.textContent = 'Error: ' + e.message;
+      errEl.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Register';
+    }
+  });
+
+  // ── Admin login step ─────────────────────────────────────
+  let adminLoginRole = 'admin'; // 'admin' or 'manager'
+
+  document.getElementById('btn-admin-entry').addEventListener('click', () => {
+    document.getElementById('admin-league-name').textContent = selectedLeague ? selectedLeague.name : '';
+    document.getElementById('admin-password').value = '';
+    document.getElementById('admin-error').style.display = 'none';
+    adminLoginRole = 'admin';
+    document.getElementById('btn-role-admin').className = 'btn btn-primary';
+    document.getElementById('btn-role-manager').className = 'btn btn-secondary';
+    document.getElementById('admin-pw-label').textContent = 'Admin Password';
+    goTo('step-admin');
+  });
+
+  document.getElementById('btn-role-admin').addEventListener('click', () => {
+    adminLoginRole = 'admin';
+    document.getElementById('btn-role-admin').className = 'btn btn-primary';
+    document.getElementById('btn-role-manager').className = 'btn btn-secondary';
+    document.getElementById('admin-pw-label').textContent = 'Admin Password';
+    document.getElementById('admin-password').value = '';
+    document.getElementById('admin-error').style.display = 'none';
+  });
+
+  document.getElementById('btn-role-manager').addEventListener('click', () => {
+    adminLoginRole = 'manager';
+    document.getElementById('btn-role-manager').className = 'btn btn-primary';
+    document.getElementById('btn-role-admin').className = 'btn btn-secondary';
+    document.getElementById('admin-pw-label').textContent = 'App Manager Password';
+    document.getElementById('admin-password').value = '';
+    document.getElementById('admin-error').style.display = 'none';
+  });
+
+  document.getElementById('btn-admin-back').addEventListener('click', () => {
+    document.getElementById('admin-password').value = '';
+    goTo('step-player');
+  });
+
+  document.getElementById('admin-password').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('btn-admin-login').click();
+  });
+
+  document.getElementById('btn-admin-login').addEventListener('click', async () => {
+    const password = document.getElementById('admin-password').value.trim();
+    const errEl = document.getElementById('admin-error');
+    errEl.style.display = 'none';
+    if (!password) { errEl.textContent = 'Password is required.'; errEl.style.display = 'block'; return; }
+
+    const btn = document.getElementById('btn-admin-login');
+    btn.disabled = true; btn.textContent = '…';
+
+    try {
+      Auth.setSession('', false, selectedLeague.leagueId, selectedLeague.name);
+      let result;
+      if (adminLoginRole === 'manager') {
+        result = await Auth.loginManager(password, selectedLeague.leagueId, selectedLeague.name);
+      } else {
+        result = await Auth.loginAdmin(password, selectedLeague.leagueId, selectedLeague.name);
+      }
+      if (result.valid) {
+        window.location.href = 'admin.html';
+      } else {
+        errEl.textContent = result.reason || 'Incorrect password.';
+        errEl.style.display = 'block';
+        document.getElementById('admin-password').value = '';
+      }
+    } catch (e) {
+      errEl.textContent = 'Error: ' + e.message;
+      errEl.style.display = 'block';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Login →';
+    }
+  });
+
   btnLeagueNext.addEventListener('click', () => {
     const leagueId = leagueSel.value;
     if (!leagueId) return;
@@ -191,14 +729,12 @@
   });
 
   // ── URL parameter pre-selection ─────────────────────────────
-  const urlParams = new URLSearchParams(window.location.search);
-  const urlLeague = urlParams.get('league');
-  const urlPlayer = urlParams.get('player');
+  // (urlParams, urlLeague, urlPlayer, urlCustomerId declared above)
 
   if (urlLeague) {
     // Use combined endpoint — fetches league list AND players in one round-trip
     try {
-      const combined = await API.getLeagueAndPlayers(urlLeague);
+      const combined = await API.getLeagueAndPlayers(urlLeague, urlCustomerId);
 
       // Merge returned leagues into our list (handles hidden leagues too)
       if (combined.leagues && combined.leagues.length) {
@@ -273,11 +809,6 @@
     showPinStep(selectedPlayer);
   });
 
-  document.getElementById('btn-admin-entry').addEventListener('click', () => {
-    selectedPlayer = 'Admin';
-    showPinStep('Admin');
-  });
-
   document.getElementById('btn-back-league').addEventListener('click', () => {
     Auth.clearSession();
     selectedLeague = null;
@@ -313,7 +844,7 @@
         selectedLeague.name
       );
       if (result.valid) {
-        window.location.href = result.isAdmin ? 'admin.html' : 'player.html';
+        window.location.href = (result.role === 'assistant') ? 'admin.html' : 'player.html';
       } else {
         document.getElementById('pin-error-msg').textContent = result.reason || 'Incorrect PIN';
         document.getElementById('pin-error').classList.remove('hidden');
@@ -374,7 +905,7 @@
   }
 
   function goTo(stepId) {
-    ['step-league', 'step-player', 'step-pin'].forEach(id => {
+    ['step-league', 'step-player', 'step-pin', 'step-register', 'step-admin'].forEach(id => {
       document.getElementById(id).classList.toggle('hidden', id !== stepId);
     });
   }
@@ -387,8 +918,32 @@
     container.appendChild(t);
     setTimeout(() => t.remove(), 5000);
   }
+
+  // Version footer
+  const verEl = document.getElementById('index-version');
+  if (verEl && typeof APP_VERSION !== 'undefined') {
+    verEl.textContent = `v${APP_VERSION}  ·  Built ${APP_BUILD_DATE}`;
+  }
+
 })();
 </script>
+// added: 
+<script type="text/javascript">
 
+                navigator.serviceWorker.register('sw.js').then(function(registration) {
+                console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                     }, function(err) {
+                console.log('ServiceWorker registration failed: ', err);
+                });
+                
+        </script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js')
+        .catch(err => console.warn('SW registration failed:', err));
+    });
+  }
+</script>
 </body>
 </html>

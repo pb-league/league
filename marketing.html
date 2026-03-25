@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pickleball League Manager</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,700;1,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --court-green: #2d7a3a;
+    --court-green-light: #3fa050;
+    --court-green-glow: rgba(45,122,58,0.25);
+    --gold: #e8b84b;
+    --gold-light: #f5c842;
+    --navy: #0d1b2a;
+    --navy-mid: #152232;
+    --navy-light: #1e3248;
+    --slate: #2a3f54;
+    --white: #f0f4f0;
+    --muted: #7a9bb5;
+    --danger: #e05555;
+    --radius: 14px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--navy);
+    color: var(--white);
+    overflow-x: hidden;
+  }
+
+  /* ── Noise texture overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+  }
+
+  /* ── Court lines background ── */
+  .court-bg {
+    position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+  }
+  .court-bg::before {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%) rotate(-8deg);
+    width: 140%; height: 200%;
+    border: 2px solid rgba(45,122,58,0.12);
+    border-radius: 0;
+  }
+  .court-line {
+    position: absolute;
+    background: rgba(45,122,58,0.08);
+  }
+
+  /* ── Navigation ── */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    padding: 18px 48px;
+    display: flex; align-items: center; justify-content: space-between;
+    background: rgba(13,27,42,0.85);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(45,122,58,0.15);
+  }
+  .nav-logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.5rem;
+    letter-spacing: 0.08em;
+    color: var(--white);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .nav-logo span { color: var(--court-green-light); }
+  .nav-ball {
+    width: 28px; height: 28px;
+    background: var(--gold);
+    border-radius: 50%;
+    position: relative;
+    box-shadow: 0 0 12px rgba(232,184,75,0.4);
+  }
+  .nav-ball::before, .nav-ball::after {
+    content: '';
+    position: absolute;
+    border: 1.5px solid rgba(13,27,42,0.4);
+    border-radius: 50%;
+  }
+  .nav-ball::before { top: 6px; left: 0; right: 0; bottom: 6px; }
+  .nav-ball::after { top: 0; bottom: 0; left: 6px; right: 6px; }
+  .nav-links { display: flex; gap: 32px; align-items: center; }
+  .nav-links a {
+    color: var(--muted); text-decoration: none; font-size: 0.88rem;
+    font-weight: 500; letter-spacing: 0.03em;
+    transition: color 0.2s;
+  }
+  .nav-links a:hover { color: var(--white); }
+  .nav-cta {
+    background: var(--court-green) !important;
+    color: var(--white) !important;
+    padding: 8px 20px !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    transition: background 0.2s, transform 0.15s !important;
+  }
+  .nav-cta:hover { background: var(--court-green-light) !important; transform: translateY(-1px); }
+
+  /* ── Hero ── */
+  .hero {
+    position: relative;
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    text-align: center;
+    padding: 120px 24px 80px;
+    overflow: hidden;
+  }
+  .hero-glow {
+    position: absolute;
+    top: -100px; left: 50%; transform: translateX(-50%);
+    width: 800px; height: 800px;
+    background: radial-gradient(ellipse, rgba(45,122,58,0.18) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero-content { position: relative; z-index: 1; max-width: 900px; }
+  .hero-eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(45,122,58,0.15);
+    border: 1px solid rgba(45,122,58,0.35);
+    border-radius: 100px;
+    padding: 6px 16px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--court-green-light);
+    margin-bottom: 28px;
+  }
+  .hero-eyebrow::before { content: '●'; font-size: 0.5rem; animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+  h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(4rem, 10vw, 8rem);
+    line-height: 0.9;
+    letter-spacing: 0.02em;
+    color: var(--white);
+    margin-bottom: 8px;
+  }
+  h1 .accent { color: var(--court-green-light); }
+  h1 .gold { color: var(--gold); }
+
+  .hero-sub {
+    font-size: clamp(1rem, 2vw, 1.25rem);
+    color: var(--muted);
+    font-weight: 300;
+    line-height: 1.6;
+    max-width: 600px;
+    margin: 24px auto 40px;
+  }
+  .hero-actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn-primary {
+    background: var(--court-green);
+    color: var(--white);
+    padding: 14px 32px;
+    border-radius: var(--radius);
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-decoration: none;
+    border: none; cursor: pointer;
+    transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+    box-shadow: 0 0 24px rgba(45,122,58,0.3);
+    letter-spacing: 0.02em;
+  }
+  .btn-primary:hover { background: var(--court-green-light); transform: translateY(-2px); box-shadow: 0 4px 32px rgba(45,122,58,0.45); }
+  .btn-secondary {
+    background: rgba(255,255,255,0.06);
+    color: var(--white);
+    padding: 14px 32px;
+    border-radius: var(--radius);
+    font-size: 0.95rem;
+    font-weight: 500;
+    text-decoration: none;
+    border: 1px solid rgba(255,255,255,0.12);
+    cursor: pointer;
+    transition: background 0.2s, transform 0.15s;
+    letter-spacing: 0.02em;
+  }
+  .btn-secondary:hover { background: rgba(255,255,255,0.1); transform: translateY(-2px); }
+
+  /* hero stats bar */
+  .hero-stats {
+    display: flex; gap: 0; justify-content: center;
+    margin-top: 72px;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: var(--radius);
+    overflow: hidden;
+    max-width: 640px;
+    margin-left: auto; margin-right: auto;
+    background: rgba(21,34,50,0.8);
+    backdrop-filter: blur(10px);
+  }
+  .hero-stat {
+    flex: 1;
+    padding: 20px 16px;
+    text-align: center;
+    border-right: 1px solid rgba(255,255,255,0.07);
+  }
+  .hero-stat:last-child { border-right: none; }
+  .hero-stat-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2rem;
+    color: var(--gold);
+    letter-spacing: 0.04em;
+    line-height: 1;
+  }
+  .hero-stat-label {
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-top: 4px;
+    font-weight: 500;
+  }
+
+  /* ── Section layout ── */
+  section { position: relative; padding: 100px 24px; }
+  .container { max-width: 1100px; margin: 0 auto; }
+  .section-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--court-green-light);
+    margin-bottom: 12px;
+  }
+  h2 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(2.2rem, 5vw, 3.8rem);
+    line-height: 1;
+    letter-spacing: 0.03em;
+    margin-bottom: 16px;
+  }
+  .section-sub {
+    font-size: 1.05rem;
+    color: var(--muted);
+    max-width: 560px;
+    line-height: 1.65;
+    font-weight: 300;
+  }
+
+  /* ── Feature grid ── */
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    margin-top: 56px;
+  }
+  .feature-card {
+    background: var(--navy-mid);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: var(--radius);
+    padding: 28px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s, transform 0.25s, box-shadow 0.3s;
+    cursor: default;
+  }
+  .feature-card::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(45,122,58,0.06) 0%, transparent 60%);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .feature-card:hover { border-color: rgba(45,122,58,0.4); transform: translateY(-4px); box-shadow: 0 12px 40px rgba(0,0,0,0.3); }
+  .feature-card:hover::before { opacity: 1; }
+  .feature-icon {
+    font-size: 1.8rem;
+    margin-bottom: 16px;
+    display: block;
+    filter: drop-shadow(0 0 8px rgba(45,122,58,0.4));
+  }
+  .feature-card h3 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.3rem;
+    letter-spacing: 0.06em;
+    color: var(--white);
+    margin-bottom: 10px;
+  }
+  .feature-card p {
+    font-size: 0.88rem;
+    color: var(--muted);
+    line-height: 1.65;
+    font-weight: 300;
+  }
+  .feature-tag {
+    display: inline-block;
+    background: rgba(45,122,58,0.15);
+    border: 1px solid rgba(45,122,58,0.3);
+    color: var(--court-green-light);
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 100px;
+    margin-top: 14px;
+  }
+
+  /* ── Tournament showcase ── */
+  .tourn-section { background: var(--navy-mid); }
+  .tourn-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2px;
+    margin-top: 56px;
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.07);
+  }
+  .tourn-mode {
+    background: var(--navy);
+    padding: 36px 28px;
+    position: relative;
+    transition: background 0.3s;
+  }
+  .tourn-mode:hover { background: rgba(21,34,50,0.9); }
+  .tourn-mode.featured {
+    background: linear-gradient(160deg, rgba(45,122,58,0.18) 0%, var(--navy) 100%);
+    border-left: 3px solid var(--court-green);
+    border-right: 3px solid var(--court-green);
+  }
+  .tourn-badge {
+    display: inline-block;
+    background: var(--gold);
+    color: var(--navy);
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border-radius: 100px;
+    margin-bottom: 14px;
+  }
+  .tourn-mode h3 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.6rem;
+    letter-spacing: 0.06em;
+    margin-bottom: 12px;
+  }
+  .tourn-mode p {
+    font-size: 0.85rem;
+    color: var(--muted);
+    line-height: 1.65;
+    font-weight: 300;
+  }
+  .tourn-detail {
+    margin-top: 16px;
+    font-size: 0.78rem;
+    color: rgba(240,244,240,0.6);
+    line-height: 1.8;
+  }
+  .tourn-detail li { list-style: none; padding-left: 14px; position: relative; }
+  .tourn-detail li::before { content: '→'; position: absolute; left: 0; color: var(--court-green-light); font-size: 0.7rem; }
+
+  /* ── Optimizer deep-dive ── */
+  .optimizer-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    align-items: start;
+    margin-top: 56px;
+  }
+  .optimizer-visual {
+    background: var(--navy-mid);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: var(--radius);
+    padding: 28px;
+    font-family: 'DM Mono', monospace;
+  }
+  .opt-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .opt-row:last-child { border-bottom: none; }
+  .opt-label { font-size: 0.78rem; color: var(--muted); flex: 1; min-width: 0; }
+  .opt-bar-wrap { flex: 2; background: rgba(255,255,255,0.06); border-radius: 4px; height: 6px; }
+  .opt-bar { height: 6px; border-radius: 4px; background: var(--court-green); }
+  .opt-val { font-size: 0.75rem; color: var(--court-green-light); font-weight: 500; width: 28px; text-align: right; }
+  .optimizer-points { display: flex; flex-direction: column; gap: 16px; }
+  .opt-point {
+    display: flex; gap: 16px;
+    background: var(--navy-mid);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 10px;
+    padding: 18px;
+    transition: border-color 0.3s;
+  }
+  .opt-point:hover { border-color: rgba(45,122,58,0.35); }
+  .opt-point-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.8rem;
+    color: rgba(45,122,58,0.4);
+    line-height: 1;
+    flex-shrink: 0;
+    width: 28px;
+  }
+  .opt-point h4 { font-size: 0.9rem; font-weight: 600; margin-bottom: 4px; color: var(--white); }
+  .opt-point p { font-size: 0.82rem; color: var(--muted); line-height: 1.55; }
+
+  /* ── Score / standings mock ── */
+  .dashboard-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-top: 56px;
+  }
+  .mock-card {
+    background: var(--navy-mid);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: var(--radius);
+    padding: 0;
+    overflow: hidden;
+  }
+  .mock-header {
+    background: rgba(255,255,255,0.04);
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    padding: 14px 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .mock-header .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--court-green); }
+  .mock-body { padding: 16px 20px; }
+  .mock-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    font-size: 0.84rem;
+  }
+  .mock-row:last-child { border-bottom: none; }
+  .mock-rank {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--muted);
+    width: 20px;
+    text-align: center;
+  }
+  .mock-rank.gold { color: var(--gold); font-weight: 700; }
+  .mock-name { flex: 1; font-weight: 500; }
+  .mock-name.me { color: var(--court-green-light); font-weight: 700; }
+  .mock-stat {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .mock-win { color: var(--court-green-light); font-weight: 700; }
+  .mock-score-row { display: flex; align-items: center; gap: 6px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .mock-score-row:last-child { border-bottom: none; }
+  .mock-team { flex: 1; font-size: 0.82rem; }
+  .mock-team small { display: block; font-size: 0.72rem; color: var(--muted); margin-top: 1px; }
+  .mock-score-val {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.2rem;
+    letter-spacing: 0.08em;
+    color: var(--white);
+    min-width: 50px;
+    text-align: center;
+  }
+  .mock-score-val .win-score { color: var(--court-green-light); }
+  .mock-score-val .lose-score { color: var(--muted); }
+  .score-badge { display: flex; gap: 4px; align-items: center; font-size: 0.65rem; padding: 2px 8px; border-radius: 100px; }
+  .score-done { background: rgba(45,122,58,0.2); color: var(--court-green-light); border: 1px solid rgba(45,122,58,0.3); }
+  .score-pending { background: rgba(232,184,75,0.12); color: var(--gold); border: 1px solid rgba(232,184,75,0.25); }
+
+  /* ── Multi-league section ── */
+  .multi-league {
+    background: linear-gradient(180deg, var(--navy) 0%, var(--navy-mid) 100%);
+  }
+  .league-cards {
+    display: flex; gap: 16px; margin-top: 48px; flex-wrap: wrap;
+  }
+  .league-pill {
+    background: var(--navy);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 100px;
+    padding: 12px 22px;
+    display: flex; align-items: center; gap: 10px;
+    font-size: 0.88rem;
+    font-weight: 500;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .league-pill:hover { border-color: rgba(45,122,58,0.45); transform: translateY(-2px); }
+  .league-pill .lp-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .league-pill small { font-size: 0.72rem; color: var(--muted); margin-left: 2px; }
+
+  /* ── Admin / player split ── */
+  .roles-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 56px;
+  }
+  .role-card {
+    border-radius: var(--radius); padding: 36px;
+    position: relative; overflow: hidden;
+  }
+  .role-card.admin {
+    background: linear-gradient(135deg, rgba(45,122,58,0.12) 0%, var(--navy-mid) 100%);
+    border: 1px solid rgba(45,122,58,0.25);
+  }
+  .role-card.player {
+    background: linear-gradient(135deg, rgba(42,63,84,0.8) 0%, var(--navy-mid) 100%);
+    border: 1px solid rgba(255,255,255,0.09);
+  }
+  .role-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2rem;
+    letter-spacing: 0.06em;
+    margin-bottom: 6px;
+  }
+  .role-desc { font-size: 0.88rem; color: var(--muted); margin-bottom: 24px; line-height: 1.6; }
+  .role-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+  .role-list li {
+    font-size: 0.86rem; display: flex; gap: 10px; align-items: flex-start;
+  }
+  .role-list li::before { content: '✓'; color: var(--court-green-light); font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+
+  /* ── Email callout ── */
+  .email-callout {
+    background: var(--navy-mid);
+    border: 1px solid rgba(232,184,75,0.2);
+    border-radius: var(--radius);
+    padding: 36px;
+    margin-top: 56px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 24px;
+    align-items: center;
+  }
+  .email-callout h3 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.6rem;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+    color: var(--gold);
+  }
+  .email-callout p { font-size: 0.88rem; color: var(--muted); line-height: 1.65; max-width: 520px; }
+  .email-types {
+    display: flex; flex-direction: column; gap: 8px; margin-top: 16px;
+  }
+  .email-type {
+    font-size: 0.8rem; display: flex; gap: 8px; align-items: center;
+  }
+  .email-type::before { content: '📧'; font-size: 0.75rem; }
+
+  /* ── Tech stack ── */
+  .tech-row {
+    display: flex; gap: 16px; flex-wrap: wrap; margin-top: 48px;
+  }
+  .tech-badge {
+    background: var(--navy-mid);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 10px;
+    padding: 14px 20px;
+    display: flex; align-items: center; gap: 10px;
+    font-size: 0.85rem; font-weight: 500;
+    transition: border-color 0.2s;
+  }
+  .tech-badge:hover { border-color: rgba(45,122,58,0.4); }
+  .tech-badge .tb-icon { font-size: 1.2rem; }
+  .tech-badge .tb-label { color: var(--muted); font-size: 0.72rem; margin-top: 1px; }
+
+  /* ── CTA ── */
+  .cta-section {
+    text-align: center;
+    padding: 120px 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .cta-section::before {
+    content: '';
+    position: absolute;
+    bottom: -200px; left: 50%; transform: translateX(-50%);
+    width: 600px; height: 600px;
+    background: radial-gradient(ellipse, rgba(45,122,58,0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .cta-section h2 { margin-bottom: 16px; }
+  .cta-section p { font-size: 1.05rem; color: var(--muted); margin-bottom: 40px; max-width: 500px; margin-left: auto; margin-right: auto; }
+  .cta-actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+
+  /* ── Footer ── */
+  footer {
+    border-top: 1px solid rgba(255,255,255,0.07);
+    padding: 32px 48px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 0.8rem; color: var(--muted);
+    flex-wrap: wrap; gap: 12px;
+  }
+  footer a { color: var(--muted); text-decoration: none; }
+  footer a:hover { color: var(--white); }
+
+  /* ── Animations ── */
+  .fade-up {
+    opacity: 0; transform: translateY(32px);
+    transition: opacity 0.7s ease, transform 0.7s ease;
+  }
+  .fade-up.visible { opacity: 1; transform: translateY(0); }
+  .fade-up-delay-1 { transition-delay: 0.1s; }
+  .fade-up-delay-2 { transition-delay: 0.2s; }
+  .fade-up-delay-3 { transition-delay: 0.3s; }
+  .fade-up-delay-4 { transition-delay: 0.4s; }
+  .fade-up-delay-5 { transition-delay: 0.5s; }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    nav { padding: 16px 20px; }
+    .nav-links { display: none; }
+    .tourn-grid { grid-template-columns: 1fr; }
+    .optimizer-layout { grid-template-columns: 1fr; }
+    .dashboard-split { grid-template-columns: 1fr; }
+    .roles-grid { grid-template-columns: 1fr; }
+    .email-callout { grid-template-columns: 1fr; }
+    footer { padding: 24px 20px; flex-direction: column; text-align: center; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Navigation -->
+<nav>
+  <div class="nav-logo">
+    <div class="nav-ball"></div>
+    PICKLE<span>BALL</span> LEAGUE MANAGER
+  </div>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#tournaments">Tournaments</a>
+    <a href="#roles">Roles</a>
+    <a href="#optimizer">Pairings</a>
+    <a href="#dashboard">Dashboard</a>
+    <a href="index.html" class="nav-cta" style="background:rgba(255,255,255,0.08) !important; border:1px solid rgba(255,255,255,0.15) !important; margin-right:6px;">← Login</a>
+    <a href="#pricing">Pricing</a>
+    <a href="#get-started" class="nav-cta">Get Started</a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-glow"></div>
+  <div class="court-bg">
+    <div class="court-line" style="top:20%; left:0; right:0; height:1px;"></div>
+    <div class="court-line" style="top:80%; left:0; right:0; height:1px;"></div>
+    <div class="court-line" style="left:50%; top:0; bottom:0; width:1px;"></div>
+    <div class="court-line" style="top:45%; left:0; right:0; height:2px; opacity:0.6;"></div>
+    <div class="court-line" style="top:55%; left:0; right:0; height:2px; opacity:0.6;"></div>
+  </div>
+  <div class="hero-content">
+    <div class="hero-eyebrow">Free for pickleball communities</div>
+    <h1>RUN YOUR<br><span class="accent">LEAGUE</span><br>LIKE A <span class="gold">PRO</span></h1>
+    <p class="hero-sub">Smart pairings, tournament brackets, live standings, and player reports — all from a browser, powered by Google Sheets. No servers, no subscriptions.</p>
+    <div class="hero-actions">
+      <a href="#get-started" class="btn-primary">Get Started Free</a>
+      <a href="#features" class="btn-secondary">Explore Features ↓</a>
+    </div>
+    <div class="hero-stats fade-up">
+      <div class="hero-stat">
+        <div class="hero-stat-num">500+</div>
+        <div class="hero-stat-label">Optimizer Tries</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-num">8</div>
+        <div class="hero-stat-label">Pairing Factors</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-num">3</div>
+        <div class="hero-stat-label">Tournament Modes</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-num">∞</div>
+        <div class="hero-stat-label">Leagues Supported</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Features Grid -->
+<section id="features">
+  <div class="container">
+    <div class="section-label">Everything You Need</div>
+    <h2>BUILT FOR <span style="color:var(--court-green-light);">REAL</span> LEAGUES</h2>
+    <p class="section-sub">Every feature was designed around how recreational pickleball leagues actually run — from the first session to the final tournament.</p>
+
+    <div class="features-grid">
+      <div class="feature-card fade-up">
+        <span class="feature-icon">🎲</span>
+        <h3>Intelligent Pairings</h3>
+        <p>A multi-factor optimizer runs hundreds of candidate solutions to find the most balanced, fair game assignments. Minimizes repeat partners and opponents across the full season.</p>
+        <div style="margin-top:14px; display:flex; flex-wrap:wrap; gap:6px;">
+          <span style="font-size:0.72rem; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:3px 9px; color:var(--white);">Singles</span>
+          <span style="font-size:0.72rem; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:3px 9px; color:var(--white);">Doubles</span>
+          <span style="font-size:0.72rem; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:3px 9px; color:var(--white);">Mixed Doubles</span>
+          <span style="font-size:0.72rem; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:3px 9px; color:var(--white);">Fixed-Pair Doubles</span>
+        </div>
+        <span class="feature-tag">AI-Powered</span>
+      </div>
+      <div class="feature-card fade-up fade-up-delay-1">
+        <span class="feature-icon">🏆</span>
+        <h3>Three Tournament Formats</h3>
+        <p>Single elimination, double elimination, and round-robin reseeded. Automatic seeding from standings, rotating byes, and live bracket display for players.</p>
+        <span class="feature-tag">Flexible</span>
+      </div>
+      <div class="feature-card fade-up fade-up-delay-2">
+        <span class="feature-icon">📊</span>
+        <h3>Live Standings</h3>
+        <p>Season and per-session standings update instantly as scores are entered. Ranking trend charts show player progress across the season. Head-to-head stats included.</p>
+        <span class="feature-tag">Real-Time</span>
+      </div>
+      <div class="feature-card fade-up fade-up-delay-3">
+        <span class="feature-icon">📧</span>
+        <h3>Automated Email Reports</h3>
+        <p>Session results, tournament brackets, and individual player reports delivered by email. Players always know their scores, ranking, and upcoming schedule.</p>
+        <span class="feature-tag">Automated</span>
+      </div>
+      <div class="feature-card fade-up fade-up-delay-4">
+        <span class="feature-icon">👥</span>
+        <h3>Player Self-Registration</h3>
+        <p>Players register themselves using an invite code. Admin approves accounts before they become active. Built-in spam protection with pending caps and admin notifications.</p>
+        <span class="feature-tag">Secure</span>
+      </div>
+      <div class="feature-card fade-up fade-up-delay-5">
+        <span class="feature-icon">🌐</span>
+        <h3>Multi-League Support</h3>
+        <p>Run unlimited leagues from a single deployment. Public, private, and hidden leagues. Each league has its own players, schedule, and data. Share with any community.</p>
+        <span class="feature-tag">Scalable</span>
+      </div>
+    </div>
+  </div>
+
+    <!-- Game Formats callout -->
+    <div style="margin-top:48px; background:var(--navy-mid); border:1px solid rgba(255,255,255,0.08); border-radius:var(--radius); padding:36px; display:grid; grid-template-columns:1fr 1fr; gap:40px; align-items:start;" class="fade-up">
+      <div>
+        <div class="section-label" style="margin-bottom:10px;">Regular Session Formats</div>
+        <h3 style="font-family:'Bebas Neue',sans-serif; font-size:2rem; letter-spacing:0.05em; margin-bottom:12px;">FOUR WAYS TO PLAY</h3>
+        <p style="font-size:0.88rem; color:var(--muted); line-height:1.65;">Every regular (non-tournament) session supports a different game format. The optimizer adapts its pairing logic and partner-tracking to suit each one.</p>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+        <div style="background:var(--navy); border:1px solid rgba(45,122,58,0.2); border-radius:10px; padding:16px;">
+          <div style="font-size:1.2rem; margin-bottom:8px;">🏸</div>
+          <div style="font-weight:700; font-size:0.88rem; margin-bottom:4px;">Singles</div>
+          <div style="font-size:0.78rem; color:var(--muted); line-height:1.55;">One vs one. Opponent history tracked to spread matchups evenly, with rank-balance weighting for competitive games.</div>
+        </div>
+        <div style="background:var(--navy); border:1px solid rgba(45,122,58,0.3); border-radius:10px; padding:16px;">
+          <div style="font-size:1.2rem; margin-bottom:8px;">🤝</div>
+          <div style="font-weight:700; font-size:0.88rem; margin-bottom:4px;">Doubles</div>
+          <div style="font-size:0.78rem; color:var(--muted); line-height:1.55;">Four-player games with full partner &amp; opponent history tracking across the season.</div>
+        </div>
+        <div style="background:var(--navy); border:1px solid rgba(232,184,75,0.2); border-radius:10px; padding:16px;">
+          <div style="font-size:1.2rem; margin-bottom:8px;">⚡</div>
+          <div style="font-weight:700; font-size:0.88rem; margin-bottom:4px;">Mixed Doubles</div>
+          <div style="font-size:0.78rem; color:var(--muted); line-height:1.55;">Optimizer adds a gender-balance penalty to encourage mixed-gender partnerships each round.</div>
+        </div>
+        <div style="background:var(--navy); border:1px solid rgba(122,155,181,0.2); border-radius:10px; padding:16px;">
+          <div style="font-size:1.2rem; margin-bottom:8px;">👫</div>
+          <div style="font-weight:700; font-size:0.88rem; margin-bottom:4px;">Fixed-Pair Doubles</div>
+          <div style="font-size:0.78rem; color:var(--muted); line-height:1.55;">Permanent doubles partners entered as a single unit. Runs as singles-style scheduling with pairs competing against other pairs.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Tournament Modes -->
+<section id="tournaments" class="tourn-section">
+  <div class="container">
+    <div class="section-label">Tournament Engine</div>
+    <h2>THREE WAYS TO <span style="color:var(--gold);">CROWN</span> A CHAMPION</h2>
+    <p class="section-sub">Every format handles seeding, byes, and partner assignment automatically — including for odd player counts.</p>
+
+    <div class="tourn-grid fade-up">
+      <div class="tourn-mode">
+        <h3>Single Elimination</h3>
+        <p>Classic bracket. One loss and you're out. Fastest format, perfect for end-of-season finales.</p>
+        <ul class="tourn-detail">
+          <li>Top seeds vs bottom seeds</li>
+          <li>Top seed gets bye if odd count</li>
+          <li>Fixed doubles teams throughout</li>
+          <li>Champion when one team remains</li>
+        </ul>
+      </div>
+      <div class="tourn-mode featured">
+        <div class="tourn-badge">Most Popular</div>
+        <h3>Double Elimination</h3>
+        <p>Two separate brackets — winners and losers. Players need two losses to be eliminated, giving everyone a second chance.</p>
+        <ul class="tourn-detail">
+          <li>Winners &amp; Losers brackets</li>
+          <li>Grand Final: best of both brackets</li>
+          <li>Live status: who's in which bracket</li>
+          <li>Automatic loser bracket routing</li>
+        </ul>
+      </div>
+      <div class="tourn-mode">
+        <h3>Round Robin Reseeded</h3>
+        <p>Everyone plays every round. No eliminations — the player with the most wins at the end takes the title.</p>
+        <ul class="tourn-detail">
+          <li>Partners re-pair each round</li>
+          <li>Bye rotates to weakest player</li>
+          <li>Live standings after every round</li>
+          <li>Swiss-system fairness</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Optimizer Deep Dive -->
+<section id="optimizer">
+  <div class="container">
+    <div class="section-label">The Smart Pairing Engine</div>
+    <h2>NOT RANDOM.<br><span style="color:var(--court-green-light);">OPTIMIZED.</span></h2>
+    <p class="section-sub">The pairing optimizer evaluates hundreds of candidate solutions against eight weighted factors, automatically calibrated to your league's size and history.</p>
+
+    <div class="optimizer-layout">
+      <div>
+        <div class="optimizer-visual fade-up">
+          <div style="font-size:0.7rem;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:16px;">Pairing Quality Factors</div>
+          <div class="opt-row">
+            <div class="opt-label">Session Partners</div>
+            <div class="opt-bar-wrap"><div class="opt-bar" style="width:100%"></div></div>
+            <div class="opt-val">50</div>
+          </div>
+          <div class="opt-row">
+            <div class="opt-label">Session Bye</div>
+            <div class="opt-bar-wrap"><div class="opt-bar" style="width:60%;background:var(--gold)"></div></div>
+            <div class="opt-val" style="color:var(--gold)">30</div>
+          </div>
+          <div class="opt-row">
+            <div class="opt-label">Bye Variance</div>
+            <div class="opt-bar-wrap"><div class="opt-bar" style="width:40%"></div></div>
+            <div class="opt-val">20</div>
+          </div>
+          <div class="opt-row">
+            <div class="opt-label">Session Opponents</div>
+            <div class="opt-bar-wrap"><div class="opt-bar" style="width:40%"></div></div>
+            <div class="opt-val">20</div>
+          </div>
+          <div class="opt-row">
+            <div class="opt-label">Rank Balance</div>
+            <div class="opt-bar-wrap"><div class="opt-bar" style="width:30%;background:rgba(122,155,181,0.7)"></div></div>
+            <div class="opt-val" style="color:var(--muted)">15</div>
+          </div>
+          <div class="opt-row">
+            <div class="opt-label">History Partners</div>
+            <div class="opt-bar-wrap"><div class="opt-bar" style="width:20%;background:rgba(122,155,181,0.7)"></div></div>
+            <div class="opt-val" style="color:var(--muted)">10</div>
+          </div>
+          <div class="opt-row">
+            <div class="opt-label">Rank Std Dev</div>
+            <div class="opt-bar-wrap"><div class="opt-bar" style="width:16%;background:rgba(122,155,181,0.5)"></div></div>
+            <div class="opt-val" style="color:var(--muted)">8</div>
+          </div>
+          <div class="opt-row">
+            <div class="opt-label">History Opponents</div>
+            <div class="opt-bar-wrap"><div class="opt-bar" style="width:6%;background:rgba(122,155,181,0.4)"></div></div>
+            <div class="opt-val" style="color:var(--muted)">3</div>
+          </div>
+          <div style="margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,0.06); font-size:0.72rem; color:var(--muted);">All weights fully configurable per league</div>
+        </div>
+      </div>
+      <div class="optimizer-points fade-up fade-up-delay-2">
+        <div class="opt-point">
+          <div class="opt-point-num">01</div>
+          <div>
+            <h4>Hundreds of Random Starts</h4>
+            <p>Each optimization run evaluates up to 500 independently shuffled candidate solutions, guaranteeing broad coverage of the solution space.</p>
+          </div>
+        </div>
+        <div class="opt-point">
+          <div class="opt-point-num">02</div>
+          <div>
+            <h4>Automatic Weight Calibration</h4>
+            <p>Weights are normalized by sampling real distributions, so a "50" for partner repetition and "15" for rank balance are genuinely proportional — not just raw numbers.</p>
+          </div>
+        </div>
+        <div class="opt-point">
+          <div class="opt-point-num">03</div>
+          <div>
+            <h4>Season-Aware History</h4>
+            <p>Every partner and opponent pairing from the full season is tracked. The optimizer actively avoids rematches across weeks, not just within a single session.</p>
+          </div>
+        </div>
+        <div class="opt-point">
+          <div class="opt-point-num">04</div>
+          <div>
+            <h4>Rank-Based Balance</h4>
+            <p>Player rankings feed directly into pairing decisions. Initial rankings let the optimizer balance games even before season standings exist.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Dashboard Preview -->
+<section id="dashboard">
+  <div class="container">
+    <div class="section-label">For Players &amp; Admins</div>
+    <h2>TWO VIEWS.<br><span style="color:var(--court-green-light);">ONE APP.</span></h2>
+    <p class="section-sub">Admins get full control. Players get a clean, fast view of what they need. Everything loads in under 2 seconds.</p>
+
+    <div class="dashboard-split fade-up">
+      <div class="mock-card">
+        <div class="mock-header"><div class="dot"></div>Season Standings</div>
+        <div class="mock-body">
+          <div class="mock-row">
+            <div class="mock-rank gold">#1</div>
+            <div class="mock-name">Sandra T.</div>
+            <div class="mock-stat">14<span style="color:rgba(255,255,255,0.2)">W</span> 3<span style="color:rgba(255,255,255,0.2)">L</span></div>
+            <div class="mock-stat mock-win">82%</div>
+          </div>
+          <div class="mock-row">
+            <div class="mock-rank">#2</div>
+            <div class="mock-name">Richard K.</div>
+            <div class="mock-stat">13<span style="color:rgba(255,255,255,0.2)">W</span> 4<span style="color:rgba(255,255,255,0.2)">L</span></div>
+            <div class="mock-stat" style="color:var(--white)">76%</div>
+          </div>
+          <div class="mock-row">
+            <div class="mock-rank">#3</div>
+            <div class="mock-name me">You ★</div>
+            <div class="mock-stat">11<span style="color:rgba(255,255,255,0.2)">W</span> 6<span style="color:rgba(255,255,255,0.2)">L</span></div>
+            <div class="mock-stat" style="color:var(--white)">65%</div>
+          </div>
+          <div class="mock-row">
+            <div class="mock-rank">#4</div>
+            <div class="mock-name">Paul D.</div>
+            <div class="mock-stat">10<span style="color:rgba(255,255,255,0.2)">W</span> 7<span style="color:rgba(255,255,255,0.2)">L</span></div>
+            <div class="mock-stat" style="color:var(--muted)">59%</div>
+          </div>
+          <div class="mock-row">
+            <div class="mock-rank">#5</div>
+            <div class="mock-name">Gina M.</div>
+            <div class="mock-stat">9<span style="color:rgba(255,255,255,0.2)">W</span> 8<span style="color:rgba(255,255,255,0.2)">L</span></div>
+            <div class="mock-stat" style="color:var(--muted)">53%</div>
+          </div>
+        </div>
+      </div>
+      <div class="mock-card">
+        <div class="mock-header"><div class="dot" style="background:var(--gold)"></div>Session 5 Scores</div>
+        <div class="mock-body">
+          <div style="font-size:0.7rem;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+            Round 1
+            <span class="score-badge score-done">3/3 ✓</span>
+          </div>
+          <div class="mock-score-row">
+            <div class="mock-team">Sandra &amp; Paul<small>Team 1</small></div>
+            <div class="mock-score-val"><span class="win-score">11</span> — <span class="lose-score">7</span></div>
+            <div class="mock-team" style="text-align:right">Richard &amp; Gina<small>Team 2</small></div>
+          </div>
+          <div class="mock-score-row">
+            <div class="mock-team">You &amp; Cathy<small>Team 1</small></div>
+            <div class="mock-score-val"><span class="win-score">9</span> — <span class="lose-score">5</span></div>
+            <div class="mock-team" style="text-align:right">Doug &amp; Justin<small>Team 2</small></div>
+          </div>
+          <div style="font-size:0.7rem;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin:14px 0 8px;display:flex;justify-content:space-between;align-items:center;">
+            Round 2
+            <span class="score-badge score-pending">1/3 · 2 left</span>
+          </div>
+          <div class="mock-score-row">
+            <div class="mock-team">Sandra &amp; Gina<small>Team 1</small></div>
+            <div class="mock-score-val"><span class="win-score">9</span> — <span class="lose-score">3</span></div>
+            <div class="mock-team" style="text-align:right">Paul &amp; Justin<small>Team 2</small></div>
+          </div>
+          <div class="mock-score-row" style="opacity:0.5">
+            <div class="mock-team">You &amp; Doug<small>Team 1</small></div>
+            <div class="mock-score-val" style="font-size:0.8rem;color:var(--muted)">— vs —</div>
+            <div class="mock-team" style="text-align:right">Richard &amp; Cathy<small>Team 2</small></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="email-callout fade-up">
+      <div>
+        <h3>📬 Automatic Email Notifications</h3>
+        <p>Keep every player in the loop without any manual effort. Results, standings, and announcements go straight to their inbox.</p>
+        <div class="email-types">
+          <div class="email-type">Session results with scores, session standings, and season rankings</div>
+          <div class="email-type">Tournament bracket results with seed labels and champion announcement</div>
+          <div class="email-type">Custom league messages with optional sections: schedule, rules, player list</div>
+          <div class="email-type">Individual player reports: rank history, partner/opponent stats, game log</div>
+        </div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:3.5rem;color:var(--gold);line-height:1;">4</div>
+        <div style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;">email types</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Roles -->
+<section id="roles" style="background:var(--navy-mid); padding:100px 24px;">
+  <div class="container">
+    <div class="section-label">Role-Based Access</div>
+    <h2>FIVE ROLES.<br><span style="color:var(--court-green-light);">RIGHT LEVEL</span> FOR EVERYONE.</h2>
+    <p class="section-sub">Every person in the league gets exactly the access they need — nothing more, nothing less. Roles are assigned per-player with a single dropdown.</p>
+
+    <div style="display:flex; flex-direction:column; gap:12px; margin-top:48px;">
+
+      <!-- App Manager -->
+      <div class="fade-up" style="display:grid; grid-template-columns:220px 1fr; gap:0; border-radius:var(--radius); overflow:hidden; border:1px solid rgba(232,184,75,0.3);">
+        <div style="background:linear-gradient(135deg,rgba(232,184,75,0.18),rgba(232,184,75,0.06)); padding:22px 24px; display:flex; flex-direction:column; justify-content:center;">
+          <div style="font-size:1.4rem; margin-bottom:6px;">★</div>
+          <div style="font-family:'Bebas Neue',sans-serif; font-size:1.2rem; letter-spacing:0.06em; color:var(--gold);">App Manager</div>
+          <div style="font-size:0.72rem; color:rgba(232,184,75,0.6); margin-top:4px; line-height:1.4;">Developer / platform owner</div>
+        </div>
+        <div style="background:var(--navy); padding:22px 28px;">
+          <div style="font-size:0.83rem; color:var(--muted); line-height:1.7;">
+            Full platform control. Can manage all leagues, configure any setting, and set limits on what league admins can do. Identified by a secure password stored outside the spreadsheet — inaccessible to anyone else. Logs in via a dedicated protected path.
+          </div>
+        </div>
+      </div>
+
+      <!-- League Admin -->
+      <div class="fade-up fade-up-delay-1" style="display:grid; grid-template-columns:220px 1fr; gap:0; border-radius:var(--radius); overflow:hidden; border:1px solid rgba(45,122,58,0.3);">
+        <div style="background:linear-gradient(135deg,rgba(45,122,58,0.18),rgba(45,122,58,0.06)); padding:22px 24px; display:flex; flex-direction:column; justify-content:center;">
+          <div style="font-size:1.4rem; margin-bottom:6px;">⚙️</div>
+          <div style="font-family:'Bebas Neue',sans-serif; font-size:1.2rem; letter-spacing:0.06em; color:var(--court-green-light);">League Admin</div>
+          <div style="font-size:0.72rem; color:rgba(45,122,58,0.7); margin-top:4px; line-height:1.4;">League organizer</div>
+        </div>
+        <div style="background:var(--navy); padding:22px 28px;">
+          <div style="font-size:0.83rem; color:var(--muted); line-height:1.7;">
+            Full control of their league. Manages players and PINs, configures the schedule and weights, generates pairings, runs tournaments, enters and deletes scores, approves registrations, and sends all emails. Logs in with a separate admin password — never confused with a player PIN.
+          </div>
+        </div>
+      </div>
+
+      <!-- Admin Assistant -->
+      <div class="fade-up fade-up-delay-2" style="display:grid; grid-template-columns:220px 1fr; gap:0; border-radius:var(--radius); overflow:hidden; border:1px solid rgba(122,155,181,0.2);">
+        <div style="background:linear-gradient(135deg,rgba(122,155,181,0.12),rgba(122,155,181,0.04)); padding:22px 24px; display:flex; flex-direction:column; justify-content:center;">
+          <div style="font-size:1.4rem; margin-bottom:6px;">🤝</div>
+          <div style="font-family:'Bebas Neue',sans-serif; font-size:1.2rem; letter-spacing:0.06em; color:var(--muted);">Admin Assistant</div>
+          <div style="font-size:0.72rem; color:rgba(122,155,181,0.5); margin-top:4px; line-height:1.4;">Trusted volunteer</div>
+        </div>
+        <div style="background:var(--navy); padding:22px 28px;">
+          <div style="font-size:0.83rem; color:var(--muted); line-height:1.7;">
+            Can run the league on nights the admin is unavailable. Generates and locks pairings, runs tournaments, marks attendance, and enters new scores — but cannot view player PINs or emails, cannot delete or overwrite existing scores, and cannot clear pairings. Perfect for a trusted regular player.
+          </div>
+        </div>
+      </div>
+
+      <!-- Scorer -->
+      <div class="fade-up fade-up-delay-3" style="display:grid; grid-template-columns:220px 1fr; gap:0; border-radius:var(--radius); overflow:hidden; border:1px solid rgba(255,255,255,0.08);">
+        <div style="background:rgba(255,255,255,0.03); padding:22px 24px; display:flex; flex-direction:column; justify-content:center;">
+          <div style="font-size:1.4rem; margin-bottom:6px;">✏️</div>
+          <div style="font-family:'Bebas Neue',sans-serif; font-size:1.2rem; letter-spacing:0.06em;">Scorer</div>
+          <div style="font-size:0.72rem; color:var(--muted); margin-top:4px; line-height:1.4;">Score entry only</div>
+        </div>
+        <div style="background:var(--navy); padding:22px 28px;">
+          <div style="font-size:0.83rem; color:var(--muted); line-height:1.7;">
+            Has everything a regular player sees, plus the ability to enter scores from the player dashboard. Ideal for court captains who record results as games finish.
+          </div>
+        </div>
+      </div>
+
+      <!-- Player -->
+      <div class="fade-up fade-up-delay-4" style="display:grid; grid-template-columns:220px 1fr; gap:0; border-radius:var(--radius); overflow:hidden; border:1px solid rgba(255,255,255,0.06);">
+        <div style="background:rgba(255,255,255,0.02); padding:22px 24px; display:flex; flex-direction:column; justify-content:center;">
+          <div style="font-size:1.4rem; margin-bottom:6px;">🎾</div>
+          <div style="font-family:'Bebas Neue',sans-serif; font-size:1.2rem; letter-spacing:0.06em;">Player</div>
+          <div style="font-size:0.72rem; color:var(--muted); margin-top:4px; line-height:1.4;">Default for all members</div>
+        </div>
+        <div style="background:var(--navy); padding:22px 28px;">
+          <div style="font-size:0.83rem; color:var(--muted); line-height:1.7;">
+            View pairings, scores, standings, ranking trends, and tournament brackets. PIN login — no passwords to remember. Fast two-phase load works on any phone or tablet. Can self-register with an invite code pending admin approval.
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Security callout -->
+    <div class="fade-up" style="margin-top:28px; background:rgba(232,184,75,0.06); border:1px solid rgba(232,184,75,0.18); border-radius:var(--radius); padding:22px 28px; display:flex; gap:18px; align-items:flex-start;">
+      <div style="font-size:1.5rem; flex-shrink:0; margin-top:2px;">🔐</div>
+      <div>
+        <div style="font-weight:700; font-size:0.9rem; margin-bottom:6px; color:var(--gold);">Separate Admin Authentication</div>
+        <div style="font-size:0.82rem; color:var(--muted); line-height:1.65;">Admins log in with a dedicated password — completely separate from the player PIN system. No player can accidentally gain admin access by choosing the same PIN. The App Manager password is stored in the server environment, never in any spreadsheet.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Multi-League -->
+<section class="multi-league">
+  <div class="container">
+    <div class="section-label">Scale Without Limits</div>
+    <h2>ONE APP.<br><span style="color:var(--gold);">UNLIMITED</span> LEAGUES.</h2>
+    <p class="section-sub">Deploy once and support every league in your community. Public leagues in the dropdown. Private leagues accessible by URL only.</p>
+    <div class="league-cards fade-up">
+      <div class="league-pill"><div class="lp-dot" style="background:#2d7a3a"></div>Tuesday Doubles <small>12 players</small></div>
+      <div class="league-pill"><div class="lp-dot" style="background:#2e5090"></div>Friday Mixed <small>16 players</small></div>
+      <div class="league-pill"><div class="lp-dot" style="background:#e8b84b"></div>Weekend Singles <small>8 players</small></div>
+      <div class="league-pill"><div class="lp-dot" style="background:#7a9bb5"></div>Seniors League <small>10 players · hidden</small></div>
+      <div class="league-pill"><div class="lp-dot" style="background:#e05555"></div>Championship Series <small>24 players</small></div>
+      <div class="league-pill" style="border-style:dashed;opacity:0.5">+ Add League</div>
+    </div>
+  </div>
+</section>
+
+<!-- Tech Stack -->
+<section>
+  <div class="container">
+    <div class="section-label">Built On What You Already Have</div>
+    <h2>ZERO SERVERS.<br><span style="color:var(--court-green-light);">ZERO COST.</span></h2>
+    <p class="section-sub">The entire backend runs as a Google Apps Script. Your data lives in a Google Sheet you control. No monthly fees, no vendor lock-in.</p>
+    <div class="tech-row fade-up">
+      <div class="tech-badge"><div class="tb-icon">📄</div><div><div>Google Apps Script</div><div class="tb-label">Backend API</div></div></div>
+      <div class="tech-badge"><div class="tb-icon">📊</div><div><div>Google Sheets</div><div class="tb-label">Data Storage</div></div></div>
+      <div class="tech-badge"><div class="tb-icon">⚡</div><div><div>GitHub Pages</div><div class="tb-label">Frontend Hosting</div></div></div>
+      <div class="tech-badge"><div class="tb-icon">📧</div><div><div>Gmail API</div><div class="tb-label">Email Delivery</div></div></div>
+      <div class="tech-badge"><div class="tb-icon">🔐</div><div><div>PIN Auth</div><div class="tb-label">No Passwords</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- Pricing -->
+<section id="pricing" style="padding:100px 24px;">
+  <div class="container">
+    <div class="section-label">Pricing</div>
+    <h2>FREE TO USE.<br><span style="color:var(--gold);">DONATIONS</span> WELCOME.</h2>
+    <p class="section-sub">Pickleball League Manager is currently free for non-commercial use for select pickleball communities. No subscription, no ads, no data selling — ever.</p>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:48px;">
+
+      <div class="fade-up" style="background:var(--navy-mid); border:1px solid rgba(45,122,58,0.3); border-radius:var(--radius); padding:36px; position:relative; overflow:hidden;">
+        <div style="position:absolute; top:0; right:0; background:var(--court-green); font-size:0.68rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; padding:5px 14px; border-bottom-left-radius:10px;">Current</div>
+        <div style="font-family:'Bebas Neue',sans-serif; font-size:3.5rem; color:var(--court-green-light); line-height:1; margin-bottom:4px;">FREE</div>
+        <div style="font-size:0.82rem; color:var(--muted); margin-bottom:24px;">For select non-commercial leagues</div>
+        <ul class="role-list" style="gap:12px;">
+          <li>Unlimited players and sessions</li>
+          <li>All features included — nothing locked</li>
+          <li>Multiple leagues per deployment</li>
+          <li>All three tournament formats</li>
+          <li>Full email reporting suite</li>
+          <li>Ongoing updates and improvements</li>
+        </ul>
+        <div style="margin-top:24px; padding-top:20px; border-top:1px solid rgba(255,255,255,0.07); font-size:0.78rem; color:var(--muted); line-height:1.6;">
+          Access is by invitation — contact Doug Tucker to request access for your league.
+        </div>
+      </div>
+
+      <div class="fade-up fade-up-delay-2" style="background:linear-gradient(160deg,rgba(232,184,75,0.1) 0%,var(--navy-mid) 100%); border:1px solid rgba(232,184,75,0.3); border-radius:var(--radius); padding:36px;">
+        <div style="font-size:2rem; margin-bottom:12px;">💛</div>
+        <div style="font-family:'Bebas Neue',sans-serif; font-size:1.8rem; letter-spacing:0.04em; color:var(--gold); margin-bottom:8px;">Support Development</div>
+        <div style="font-size:0.85rem; color:var(--muted); line-height:1.7; margin-bottom:20px;">
+          This app is built and maintained by a single developer as a community service. If it saves your league time and makes your sessions more fun, consider a donation to help cover time and hosting costs.
+        </div>
+        <div style="font-size:0.82rem; color:rgba(240,244,240,0.6); line-height:1.8; margin-bottom:24px;">
+          Donations support:<br>
+          &#10003;&nbsp; Continued feature development<br>
+          &#10003;&nbsp; Bug fixes and improvements<br>
+          &#10003;&nbsp; Setup help and ongoing support<br>
+          &#10003;&nbsp; Keeping the app free for everyone
+        </div>
+        <a href="mailto:dougjt@yahoo.com?subject=Pickleball League Manager Donation" class="btn-primary" style="display:inline-block; background:rgba(232,184,75,0.2); border:1px solid rgba(232,184,75,0.4); color:var(--gold); box-shadow:none;">Contact Doug to Donate ↗</a>
+      </div>
+    </div>
+
+    <div class="fade-up" style="margin-top:20px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:var(--radius); padding:20px 28px; font-size:0.8rem; color:var(--muted); line-height:1.7; text-align:center;">
+      Pickleball League Manager will never show ads, sell user data, or charge for features that are free today. Any future paid tiers would only add new capabilities for larger or commercial operations — existing free users would be grandfathered.
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section id="get-started" class="cta-section">
+  <div class="container" style="position:relative;z-index:1">
+    <div class="section-label" style="margin-bottom:20px">Ready to Play?</div>
+    <h2>GET YOUR LEAGUE<br><span style="color:var(--court-green-light);">RUNNING TODAY</span></h2>
+    <p>Set up in minutes. No technical experience required. Contact Doug Tucker to get access.</p>
+    <div class="cta-actions">
+      <a href="mailto:dougjt@yahoo.com" class="btn-primary">Request Access</a>
+      <a href="#features" class="btn-secondary">Learn More ↑</a>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <div class="nav-ball" style="width:20px;height:20px;"></div>
+    <span style="font-family:'Bebas Neue',sans-serif;letter-spacing:0.08em;">Pickleball League Manager</span>
+  </div>
+  <div>Created by <a href="mailto:dougjt@yahoo.com">Doug Tucker</a> · Free for non-commercial pickleball community use</div>
+  <div style="color:rgba(122,155,181,0.5);">v1.0 · 2026</div>
+</footer>
+
+<script>
+  // Intersection observer for fade-up animations
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+      }
+    });
+  }, { threshold: 0.12 });
+
+  document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
+
+  // Stagger feature cards
+  document.querySelectorAll('.feature-card').forEach((card, i) => {
+    card.style.transitionDelay = (i * 0.08) + 's';
+  });
+</script>
+
+</body>
+</html>

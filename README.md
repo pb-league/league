@@ -18,7 +18,7 @@ This app supports **multiple independent leagues** from a single deployment.
 2. Name it **"Pickleball League Registry"**
 3. Copy the **Sheet ID** from the URL:
    ```
-   https://docs.google.com/spreadsheets/d/1VPWAWqN1376ewwWUz7laZ8e-_oKbFA2cjv3p0yTvGZ4YOUR_MASTER_SHEET_ID/edit
+   https://docs.google.com/spreadsheets/d/1VPWAWqN1376ewwWUz7laZ8e-_oKbFA2cjv3p0yTvGZ4/edit
    ```
 
 ---
@@ -36,12 +36,14 @@ This app supports **multiple independent leagues** from a single deployment.
 
 ---Deployment ID: -AKfycbxlJ5x3kmJmssFvcEnf7RVzDcILsJz6nBH09b4xIdQTLoXqbVist3yKlcWx3fePEBYe
 
+
 ## Step 3: Configure the Frontend
 
 Open `js/api.js` and replace:
 ```javascript
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbxlJ5x3kmJmssFvcEnf7RVzDcILsJz6nBH09b4xIdQTLoXqbVist3yKlcWx3fePEBYe/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwOc34BoQtciJo3orUps-QKyw-2ApsIyAvWk96MRaNo2O6mSjH5wZZZn23ABGIma-0i/exec';
 ```
+
 with your Web App URL from Step 2.
 
 ---
@@ -50,7 +52,7 @@ with your Web App URL from Step 2.
 
 1. Push all files to a GitHub repository
 2. Go to **Settings → Pages → Source: main branch, root**
-3. Your site is live at `https://yourusername.github.io/your-repo/`
+3. Your site is live at `https://pb-league.github.io/league/`
 
 ---
 
@@ -64,7 +66,7 @@ Each league needs its own Google Sheet. For each league:
 4. Navigate to **Leagues** → **Add League**
    - League ID: a short slug, e.g. `spring2026` (no spaces)
    - Name: the display name, e.g. `Spring 2026`
-   - Sheet ID: the Google Sheet ID you copied
+   - Sheet ID: the Google Sheet ID you copied   10P7Qt_-EnhxvMBFTOedObakyEIWHkeoCZT5S8DzpqdI
 5. Click Save
 
 Repeat for each additional league. Each league is fully independent.
@@ -122,3 +124,14 @@ gas/Code.gs       ← GAS backend  ← SET MASTER_SHEET_ID + DEPLOY
 | `pairings` | Generated matchups |
 | `scores` | Game results |
 
+can pass league and optionally user info like this:
+?league=spring2026&player=John
+https://pb-league.github.io/league/index.html?league=ShrewsMixedSpring2026
+https://pb-league.github.io/league/index.html?league=WomensSpring2026
+
+
+Setup: On the Pairings page, select a week, mark players present in Attendance, then choose Single or Double Elimination and click 🏆 Generate Bracket.
+Round 1 generates automatically — top seeds get byes if player count isn't a power of 2, seed 1 plays the lowest seed, seed 2 plays second-lowest, etc. Seeding is based on current season standings.
+Each round: Enter scores on the Score Entry page as normal, then come back to Pairings and click ▶ Advance Round. The tournament logic reads the scores, determines winners/losers, and generates the next round's pairings ready to Lock & Save.
+Single elimination: Losers are immediately eliminated. Last player standing wins.
+Double elimination: First loss moves a player to the Losers Bracket. Second loss eliminates them. When one player remains in each bracket, a Grand Final is generated. The Winners Bracket champion only needs one loss to be eliminated; the Losers Bracket champion must win twice (but the bracket handles this naturally since the losers champ has already lost once).

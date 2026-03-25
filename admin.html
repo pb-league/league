@@ -3,6 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0d1b2a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="PB League">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
   <title>Admin — Pickleball League</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -19,6 +25,7 @@
     </button>
     <div class="topbar-right">
       <div class="user-chip">Admin: <span class="name" id="topbar-name"></span></div>
+      <span id="topbar-role" style="font-size:0.72rem; padding:4px 10px; border-radius:6px; background:rgba(255,255,255,0.07); color:var(--muted);"></span>
       <button class="btn btn-secondary" onclick="Auth.logout()" style="padding:6px 14px; font-size:0.75rem;">Logout</button>
     </div>
   </header>
@@ -46,6 +53,10 @@
         <div class="nav-item hidden" id="nav-tourn-results" data-page="tourn-results"><span class="icon">🥇</span> Tournament</div>
         <div class="nav-item" data-page="player-report"><span class="icon">👤</span> Player Report</div>
         <div class="nav-item" data-page="head-to-head"><span class="icon">⚔️</span> Head-to-Head</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-label">Help</div>
+        <div class="nav-item" onclick="window.open('help.html','_blank')" style="cursor:pointer;"><span class="icon">❓</span> User Guide</div>
       </div>
     </nav>
 
@@ -145,11 +156,36 @@
               </select>
             </div>
           </div>
+          <div style="display:flex; flex-wrap:wrap; gap:16px; margin:12px 0 4px;">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.85rem;">
+              <input type="checkbox" id="cfg-allow-registration" style="width:16px;height:16px;">
+              <span>Allow player self-registration</span>
+              <span style="color:var(--muted); font-size:0.78rem;">(new players can register from the login page — admin must approve)</span>
+            </label>
+          </div>
+          <div class="form-row" id="cfg-registration-options" style="margin-top:4px;">
+            <div class="form-group">
+              <label class="form-label">Invite Code <span style="color:var(--muted);font-weight:400;">(required to register)</span></label>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <input class="form-control" id="cfg-reg-code" placeholder="e.g. pickle2026" style="max-width:180px;">
+                <button class="btn btn-secondary" id="btn-gen-reg-code" style="padding:6px 10px; font-size:0.78rem; white-space:nowrap;">🔀 Generate</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Max pending approvals</label>
+              <input class="form-control" id="cfg-reg-max-pending" type="number" min="1" max="50" value="10" style="max-width:80px;">
+            </div>
+          </div>
           <div id="cfg-dates-area"></div>
           <div id="cfg-court-names-area"></div>
           <div class="card mt-2" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07);">
-            <div class="card-header"><div class="card-title" style="font-size:0.85rem;">Optimizer Weights</div></div>
-            <p style="font-size:0.78rem; color:var(--muted); margin-bottom:12px;">
+            <details>
+            <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;">
+              <div class="card-title" style="font-size:0.85rem;">Optimizer Weights</div>
+              <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">▼</span>
+            </summary>
+            <div class="collapsible-body">
+            <p style="font-size:0.78rem; color:var(--muted); margin-top:10px; margin-bottom:12px;">
               Higher values make that factor more important. Set to 0 to ignore a factor entirely.
             </p>
             <div class="form-row">
@@ -189,13 +225,20 @@
               </div>
             </div>
           </div>
+            </div>
+            </details>
           <button class="btn btn-primary mt-2" id="btn-save-config">Save Configuration</button>
         </div>
 
         <!-- League Message Composer -->
         <div class="card mt-2">
-          <div class="card-header"><div class="card-title">📧 Send Message to Players</div></div>
-          <p style="font-size:0.82rem; color:var(--muted); margin-bottom:14px;">
+          <details>
+          <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;">
+            <div class="card-title">📧 Send Message to Players</div>
+            <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">▼</span>
+          </summary>
+          <div class="collapsible-body">
+          <p style="font-size:0.82rem; color:var(--muted); margin-top:10px; margin-bottom:14px;">
             Sends to all active players who have provided an email address.
           </p>
           <div class="form-group">
@@ -240,6 +283,8 @@
           </div>
           <div id="msg-status" style="font-size:0.8rem; margin-top:8px;"></div>
           <button class="btn btn-primary mt-1" id="btn-send-message">📧 Send Message</button>
+          </div>
+          </details>
         </div>
       </section>
 
@@ -251,14 +296,15 @@
         </div>
         <div class="card">
           <div style="overflow-x:auto;">
-          <div style="display:grid; grid-template-columns:minmax(120px,1fr) 68px 90px minmax(140px,180px) 44px 44px 54px 72px 34px; gap:6px; padding:0 4px 8px; border-bottom:1px solid rgba(255,255,255,0.06); min-width:680px;">
+          <div style="display:grid; grid-template-columns:minmax(120px,1fr) 68px 90px minmax(140px,180px) 44px 44px 54px 90px 72px 34px; gap:6px; padding:0 4px 8px; border-bottom:1px solid rgba(255,255,255,0.06); min-width:760px;">
             <span class="label">Name</span>
             <span class="label">PIN</span>
-            <span class="label">Group</span>
+            <span class="label" title="Gender group — only used for Mixed Doubles mode to balance partnerships. Has no effect in other game modes.">Group</span>
             <span class="label">Email</span>
             <span class="label" title="Email notifications">Ntfy</span>
             <span class="label" title="Can enter scores">Scr</span>
             <span class="label" title="Initial ranking used before season standings are established">Rank&#x2070;</span>
+            <span class="label" title="Player: view only&#10;Scorer: can enter scores&#10;Assistant: generate pairings &amp; enter scores, no settings&#10;Admin: full league control (logs in via admin password)&#10;Spectator: view only, never in pairings&#10;Sub: plays in pairings but excluded from standings">Role</span>
             <span class="label">Status</span>
             <span></span>
           </div>
@@ -273,7 +319,7 @@
         <div class="page-header"><h2>Attendance</h2></div>
         <div class="card">
           <div id="attendance-grid"></div>
-          <div class="mt-2 text-muted" style="font-size:0.8rem;">Click any cell to cycle: present → absent → tbd. Changes save automatically.</div>
+          <div class="mt-2 text-muted" style="font-size:0.8rem;">Click to cycle: <span style="color:var(--green);">In</span> → <span style="color:var(--danger);">Out</span> → TBD → <span style="color:var(--gold);">Sit Out</span>. Sit Out players stay in standings but are excluded from pairing generation. Spectator-role members never appear in pairings. Changes save automatically.</div>
         </div>
       </section>
 
@@ -291,7 +337,7 @@
           <details open>
           <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;">
             <div class="card-title">Generate Pairings</div>
-            <span class="collapse-arrow" style="font-size:0.7rem; color:var(--muted);">▲</span>
+            <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">▲</span>
           </summary>
           <div class="collapsible-body">
           <p style="font-size:0.88rem; color:var(--muted); margin-bottom:16px; margin-top:12px;">
@@ -306,7 +352,7 @@
             </select>
           </div>
           <div class="btn-group">
-            <button class="btn btn-gold" id="btn-generate">🎲 Generate Best Pairings</button>
+            <button class="btn btn-gold" id="btn-generate">🎲 Generate Pairings for Session 1</button>
             <button class="btn btn-primary" id="btn-lock-pairings" disabled>🔒 Lock &amp; Save</button>
             <button class="btn btn-danger" id="btn-clear-pairings">🗑 Clear Rounds</button>
           </div>
@@ -324,7 +370,7 @@
           <details>
           <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;">
             <div class="card-title">🏆 Tournament Mode</div>
-            <span class="collapse-arrow" style="font-size:0.7rem; color:var(--muted);">▼</span>
+            <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">▼</span>
           </summary>
           <div class="collapsible-body">
           <p style="font-size:0.82rem; color:var(--muted); margin-bottom:14px; margin-top:12px;">
@@ -334,9 +380,10 @@
           <div class="form-row" style="align-items:flex-end; gap:12px;">
             <div class="form-group">
               <label class="form-label">Format</label>
-              <select class="form-control" id="tourn-mode" style="width:180px;">
+              <select class="form-control" id="tourn-mode" style="width:220px;">
                 <option value="single">Single Elimination</option>
                 <option value="double">Double Elimination</option>
+                <option value="rr">Round Robin (reseeded)</option>
               </select>
             </div>
             <div class="form-group" style="margin-top:20px;">
@@ -360,7 +407,7 @@
           <details>
           <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;">
             <div class="card-title">✏️ Edit / Add Pairing</div>
-            <span class="collapse-arrow" style="font-size:0.7rem; color:var(--muted);">▼</span>
+            <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">▼</span>
           </summary>
           <div class="collapsible-body">
           <p style="font-size:0.82rem; color:var(--muted); margin-bottom:14px; margin-top:12px;">
@@ -410,6 +457,19 @@
               </div>
             </div>
             <datalist id="ep-player-list"></datalist>
+            <div id="ep-score-row" style="display:none; margin-top:10px; padding:8px 12px;
+              background:rgba(255,255,255,0.04); border-radius:8px; border:1px solid rgba(255,255,255,0.08);">
+              <div style="font-size:0.72rem; color:var(--muted); font-weight:600; text-transform:uppercase;
+                letter-spacing:0.07em; margin-bottom:6px;">Existing Score</div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <input type="number" id="ep-score1" class="form-control score-input" min="0" max="30"
+                  placeholder="0" style="width:56px; text-align:center;" readonly>
+                <span style="color:var(--muted);">—</span>
+                <input type="number" id="ep-score2" class="form-control score-input" min="0" max="30"
+                  placeholder="0" style="width:56px; text-align:center;" readonly>
+                <span style="font-size:0.75rem; color:var(--muted); margin-left:4px;">(read-only — edit scores on Score Entry page)</span>
+              </div>
+            </div>
             <div class="btn-group mt-1">
               <button class="btn btn-primary" id="btn-ep-save">💾 Save Pairing</button>
               <button class="btn btn-danger" id="btn-ep-delete">🗑 Delete This Game</button>
@@ -546,6 +606,10 @@
               <input class="form-control" id="new-league-name" placeholder="e.g. Spring 2026">
             </div>
             <div class="form-group">
+              <label class="form-label">Customer ID <span style="color:var(--muted); font-weight:400;">(optional — filters leagues visible to this customer)</span></label>
+              <input class="form-control" id="new-league-customer-id" placeholder="e.g. doug123">
+            </div>
+            <div class="form-group">
               <label class="form-label">Google Sheet ID <span style="color:var(--muted); font-weight:400;">(optional — leave blank to auto-create)</span></label>
               <input class="form-control" id="new-league-sheet" placeholder="Leave blank to auto-create">
             </div>
@@ -603,7 +667,46 @@
   </div>
 </div>
 
+<!-- QR Code Modal -->
+<div id="qr-modal" style="display:none; position:fixed; inset:0; z-index:200;
+  background:rgba(0,0,0,0.7); backdrop-filter:blur(4px);
+  align-items:center; justify-content:center;">
+  <div style="background:#152232; border:1px solid rgba(255,255,255,0.12); border-radius:14px;
+    padding:28px 28px 22px; max-width:340px; width:90%; text-align:center; position:relative;">
+    <button onclick="document.getElementById('qr-modal').style.display='none'"
+      style="position:absolute; top:12px; right:14px; background:none; border:none;
+             color:rgba(255,255,255,0.35); font-size:1.3rem; cursor:pointer; line-height:1;">✕</button>
+    <div style="font-weight:600; font-size:0.95rem; color:var(--white); margin-bottom:4px;">League QR Code</div>
+    <div id="qr-url-label" style="font-size:0.72rem; color:var(--muted); margin-bottom:16px;
+      word-break:break-all; max-height:40px; overflow:hidden;"></div>
+    <div id="qr-canvas-wrap" style="background:#fff; border-radius:10px; padding:14px;
+      display:inline-block; margin-bottom:16px;"></div>
+    <div style="display:flex; gap:8px; justify-content:center;">
+      <button id="btn-qr-download" class="btn btn-secondary" style="font-size:0.8rem; padding:6px 16px;">
+        ⬇ Download
+      </button>
+      <button onclick="document.getElementById('qr-modal').style.display='none'"
+        class="btn btn-secondary" style="font-size:0.8rem; padding:6px 16px;">Close</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast-container"></div>
+
+<!-- Changelog modal -->
+<div id="changelog-modal" style="display:none; position:fixed; inset:0; z-index:200;
+  background:rgba(0,0,0,0.65); backdrop-filter:blur(4px); align-items:center; justify-content:center;">
+  <div style="background:var(--surface); border:1px solid rgba(255,255,255,0.1); border-radius:14px;
+    max-width:580px; width:90%; max-height:80vh; overflow:hidden; display:flex; flex-direction:column;">
+    <div style="display:flex; justify-content:space-between; align-items:center;
+      padding:18px 22px 14px; border-bottom:1px solid rgba(255,255,255,0.08);">
+      <div style="font-weight:600; font-size:1rem;">📋 Revision History</div>
+      <button onclick="document.getElementById('changelog-modal').style.display='none'"
+        style="background:none; border:none; color:var(--muted); font-size:1.3rem; cursor:pointer; line-height:1;">✕</button>
+    </div>
+    <div id="changelog-content" style="overflow-y:auto; padding:18px 22px; font-size:0.82rem; line-height:1.7;"></div>
+  </div>
+</div>
 <div class="loading-overlay hidden" id="loading">
   <div class="spinner"></div>
 </div>
@@ -612,15 +715,11 @@
   background:rgba(10,12,28,0.85);
   display:flex; flex-direction:column;
   align-items:center; justify-content:center; gap:18px;">
-  <div style="font-size:5rem; animation:pb-spin 1s linear infinite; line-height:1;">🥒</div>
+  <img src="img/pb_rot.gif" style="width:90px; height:90px; object-fit:contain;" alt="">
   <div style="color:var(--white); font-size:1rem; font-weight:600; letter-spacing:0.04em;">Generating Pairings…</div>
   <div id="pairing-overlay-msg" style="color:var(--muted); font-size:0.82rem;"></div>
 </div>
 <style>
-  @keyframes pb-spin {
-    from { transform: rotate(0deg); }
-    to   { transform: rotate(360deg); }
-  }
   /* Hide number input spinners */
   input[type=number].score-input::-webkit-outer-spin-button,
   input[type=number].score-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -659,12 +758,35 @@
     }
   }, true);
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="js/settings.js"></script>
+  <!-- Google Analytics — loads only if GA_MEASUREMENT_ID is set in settings.js -->
+  <script>
+    window.__gaReady = false;
+    document.addEventListener('DOMContentLoaded', () => {
+      if (typeof GA_MEASUREMENT_ID === 'undefined' || !GA_MEASUREMENT_ID) return;
+      const s = document.createElement('script');
+      s.async = true;
+      s.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA_MEASUREMENT_ID;
+      document.head.appendChild(s);
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){ dataLayer.push(arguments); }
+      window.gtag = gtag;
+      gtag('js', new Date());
+      gtag('config', GA_MEASUREMENT_ID, {
+        page_title: document.title,
+        page_location: window.location.href,
+        anonymize_ip: true,
+      });
+      window.__gaReady = true;
+    });
+  </script>
 <script src="js/api.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/pairings.js"></script>
 <script src="js/reports.js"></script>
 <script src="js/tournament.js"></script>
+<script src="js/changelog.js"></script>
 <script src="js/admin.js"></script>
 <script>
 (function() {
@@ -695,6 +817,14 @@
     });
   });
 })();
+</script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .catch(err => console.warn('SW registration failed:', err));
+    });
+  }
 </script>
 </body>
 </html>

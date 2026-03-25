@@ -8,6 +8,8 @@ const Reports = (() => {
     const stats = {};
 
     players.forEach(p => {
+      if (p.role === 'sub') return; // SUBs play but don't appear in standings
+      if (p.active === 'pend') return; // Pending players don't appear in standings
       stats[p.name] = {
         name: p.name,
         wins: 0, losses: 0,

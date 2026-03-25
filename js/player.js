@@ -1,3 +1,16 @@
+// ── Google Analytics helpers ─────────────────────────────────
+function gaEvent(eventName, params = {}) {
+  try {
+    if (typeof gtag === 'function' && window.__gaReady) gtag('event', eventName, params);
+  } catch(e) {}
+}
+function gaPage(pageName) {
+  try {
+    if (typeof gtag === 'function' && window.__gaReady)
+      gtag('event', 'page_view', { page_title: pageName, page_location: window.location.href });
+  } catch(e) {}
+}
+
 // ============================================================
 // player.js — Player dashboard logic
 // ============================================================
@@ -9,7 +22,21 @@
   const playerName = session.name;
   document.getElementById('topbar-name').textContent = playerName;
   document.getElementById('topbar-league').textContent = session.leagueName || 'Pickleball';
-  const canScore = session.canScore || session.isAdmin;
+  const userRole = session.role || (session.isAdmin ? 'admin' : (session.canScore ? 'scorer' : 'player'));
+  const canScore = session.canScore || session.isAdmin || userRole === 'scorer' || userRole === 'assistant';
+
+  // Show role badge for non-standard roles
+  const roleLabels = { scorer: 'Scorer', assistant: 'Admin Assistant', spectator: 'Spectator', sub: 'Sub' };
+  const roleColors = { scorer: 'rgba(45,122,58,0.2)', assistant: 'rgba(42,63,84,0.8)', spectator: 'rgba(232,184,75,0.15)', sub: 'rgba(122,155,181,0.15)' };
+  const roleTextColors = { scorer: 'var(--green)', assistant: 'var(--muted)', spectator: 'var(--gold)', sub: 'var(--muted)' };
+  const roleEl = document.getElementById('topbar-role');
+  if (roleEl && roleLabels[userRole]) {
+    roleEl.textContent = roleLabels[userRole];
+    roleEl.style.background = roleColors[userRole] || 'rgba(255,255,255,0.07)';
+    roleEl.style.color = roleTextColors[userRole] || 'var(--muted)';
+    roleEl.style.display = '';
+  }
+
   if (canScore) {
     document.getElementById('nav-score-entry')?.classList.remove('hidden');
   }
@@ -17,7 +44,8 @@
   let state = {
     config: {}, players: [], attendance: [],
     pairings: [], scores: [], standings: [],
-    currentSheetWeek: 1, currentWstandWeek: 1
+    currentSheetWeek: 1, currentWstandWeek: 1,
+    dataLoaded: false  // true after phase 2 pairings/scores are loaded
   };
 
   // ── Phase 1: Fast load — config, players, attendance ────────
@@ -90,6 +118,9 @@
       }
 
       // Re-render now that we have scores and pairings
+      state.dataLoaded = true;
+      gaPage('Player Dashboard');
+      gaEvent('login', { role: userRole });
       renderAll();
     } catch (e) {
       toast('Background data load failed: ' + e.message, 'error');
@@ -105,6 +136,7 @@
         item.classList.add('active');
         const page = item.dataset.page;
         document.getElementById('page-' + page)?.classList.add('active');
+        gaPage('Player: ' + page);
         if (page === 'player-report') renderPlayerReportSelect();
         if (page === 'score-entry') renderScoreEntry();
         if (page === 'standings') renderPlayerStandings();
@@ -138,7 +170,7 @@
     const week = Math.max(...weeks);
 
     // Find all rounds this week
-    const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && p.type === 'game');
+    const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && (p.type === 'game' || p.type === 'tourn-game'));
     if (!weekPairings.length) { el.innerHTML = ''; return; }
 
     // Find the earliest round that hasn't been scored yet where this player plays
@@ -261,7 +293,12 @@
     }
 
     if (!report.games.length) {
-      document.getElementById('my-game-history').innerHTML = '<p class="text-muted">No games recorded yet.</p>';
+      document.getElementById('my-game-history').innerHTML = state.dataLoaded
+        ? '<p class="text-muted">No games recorded yet.</p>'
+        : `<div style="text-align:center; padding:24px; color:var(--muted); font-size:0.85rem;">
+             <div style="font-size:1.6rem; margin-bottom:8px; animation:spin 0.8s linear infinite; display:inline-block;">⏳</div>
+             <div>Loading games…</div>
+           </div>`;
       return;
     }
 
@@ -308,7 +345,9 @@
 
     document.querySelectorAll('#my-attendance-grid .att-cell.editable').forEach(cell => {
       cell.addEventListener('click', async () => {
-        const states = ['present', 'absent', 'tbd'];
+        const myPlayer = state.players.find(pl => pl.name === playerName);
+        const isSpectatorRole = myPlayer && myPlayer.role === 'spectator';
+        const states = isSpectatorRole ? ['absent', 'tbd'] : ['present', 'absent', 'tbd', 'sit-out'];
         const curStatus = states.find(s => cell.classList.contains(s)) || 'tbd';
         const next = states[(states.indexOf(curStatus) + 1) % states.length];
         const week = cell.dataset.week;
@@ -461,7 +500,7 @@
     const week = state.currentSheetWeek;
     document.getElementById('sheet-week-label').textContent = `Session ${week}`;
 
-    const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && p.type === 'game');
+    const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && (p.type === 'game' || p.type === 'tourn-game'));
 
     if (!weekPairings.length) {
       document.getElementById('player-scoresheet').innerHTML =
@@ -538,7 +577,7 @@
     state.currentScoreEntryWeek = week;
     document.getElementById('player-score-week-label').textContent = `Session ${week}`;
 
-    const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && p.type === 'game');
+    const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && (p.type === 'game' || p.type === 'tourn-game'));
 
     if (!weekPairings.length) {
       document.getElementById('player-scoresheet-entry').innerHTML =
@@ -646,7 +685,7 @@
   // ── Full Attendance ────────────────────────────────────────
   function renderFullAttendance() {
     const weeks = parseInt(state.config.weeks || 8);
-    const players = state.players.filter(p => p.active !== false);
+    const players = state.players.filter(p => p.active === true);
 
     let html = '<div class="att-grid">';
     html += '<div class="att-row"><div></div>';
@@ -712,7 +751,7 @@
 
       document.getElementById('player-btn-save-scores').addEventListener('click', async () => {
         const week = state.currentScoreEntryWeek;
-        const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && p.type === 'game');
+        const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && (p.type === 'game' || p.type === 'tourn-game'));
         const scores = [];
 
         document.querySelectorAll('#player-scoresheet-entry .game-card').forEach(card => {
@@ -764,7 +803,15 @@
     document.getElementById('sheet-week-prev').addEventListener('click', async () => {
       if (state.currentSheetWeek > 1) {
         state.currentSheetWeek--;
+        document.getElementById('sheet-week-label').textContent = `Session ${state.currentSheetWeek}`;
+        document.getElementById('player-scoresheet').innerHTML =
+          `<div style="text-align:center; padding:32px; color:var(--muted); font-size:0.85rem;">
+            <div style="font-size:1.8rem; margin-bottom:8px; animation:spin 0.8s linear infinite; display:inline-block;">⏳</div>
+            <div>Loading Session ${state.currentSheetWeek}…</div>
+          </div>`;
+        ['sheet-week-prev','sheet-week-next'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = true; });
         await ensureWeekLoaded(state.currentSheetWeek);
+        ['sheet-week-prev','sheet-week-next'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = false; });
         renderScoresheet();
       }
     });
@@ -772,7 +819,15 @@
       const max = parseInt(state.config.weeks || 8);
       if (state.currentSheetWeek < max) {
         state.currentSheetWeek++;
+        document.getElementById('sheet-week-label').textContent = `Session ${state.currentSheetWeek}`;
+        document.getElementById('player-scoresheet').innerHTML =
+          `<div style="text-align:center; padding:32px; color:var(--muted); font-size:0.85rem;">
+            <div style="font-size:1.8rem; margin-bottom:8px; animation:spin 0.8s linear infinite; display:inline-block;">⏳</div>
+            <div>Loading Session ${state.currentSheetWeek}…</div>
+          </div>`;
+        ['sheet-week-prev','sheet-week-next'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = true; });
         await ensureWeekLoaded(state.currentSheetWeek);
+        ['sheet-week-prev','sheet-week-next'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = false; });
         renderScoresheet();
       }
     });
@@ -837,9 +892,9 @@
       }
     }
 
-    const current = sel.value;
+    const current = sel.value || playerName;  // default to logged-in player
     sel.innerHTML = '<option value="">— Select Player —</option>';
-    state.players.filter(p => p.active !== false).forEach(p => {
+    state.players.filter(p => p.active === true).forEach(p => {
       const o = document.createElement('option');
       o.value = p.name;
       o.textContent = p.name;
@@ -847,6 +902,9 @@
       sel.appendChild(o);
     });
     sel.onchange = () => renderPlayerReport(sel.value);
+
+    // Auto-render on first load if no report shown yet
+    if (sel.value) renderPlayerReport(sel.value);
   }
 
   function renderPlayerReport(name) {
@@ -890,7 +948,7 @@
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px;">
         <div>
           <div class="card-title" style="font-size:0.8rem; margin-bottom:8px; color:var(--muted);">FACED AS OPPONENT</div>
-          <table>
+          <table class="compact-table">
             <thead><tr><th>Player</th><th>Games</th><th>W/L vs them</th></tr></thead>
             <tbody>${sortedOpponents.length ? sortedOpponents.map(([n, d]) =>
               `<tr><td class="player-name">${esc(n)}</td><td>${d.count}</td>
@@ -900,7 +958,7 @@
         </div>
         <div>
           <div class="card-title" style="font-size:0.8rem; margin-bottom:8px; color:var(--muted);">PLAYED AS PARTNER</div>
-          <table>
+          <table class="compact-table">
             <thead><tr><th>Player</th><th>Games</th><th>W/L together</th></tr></thead>
             <tbody>${sortedPartners.length ? sortedPartners.map(([n, d]) =>
               `<tr><td class="player-name">${esc(n)}</td><td>${d.count}</td>
@@ -952,19 +1010,19 @@
         <td class="text-muted">${s.games}</td>
       </tr>`;
     });
-    const secHeader = usePtsPct ? '<th>Pts%</th>' : '<th>Avg+/-</th>';
-    return `<table>
+    const secHeader = usePtsPct ? '<th>Pts%</th>' : '<th title="Average point differential per game — your average score minus your opponent\'s average score. Positive means you score more than your opponents on average; used as a tiebreaker when win percentage is equal." style="cursor:help;">Avg+/-</th>';
+    return `<table class="compact-table">
       <thead><tr><th>#</th><th>Player</th><th>W/L</th><th>Win%</th>${secHeader}<th>Games</th></tr></thead>
       <tbody>${rows.join('')}</tbody>
     </table>`;
   }
 
   function statusLabel(s) {
-    return s === 'present' ? 'In' : s === 'absent' ? 'Out' : 'TBD';
+    return s === 'present' ? 'In' : s === 'absent' ? 'Out' : s === 'sit-out' ? 'Sit Out' : 'TBD';
   }
 
   function statusIcon(s) {
-    return s === 'present' ? '✅' : s === 'absent' ? '❌' : '❓';
+    return s === 'present' ? '✅' : s === 'absent' ? '❌' : s === 'sit-out' ? '⏸' : '❓';
   }
 
   function formatDate(d) {
@@ -1009,7 +1067,7 @@
     if (!canvas || !legend) return;
 
     const totalWeeks   = parseInt(chartState.config.weeks || 8);
-    const activePlayers = chartState.players.filter(p => p.active !== false);
+    const activePlayers = chartState.players.filter(p => p.active === true);
     if (!activePlayers.length) {
       legend.innerHTML = '<span class="text-muted">No players yet.</span>';
       return;
@@ -1173,80 +1231,141 @@
     const el = document.getElementById('player-bracket-content');
     if (!el) return;
 
-    // Use whichever week the scoresheet is currently showing
     const week = state.currentSheetWeek;
     const weekPairings = state.pairings.filter(p => parseInt(p.week) === week);
-    const lockedRounds = [...new Set(weekPairings.map(p => parseInt(p.round)))].sort((a,b)=>a-b);
 
-    // Show tournament nav if this week has multiple rounds (indicates a tournament)
-    const isTournament = lockedRounds.length > 1 ||
-      (lockedRounds.length === 1 && weekPairings.some(p => p.type === 'bye'));
+    const isTournament = weekPairings.some(p => p.type === 'tourn-game');
     const navEl = document.getElementById('nav-tournament');
     if (navEl) navEl.classList.toggle('hidden', !isTournament);
 
     if (!isTournament) { el.innerHTML = '<p class="text-muted">No tournament data for this session.</p>'; return; }
-    if (!lockedRounds.length) { el.innerHTML = '<p class="text-muted">No rounds played yet.</p>'; return; }
 
-    function getSeedLabel(name, pairings) {
-      // We don't have seed state in player view, so just show name
-      return esc(name);
-    }
+    const weekScores   = state.scores.filter(s => parseInt(s.week) === week);
+    const lockedRounds = [...new Set(weekPairings.map(p => parseInt(p.round)))].sort((a,b)=>a-b);
 
-    function teamLabel(p1, p2) {
-      return p2 ? `${esc(p1)} &amp; ${esc(p2)}` : esc(p1);
+    // Detect RR mode: all rounds have same number of games (no elimination shrinkage)
+    // and byes appear in multiple rounds
+    const gamesPerRound = lockedRounds.map(r =>
+      weekPairings.filter(p => parseInt(p.round) === r && p.type === 'tourn-game').length
+    );
+    const isRR = lockedRounds.length > 1 && gamesPerRound.every(g => g === gamesPerRound[0]);
+
+    if (isRR) {
+      // Build standings from all scored rounds
+      const playerNames = [...new Set(weekPairings.flatMap(p =>
+        [p.p1, p.p2, p.p3, p.p4].filter(Boolean)
+      ))];
+      const stats = {};
+      playerNames.forEach(n => { stats[n] = { wins: 0, losses: 0, byes: 0 }; });
+      lockedRounds.forEach(r => {
+        weekPairings.filter(p => parseInt(p.round) === r).forEach(p => {
+          if (p.type === 'tourn-bye' || p.type === 'bye') {
+            if (stats[p.p1]) stats[p.p1].byes++; return;
+          }
+          const sc = weekScores.find(s => parseInt(s.round) === r && String(s.court) === String(p.court));
+          if (!sc || sc.score1 === '' || sc.score1 === null) return;
+          const t1win = parseInt(sc.score1) > parseInt(sc.score2);
+          [p.p1, p.p2].filter(Boolean).forEach(n => { if (stats[n]) { if (t1win) stats[n].wins++; else stats[n].losses++; } });
+          [p.p3, p.p4].filter(Boolean).forEach(n => { if (stats[n]) { if (!t1win) stats[n].wins++; else stats[n].losses++; } });
+        });
+      });
+      const ranked = Object.entries(stats).sort((a, b) => b[1].wins - a[1].wins);
+      let html = `<div style="font-size:0.78rem; color:var(--muted); margin-bottom:10px;">Round Robin (Reseeded) · Session ${week} · ${lockedRounds.length} round(s)</div>`;
+      html += `<table style="font-size:0.85rem; width:100%; border-collapse:collapse;">
+        <thead><tr>
+          <th style="text-align:left;padding:5px 8px;color:var(--muted);font-weight:500;">#</th>
+          <th style="text-align:left;padding:5px 8px;color:var(--muted);font-weight:500;">Player</th>
+          <th style="text-align:center;padding:5px 8px;color:var(--muted);font-weight:500;">W</th>
+          <th style="text-align:center;padding:5px 8px;color:var(--muted);font-weight:500;">L</th>
+          <th style="text-align:center;padding:5px 8px;color:var(--muted);font-weight:500;">Bye</th>
+        </tr></thead><tbody>`;
+      ranked.forEach(([name, s], i) => {
+        const isMe = name === playerName;
+        const isFirst = i === 0 && s.wins > 0;
+        html += `<tr style="${isFirst ? 'color:var(--gold);font-weight:700;' : isMe ? 'color:var(--green);font-weight:700;' : ''}">
+          <td style="padding:4px 8px;">${i + 1}</td>
+          <td style="padding:4px 8px;">${esc(name)}</td>
+          <td style="padding:4px 8px;text-align:center;">${s.wins}</td>
+          <td style="padding:4px 8px;text-align:center;">${s.losses}</td>
+          <td style="padding:4px 8px;text-align:center;">${s.byes}</td>
+        </tr>`;
+      });
+      html += `</tbody></table>`;
+      el.innerHTML = html;
+      return;
     }
 
     let html = `<div style="font-size:0.78rem; color:var(--muted); margin-bottom:12px;">
       Session ${week} · ${lockedRounds.length} round(s) played
     </div>`;
 
-    html += `<div style="overflow-x:auto; padding-bottom:8px;">
-      <div style="display:flex; gap:0; min-width:fit-content;">`;
+    html += buildBracketHTML(weekPairings, weekScores, week, null, playerName);
+
+    el.innerHTML = html;
+  }
+
+  // Shared bracket HTML builder — mirrors admin.js buildBracketHTML
+  function buildBracketHTML(weekPairings, scores, week, seeds, highlightPlayer) {
+    const lockedRounds = [...new Set(weekPairings.map(p => parseInt(p.round)))].sort((a,b)=>a-b);
+    if (!lockedRounds.length) return '<p class="text-muted">No rounds played yet.</p>';
+
+    const seedMap = {};
+    if (seeds && seeds.length) {
+      seeds.forEach(s => { seedMap[s.name] = s; if (s.name2) seedMap[s.name2] = s; });
+    } else {
+      const r1games = weekPairings
+        .filter(p => parseInt(p.round) === lockedRounds[0] && (p.type === 'game' || p.type === 'tourn-game'))
+        .sort((a,b) => String(a.court).localeCompare(String(b.court), undefined, {numeric:true}));
+      const r1byes = weekPairings.filter(p => parseInt(p.round) === lockedRounds[0] && p.type === 'bye');
+      let seed = 1;
+      r1byes.forEach(b => { if (b.p1 && !seedMap[b.p1]) { seedMap[b.p1] = { seed, name: b.p1, name2: b.p2||'' }; seed++; } });
+      r1games.forEach(g => {
+        if (g.p1 && !seedMap[g.p1]) { seedMap[g.p1] = { seed, name: g.p1, name2: g.p2||'' }; seed++; }
+        if (g.p3 && !seedMap[g.p3]) { seedMap[g.p3] = { seed, name: g.p3, name2: g.p4||'' }; seed++; }
+      });
+    }
+
+    function getSeed(name) {
+      const s = seedMap[name];
+      return s ? `<span style="font-size:0.7rem; color:var(--muted);">#${s.seed}</span> ` : '';
+    }
+    function teamLabel(p1, p2) {
+      return `${getSeed(p1)}${p2 ? esc(p1) + ' <span style="color:var(--muted);">&amp;</span> ' + esc(p2) : esc(p1)}`;
+    }
+
+    let html = `<div style="overflow-x:auto; padding-bottom:8px;"><div style="display:flex; gap:0; min-width:fit-content;">`;
 
     lockedRounds.forEach((r, ri) => {
-      const roundGames = weekPairings.filter(g => g.round === r && g.type === 'game');
+      const roundGames = weekPairings.filter(g => g.round === r && (g.type === 'game' || g.type === 'tourn-game'));
       const roundByes  = weekPairings.filter(g => g.round === r && g.type === 'bye');
       const isLast     = ri === lockedRounds.length - 1;
 
-      html += `<div style="display:flex; flex-direction:column; min-width:200px;">
+      html += `<div style="display:flex; flex-direction:column; min-width:210px;">
         <div style="font-size:0.72rem; font-weight:700; color:var(--muted); text-transform:uppercase;
-                    letter-spacing:0.05em; padding:4px 8px; margin-bottom:6px; text-align:center;">
-          Round ${r}
-        </div>`;
+                    letter-spacing:0.05em; padding:4px 8px; margin-bottom:6px; text-align:center;">Round ${r}</div>`;
 
       roundGames.forEach(g => {
-        const score = state.scores.find(s =>
-          parseInt(s.week) === week && parseInt(s.round) === r &&
-          String(s.court) === String(g.court)
-        );
-        const s1 = score ? score.score1 : '';
-        const s2 = score ? score.score2 : '';
+        const score = scores.find(s => parseInt(s.week) === week && parseInt(s.round) === r && String(s.court) === String(g.court));
+        const s1 = score ? score.score1 : '', s2 = score ? score.score2 : '';
         const scored = s1 !== '' && s1 !== null && s2 !== '' && s2 !== null;
         const t1win  = scored && parseInt(s1) > parseInt(s2);
-        const isMe1  = [g.p1, g.p2].includes(playerName);
-        const isMe2  = [g.p3, g.p4].includes(playerName);
-        const winStyle  = 'color:var(--green); font-weight:700;';
-        const loseStyle = 'color:rgba(255,255,255,0.35);';
-        const meStyle   = 'color:var(--white); font-weight:700;';
-        const t1style = scored ? (t1win ? winStyle : loseStyle) : (isMe1 ? meStyle : 'color:var(--white);');
-        const t2style = scored ? (!t1win ? winStyle : loseStyle) : (isMe2 ? meStyle : 'color:var(--white);');
+        const isMe1  = highlightPlayer && [g.p1, g.p2].includes(highlightPlayer);
+        const isMe2  = highlightPlayer && [g.p3, g.p4].includes(highlightPlayer);
+        const winStyle = 'color:var(--green); font-weight:700;', loseStyle = 'color:rgba(255,255,255,0.35);';
+        const t1style = scored ? (t1win ? winStyle : loseStyle) : (isMe1 ? 'color:var(--white); font-weight:700;' : 'color:var(--white);');
+        const t2style = scored ? (!t1win ? winStyle : loseStyle) : (isMe2 ? 'color:var(--white); font-weight:700;' : 'color:var(--white);');
         const scoreHtml = scored
           ? `<span style="font-size:0.78rem; font-weight:700; color:var(--white);">${s1}–${s2}</span>`
           : `<span style="font-size:0.7rem; color:var(--muted);">pending</span>`;
-        const border = (isMe1 || isMe2) ? 'border:1px solid rgba(94,194,106,0.4);' : 'border:1px solid rgba(255,255,255,0.08);';
+        const border = (isMe1||isMe2) ? 'border:1px solid rgba(94,194,106,0.4);' : 'border:1px solid rgba(255,255,255,0.08);';
 
-        html += `<div style="background:var(--card-bg); ${border}
-                    border-radius:8px; padding:7px 10px; margin:2px 4px;">
+        html += `<div style="background:var(--card-bg); ${border} border-radius:8px; padding:7px 10px; margin:2px 4px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <div style="${t1style} font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:130px;">
-              ${teamLabel(g.p1, g.p2)}
-            </div>
+            <div style="${t1style} font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px;">${teamLabel(g.p1, g.p2)}</div>
             <div style="margin-left:6px; flex-shrink:0;">${scoreHtml}</div>
           </div>
           <div style="border-top:1px solid rgba(255,255,255,0.06); margin:3px 0;"></div>
-          <div style="${t2style} font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:130px; margin-top:4px;">
-            ${teamLabel(g.p3, g.p4)}
-          </div>
+          <div style="${t2style} font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px; margin-top:4px;">${teamLabel(g.p3, g.p4)}</div>
         </div>`;
       });
 
@@ -1259,55 +1378,32 @@
       });
 
       html += `</div>`;
-      if (!isLast) {
-        html += `<div style="display:flex; align-items:center; padding:0 2px; color:rgba(255,255,255,0.2); font-size:1.2rem;">›</div>`;
-      }
+      if (!isLast) html += `<div style="display:flex; align-items:center; padding:0 2px; color:rgba(255,255,255,0.2); font-size:1.2rem;">›</div>`;
     });
 
     html += `</div></div>`;
 
-    // ── Champion banner ──────────────────────────────────────
-    // Find the last round and check if all games are scored
+    // Champion banner
     const lastRound = lockedRounds[lockedRounds.length - 1];
-    const lastRoundGames = weekPairings.filter(g => g.round === lastRound && g.type === 'game');
-    const lastRoundScored = lastRoundGames.length > 0 && lastRoundGames.every(g => {
-      const sc = state.scores.find(s =>
-        parseInt(s.week) === week && parseInt(s.round) === lastRound &&
-        String(s.court) === String(g.court)
-      );
-      return sc && sc.score1 !== '' && sc.score1 !== null &&
-             sc.score2 !== '' && sc.score2 !== null;
-    });
-
-    if (lastRoundScored && lastRoundGames.length === 1) {
-      const finalGame = lastRoundGames[0];
-      const finalScore = state.scores.find(s =>
-        parseInt(s.week) === week && parseInt(s.round) === lastRound &&
-        String(s.court) === String(finalGame.court)
-      );
-      if (finalScore) {
-        const t1win = parseInt(finalScore.score1) > parseInt(finalScore.score2);
-        const champP1 = t1win ? finalGame.p1 : finalGame.p3;
-        const champP2 = t1win ? finalGame.p2 : finalGame.p4;
-        const champName = champP2 ? `${esc(champP1)} &amp; ${esc(champP2)}` : esc(champP1);
-        const isMe = [champP1, champP2].includes(playerName);
+    const lastGames = weekPairings.filter(g => g.round === lastRound && (g.type === 'game' || g.type === 'tourn-game'));
+    if (lastGames.length === 1) {
+      const fg = lastGames[0];
+      const fs = scores.find(s => parseInt(s.week) === week && parseInt(s.round) === lastRound && String(s.court) === String(fg.court));
+      if (fs && fs.score1 !== '' && fs.score1 !== null && fs.score2 !== '' && fs.score2 !== null) {
+        const t1win = parseInt(fs.score1) > parseInt(fs.score2);
+        const cP1 = t1win ? fg.p1 : fg.p3, cP2 = t1win ? fg.p2 : fg.p4;
+        const champName = cP2 ? `${esc(cP1)} &amp; ${esc(cP2)}` : esc(cP1);
+        const isMe = highlightPlayer && [cP1, cP2].includes(highlightPlayer);
         html += `<div style="margin-top:16px; padding:14px 16px;
           background:linear-gradient(135deg, rgba(245,200,66,0.15), rgba(245,200,66,0.05));
           border:1px solid rgba(245,200,66,0.4); border-radius:10px; text-align:center;">
-          <div style="font-size:1.1rem; color:var(--gold); font-weight:700; margin-bottom:4px;">
-            🏆 Tournament Champion
-          </div>
-          <div style="font-size:1rem; color:${isMe ? 'var(--green)' : 'var(--white)'}; font-weight:700;">
-            ${champName}
-          </div>
-          <div style="font-size:0.78rem; color:var(--muted); margin-top:4px;">
-            Final: ${finalScore.score1} – ${finalScore.score2}
-          </div>
+          <div style="font-size:1.1rem; color:var(--gold); font-weight:700; margin-bottom:4px;">🏆 Tournament Champion</div>
+          <div style="font-size:1rem; color:${isMe ? 'var(--green)' : 'var(--white)'}; font-weight:700;">${champName}</div>
+          <div style="font-size:0.78rem; color:var(--muted); margin-top:4px;">Final: ${fs.score1} – ${fs.score2}</div>
         </div>`;
       }
     }
-
-    el.innerHTML = html;
+    return html;
   }
 
   // Lazy-load historical weeks if the player navigates before sinceWeek

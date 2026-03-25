@@ -15,8 +15,8 @@ const Auth = (() => {
     } catch { return null; }
   }
 
-  function setSession(name, isAdmin, leagueId, leagueName, canScore = false) {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ name, isAdmin, leagueId, leagueName, canScore, ts: Date.now() }));
+  function setSession(name, isAdmin, leagueId, leagueName, canScore = false, role = 'player') {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ name, isAdmin, leagueId, leagueName, canScore, role, ts: Date.now() }));
     // Preserve the league slug from the original URL so logout can return to it
     // Only preserve league slug if it was explicitly in the URL
     const urlLeague = new URLSearchParams(window.location.search).get('league');
@@ -34,7 +34,7 @@ const Auth = (() => {
       window.location.href = slug ? 'index.html?league=' + encodeURIComponent(slug) : 'index.html';
       return null;
     }
-    if (adminOnly && !session.isAdmin) {
+    if (adminOnly && !session.isAdmin && session.role !== 'assistant') {
       window.location.href = 'player.html';
       return null;
     }
@@ -44,7 +44,23 @@ const Auth = (() => {
   async function login(name, pin, leagueId, leagueName) {
     const result = await API.validatePIN(name, pin);
     if (result.valid) {
-      setSession(result.name, result.isAdmin, leagueId, leagueName, result.canScore || false);
+      setSession(result.name, result.isAdmin, leagueId, leagueName, result.canScore || false, result.role || 'player');
+    }
+    return result;
+  }
+
+  async function loginAdmin(password, leagueId, leagueName) {
+    const result = await API.validateAdminPassword(password);
+    if (result.valid) {
+      setSession(result.name, true, leagueId, leagueName, true, result.role || 'admin');
+    }
+    return result;
+  }
+
+  async function loginManager(password, leagueId, leagueName) {
+    const result = await API.validateAppManager(password);
+    if (result.valid) {
+      setSession(result.name, true, leagueId, leagueName, true, 'manager');
     }
     return result;
   }
@@ -56,5 +72,5 @@ const Auth = (() => {
     window.location.href = slug ? 'index.html?league=' + encodeURIComponent(slug) : 'index.html';
   }
 
-  return { getSession, setSession, clearSession, requireAuth, login, logout };
+  return { getSession, setSession, clearSession, requireAuth, login, loginAdmin, loginManager, logout };
 })();

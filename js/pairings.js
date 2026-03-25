@@ -401,7 +401,7 @@ const Pairings = (() => {
     const CRITERIA = [
       'sessionPartner', 'sessionOpponent',
       'historyPartner', 'historyOpponent',
-      'sessionBye', 'byeVariance', 'rankBalance'
+      'sessionBye', 'byeVariance', 'rankBalance', 'rankStdDev'
     ];
 
     // Accumulate raw totals across calibration runs
@@ -451,6 +451,7 @@ const Pairings = (() => {
       sessionBye:      'sessionByeWeight',
       byeVariance:     'byeVarianceWeight',
       rankBalance:     'rankBalanceWeight',
+      rankStdDev:      'rankStdDevWeight',
     };
     CRITERIA.forEach(k => {
       const wKey = criteriaWeightKeys[k];

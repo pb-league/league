@@ -19,7 +19,7 @@
 
   <!-- Topbar -->
   <header class="topbar">
-    <div class="topbar-brand">🥒 <span>Pickle</span>Ball Admin</div>
+    <div class="topbar-brand"><img src="img/pb_rot.gif" style="width:22px;height:22px;vertical-align:middle;margin-right:4px;object-fit:contain;" alt=""><span>Pickle</span>Ball Admin</div>
     <button class="nav-toggle" id="nav-toggle" aria-label="Menu">
       <span></span><span></span><span></span>
     </button>
@@ -71,10 +71,25 @@
         <div id="dash-info"></div>
         <div class="card-grid" id="dash-stats"></div>
         <div id="dash-rules"></div>
-        <div class="card mt-2">
-          <div class="card-header"><div class="card-title">Season Standings</div></div>
-          <div class="table-wrap" id="dash-standings"></div>
-        </div>
+        <details id="dash-standings-details" style="margin-top:10px;">
+          <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; background:var(--surface); border-radius:var(--radius); padding:10px 16px;">
+            <div class="card-title" style="margin:0;">Season Standings</div>
+            <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">▼</span>
+          </summary>
+          <div class="card" style="border-top-left-radius:0; border-top-right-radius:0; margin-top:0;">
+            <div class="table-wrap" id="dash-standings"></div>
+          </div>
+        </details>
+
+        <details id="dash-progress-details" style="margin-top:8px;">
+          <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; background:var(--surface); border-radius:var(--radius); padding:10px 16px;">
+            <div class="card-title" style="margin:0;">Session Progress</div>
+            <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">▼</span>
+          </summary>
+          <div class="card" style="border-top-left-radius:0; border-top-right-radius:0; margin-top:0;">
+            <div id="dash-progress"></div>
+          </div>
+        </details>
         <div id="dash-version"></div>
       </section>
 
@@ -286,6 +301,48 @@
           </div>
           </details>
         </div>
+
+        <!-- Feedback to developer -->
+        <div class="card mt-2">
+          <details>
+          <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;">
+            <div class="card-title">💬 Send Feedback to Developer</div>
+            <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">▼</span>
+          </summary>
+          <div class="collapsible-body">
+            <p style="font-size:0.82rem; color:var(--muted); margin-bottom:14px; margin-top:12px;">
+              Report a bug, request a feature, or ask for help. Your message goes directly to the app developer.
+            </p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Type</label>
+                <select class="form-control" id="fb-type">
+                  <option value="Bug Report">🐛 Bug Report</option>
+                  <option value="Enhancement Request">✨ Enhancement Request</option>
+                  <option value="Help Request">❓ Help Request</option>
+                  <option value="Other">💬 Other</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Your Name</label>
+                <input class="form-control" id="fb-name" placeholder="How to address you" autocomplete="name">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Your Email <span style="color:var(--muted); font-weight:400;">(for replies)</span></label>
+                <input class="form-control" id="fb-email" type="email" placeholder="email@example.com" autocomplete="email">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Message <span style="color:var(--danger);">*</span></label>
+              <textarea class="form-control" id="fb-message" rows="4"
+                style="resize:vertical; font-family:inherit; font-size:0.88rem;"
+                placeholder="Describe the issue, request, or question in as much detail as you can…"></textarea>
+            </div>
+            <div id="fb-status" style="font-size:0.8rem; margin-top:8px;"></div>
+            <button class="btn btn-primary mt-1" id="btn-send-feedback">📨 Send Feedback</button>
+          </div>
+          </details>
+        </div>
       </section>
 
       <!-- ═══ PLAYERS ═══ -->
@@ -327,11 +384,9 @@
       <section id="page-pairings" class="tab-panel">
         <div class="page-header">
           <h2>Pairings Generator</h2>
-          <div class="week-selector">
-            <button id="pair-week-prev">‹</button>
-            <div class="week-num" id="pair-week-label">Week 1</div>
-            <button id="pair-week-next">›</button>
-          </div>
+          <select id="pair-week-select" class="form-control" style="width:auto; min-width:130px; font-size:0.82rem; padding:4px 8px;">
+          </select>
+          <div id="pair-week-label" style="display:none;">Week 1</div>
         </div>
         <div class="card">
           <details open>
@@ -487,11 +542,9 @@
           <h2>Score Entry</h2>
           <div style="display:flex; align-items:center; gap:8px;">
             <button class="btn btn-secondary" id="btn-refresh-scoresheet" style="padding:5px 12px; font-size:0.78rem;">🔄 Refresh</button>
-            <div class="week-selector">
-              <button id="score-week-prev">‹</button>
-              <div class="week-num" id="score-week-label">Week 1</div>
-              <button id="score-week-next">›</button>
-            </div>
+            <select id="score-week-select" class="form-control" style="width:auto; min-width:130px; font-size:0.82rem; padding:4px 8px;">
+            </select>
+            <div id="score-week-label" style="display:none;">Week 1</div>
           </div>
         </div>
         <div class="card">
@@ -513,11 +566,9 @@
           <div style="display:flex; align-items:center; gap:8px;">
             <button class="btn btn-secondary" id="btn-refresh-tourn-results" style="padding:5px 12px; font-size:0.78rem;">🔄 Refresh</button>
             <button class="btn btn-secondary" id="btn-send-tourn-report" style="padding:5px 12px; font-size:0.78rem;">📧 Email Results</button>
-            <div class="week-selector">
-              <button id="tourn-week-prev">‹</button>
-              <div class="week-num" id="tourn-week-label">Session 1</div>
-              <button id="tourn-week-next">›</button>
-            </div>
+            <select id="tourn-week-select" class="form-control" style="width:auto; min-width:130px; font-size:0.82rem; padding:4px 8px;">
+            </select>
+            <div id="tourn-week-label" style="display:none;">Session 1</div>
           </div>
         </div>
         <div class="card">
@@ -545,11 +596,9 @@
           <div class="card">
             <div class="card-header">
               <div class="card-title">Session Standings</div>
-              <div class="week-selector">
-                <button id="stand-week-prev">‹</button>
-                <div class="week-num" id="stand-week-label">Week 1</div>
-                <button id="stand-week-next">›</button>
-              </div>
+              <select id="stand-week-select" class="form-control" style="width:auto; min-width:130px; font-size:0.82rem; padding:4px 8px;">
+              </select>
+              <div id="stand-week-label" style="display:none;">Week 1</div>
             </div>
             <div class="table-wrap" id="standings-weekly-table"></div>
           </div>
@@ -819,7 +868,7 @@
 })();
 </script>
 <script>
-  if ('serviceWorker' in navigator) {
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('./sw.js')
         .catch(err => console.warn('SW registration failed:', err));

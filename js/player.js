@@ -79,7 +79,7 @@ function gaPage(pageName) {
       // Fetch all sessions — sinceWeek=1 ensures we never miss current scores.
       // For large leagues (many sessions) this could be optimised later, but
       // correctness matters more than a small payload saving.
-      const sinceWeek  = Math.max(1, totalWeeks - 4); // last 5 sessions as safe buffer
+      const sinceWeek  = 1; // Math.max(1, totalWeeks - 4); // last 5 sessions as safe buffer
       const data = await API.getAllData(sinceWeek);
       state.pairings  = data.pairings  || [];
       state.scores    = data.scores    || [];

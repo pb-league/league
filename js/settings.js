@@ -18,8 +18,8 @@
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbzudYO4IDqCJt92kR4gu6dVJyGN5LoKtxpD3RYR1pNHepxU_liEdpogjCnE8mWTOXqU/exec';
 
 // App version — bump when deploying changes
-const APP_VERSION    = '1.3.1';
-const APP_BUILD_DATE = '2026-03-25';
+const APP_VERSION    = '1.3.0';
+const APP_BUILD_DATE = '2026-03-26';
 
 // Google Analytics 4 Measurement ID
 // Set to your GA4 property ID (format: G-XXXXXXXXXX) to enable analytics.

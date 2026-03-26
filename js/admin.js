@@ -111,7 +111,7 @@ function showLeagueQR(event, url) {
 
   if (session.leagueName) {
     document.querySelector('.topbar-brand').innerHTML =
-      `🥒 <span>${esc(session.leagueName)}</span> <span style="color:var(--muted);font-size:0.75rem;font-weight:400;margin-left:4px;">Admin</span>`;
+      `<img src="img/pb_rot.gif" style="width:22px;height:22px;vertical-align:middle;margin-right:4px;object-fit:contain;" alt=""><span>${esc(session.leagueName)}</span> <span style="color:var(--muted);font-size:0.75rem;font-weight:400;margin-left:4px;">Admin</span>`;
   }
 
   // ── State ──────────────────────────────────────────────────
@@ -171,6 +171,11 @@ function showLeagueQR(event, url) {
   renderAll();
   setupNav();
   setupEvents();
+  // Populate all session dropdowns with correct options and saved selections
+  populateWeekSelect('pair-week-select',  'currentPairWeek');
+  populateWeekSelect('score-week-select', 'currentScoreWeek');
+  populateWeekSelect('tourn-week-select', 'currentTournWeek');
+  populateWeekSelect('stand-week-select', 'currentStandWeek');
 
   applyNavVisibility(); // Re-apply after setup in case anything changed it
 
@@ -498,6 +503,58 @@ function showLeagueQR(event, url) {
     const activeNames = new Set(state.players.filter(p => p.active === true).map(p => p.name));
     const dashStandings = state.standings.filter(s => activeNames.has(s.name));
     document.getElementById('dash-standings').innerHTML = renderStandingsTable(dashStandings, true);
+
+    // ── Session Progress ──────────────────────────────────────
+    const progressEl = document.getElementById('dash-progress');
+    if (progressEl) {
+      const totalWeeks = parseInt(state.config.weeks || 8);
+      const gamePairings = state.pairings.filter(p => p.type === 'game' || p.type === 'tourn-game');
+      const weeks = [...new Set(gamePairings.map(p => parseInt(p.week)))].sort((a,b)=>a-b);
+
+      if (!weeks.length) {
+        progressEl.innerHTML = '<p class="text-muted" style="font-size:0.82rem; padding:4px 0;">No pairings generated yet.</p>';
+      } else {
+        let html = `<table class="compact-table" style="width:100%;">
+          <thead><tr>
+            <th>Session</th><th>Round</th><th>Entered</th><th>Total</th><th style="min-width:80px;">Progress</th>
+          </tr></thead><tbody>`;
+
+        weeks.forEach(w => {
+          const rounds = [...new Set(gamePairings.filter(p=>parseInt(p.week)===w).map(p=>parseInt(p.round)))].sort((a,b)=>a-b);
+          rounds.forEach((r, ri) => {
+            const roundGames = gamePairings.filter(p => parseInt(p.week)===w && parseInt(p.round)===r);
+            const total = roundGames.length;
+            const entered = roundGames.filter(g => {
+              const sc = state.scores.find(s =>
+                parseInt(s.week)===w && parseInt(s.round)===r && String(s.court)===String(g.court) &&
+                s.score1 !== '' && s.score1 !== null && s.score2 !== '' && s.score2 !== null
+              );
+              return !!sc;
+            }).length;
+            const pct = total > 0 ? Math.round(entered/total*100) : 0;
+            const done = entered === total && total > 0;
+            const barColor = done ? 'var(--green)' : entered > 0 ? 'var(--gold)' : 'rgba(255,255,255,0.1)';
+
+            html += `<tr>
+              ${ri === 0 ? `<td rowspan="${rounds.length}" style="font-weight:600; color:var(--white); vertical-align:top; padding-top:7px;">S${w}</td>` : ''}
+              <td style="color:var(--muted);">R${r}</td>
+              <td style="color:${done ? 'var(--green)' : 'var(--white)'}; font-weight:${done?'700':'400'};">${entered}</td>
+              <td style="color:var(--muted);">${total}</td>
+              <td>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <div style="flex:1; height:5px; background:rgba(255,255,255,0.08); border-radius:3px;">
+                    <div style="width:${pct}%; height:100%; background:${barColor}; border-radius:3px; transition:width 0.3s;"></div>
+                  </div>
+                  <span style="font-size:0.7rem; color:var(--muted); min-width:28px;">${done ? '✓' : pct+'%'}</span>
+                </div>
+              </td>
+            </tr>`;
+          });
+        });
+        html += '</tbody></table>';
+        progressEl.innerHTML = html;
+      }
+    }
     document.getElementById('dash-version').innerHTML =
       `<div style="text-align:right; font-size:0.7rem; color:rgba(255,255,255,0.2); margin-top:10px;">
         v${APP_VERSION} &nbsp;·&nbsp; Built ${APP_BUILD_DATE}
@@ -756,6 +813,8 @@ function showLeagueQR(event, url) {
       }
     }
     document.getElementById('pair-week-label').textContent = `Session ${week}`;
+    const pairWkSel = document.getElementById('pair-week-select');
+    if (pairWkSel && pairWkSel.value != week) pairWkSel.value = week;
 
     const existing = state.pairings.filter(p => parseInt(p.week) === week);
     const toShow = state.pendingPairings || existing;
@@ -820,6 +879,8 @@ function showLeagueQR(event, url) {
   function renderScoresheet() {
     const week = state.currentScoreWeek;
     document.getElementById('score-week-label').textContent = `Session ${week}`;
+    const scoreWkSel = document.getElementById('score-week-select');
+    if (scoreWkSel && scoreWkSel.value != week) scoreWkSel.value = week;
 
     // Update card title with session number and date
     const scoresheetTitle = document.querySelector('#page-scores .card-title');
@@ -1001,6 +1062,8 @@ function showLeagueQR(event, url) {
     const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, state.currentStandWeek, state.config.rankingMethod);
     document.getElementById('standings-weekly-table').innerHTML = renderStandingsTable(weekStand);
     document.getElementById('stand-week-label').textContent = `Session ${state.currentStandWeek}`;
+    const standWkSel = document.getElementById('stand-week-select');
+    if (standWkSel && standWkSel.value != state.currentStandWeek) standWkSel.value = state.currentStandWeek;
 
     // Default to season tab active
     document.querySelectorAll('#standings-tabs .tab-btn').forEach(b => b.classList.remove('active'));
@@ -1225,7 +1288,7 @@ function showLeagueQR(event, url) {
       </tr>`;
     });
     const secHeader = usePtsPct ? '<th>Pts%</th>' : '<th title="Average point differential per game — your average score minus your opponent\'s average score. Positive means you score more than your opponents on average; used as a tiebreaker when win percentage is equal." style="cursor:help;">Avg+/-</th>';
-    return `<table>
+    return `<table class="compact-table">
       <thead><tr>
         <th>#</th><th>Player</th><th>W/L</th><th>Win%</th>
         ${secHeader}
@@ -1987,6 +2050,37 @@ function showLeagueQR(event, url) {
     });
 
     // Send league message
+    document.getElementById('btn-send-feedback').addEventListener('click', async () => {
+      const type    = document.getElementById('fb-type').value;
+      const name    = document.getElementById('fb-name').value.trim();
+      const email   = document.getElementById('fb-email').value.trim();
+      const message = document.getElementById('fb-message').value.trim();
+      const statusEl = document.getElementById('fb-status');
+
+      if (!message) { statusEl.innerHTML = '<span style="color:var(--danger);">Please enter a message.</span>'; return; }
+
+      const btn = document.getElementById('btn-send-feedback');
+      btn.disabled = true; btn.textContent = '⏳ Sending…';
+      statusEl.innerHTML = '';
+
+      try {
+        const sess = Auth.getSession();
+        await API.sendFeedback({
+          feedbackType: type, name, email, message,
+          leagueId: sess?.leagueId, leagueName: sess?.leagueName
+        });
+        statusEl.innerHTML = '<span style="color:var(--green);">✓ Feedback sent — thank you!</span>';
+        document.getElementById('fb-message').value = '';
+        document.getElementById('fb-name').value = '';
+        document.getElementById('fb-email').value = '';
+        document.getElementById('fb-type').value = 'Bug Report';
+      } catch(e) {
+        statusEl.innerHTML = `<span style="color:var(--danger);">Failed: ${esc(e.message)}</span>`;
+      } finally {
+        btn.disabled = false; btn.textContent = '📨 Send Feedback';
+      }
+    });
+
     document.getElementById('btn-send-message').addEventListener('click', async () => {
       if (isAssistant) { toast('Admin assistants cannot send league messages.', 'warn'); return; }
       const subject = document.getElementById('msg-subject').value.trim();
@@ -2106,26 +2200,22 @@ function showLeagueQR(event, url) {
     });
 
     // Week navigators
-    setupWeekNav('pair-week-prev', 'pair-week-next', 'currentPairWeek', () => {
+    setupWeekSelect('pair-week-select', 'currentPairWeek', () => {
       state.pendingPairings = null;
       renderPairingsPreview();
       const epWeek = document.getElementById('ep-week');
       if (epWeek) epWeek.value = state.currentPairWeek;
     });
-    setupWeekNav('score-week-prev', 'score-week-next', 'currentScoreWeek', async () => {
-      saveWeekPrefs(); // persist immediately before async fetch
-      // Show busy indicator immediately so user knows the change is registered
+    setupWeekSelect('score-week-select', 'currentScoreWeek', async () => {
+      saveWeekPrefs();
       const scoreEl = document.getElementById('scoresheet');
       if (scoreEl) scoreEl.innerHTML = `
         <div style="text-align:center; padding:32px; color:var(--muted); font-size:0.85rem;">
           <div style="font-size:1.8rem; margin-bottom:8px; animation:spin 0.8s linear infinite; display:inline-block;">⏳</div>
           <div>Loading Session ${state.currentScoreWeek}…</div>
         </div>`;
-      document.getElementById('score-week-label').textContent = `Session ${state.currentScoreWeek}`;
-      // Disable nav buttons during load
-      ['score-week-prev','score-week-next'].forEach(id => {
-        const el = document.getElementById(id); if (el) el.disabled = true;
-      });
+      const sel = document.getElementById('score-week-select');
+      if (sel) sel.disabled = true;
       try {
         const data = await API.getScores(state.currentScoreWeek);
         if (data && data.scores) {
@@ -2134,11 +2224,7 @@ function showLeagueQR(event, url) {
           state.scores.push(...data.scores.filter(s => parseInt(s.week) === week));
         }
       } catch (e) { /* use cached */ }
-      finally {
-        ['score-week-prev','score-week-next'].forEach(id => {
-          const el = document.getElementById(id); if (el) el.disabled = false;
-        });
-      }
+      finally { if (sel) sel.disabled = false; }
       renderScoresheet();
     });
 
@@ -2158,7 +2244,7 @@ function showLeagueQR(event, url) {
       finally { btn.disabled = false; btn.textContent = '🔄 Refresh'; }
     });
     // Tournament results week nav
-    setupWeekNav('tourn-week-prev', 'tourn-week-next', 'currentTournWeek', renderAdminTournamentResults);
+    setupWeekSelect('tourn-week-select', 'currentTournWeek', renderAdminTournamentResults);
 
     // Refresh button for tournament results
     document.getElementById('btn-refresh-tourn-results').addEventListener('click', () => {
@@ -2198,7 +2284,7 @@ function showLeagueQR(event, url) {
       finally { showLoading(false); }
     });
 
-    setupWeekNav('stand-week-prev', 'stand-week-next', 'currentStandWeek', () => {
+    setupWeekSelect('stand-week-select', 'currentStandWeek', () => {
       const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, state.currentStandWeek, state.config.rankingMethod);
       document.getElementById('standings-weekly-table').innerHTML = renderStandingsTable(weekStand);
       const swDate = formatDateTime(state.currentStandWeek, state.config);
@@ -2849,11 +2935,39 @@ function showLeagueQR(event, url) {
   }
 
   // ── Helpers ────────────────────────────────────────────────
+  function populateWeekSelect(selectId, stateKey) {
+    const sel = document.getElementById(selectId);
+    if (!sel) return;
+    const max = parseInt(state.config.weeks || 8);
+    const current = state[stateKey] || 1;
+    sel.innerHTML = '';
+    for (let w = 1; w <= max; w++) {
+      const opt = document.createElement('option');
+      opt.value = w;
+      const date = formatDateTime(w, state.config);
+      opt.textContent = date ? `Session ${w} — ${date}` : `Session ${w}`;
+      if (w === current) opt.selected = true;
+      sel.appendChild(opt);
+    }
+  }
+
+  function setupWeekSelect(selectId, stateKey, cb) {
+    const sel = document.getElementById(selectId);
+    if (!sel) return;
+    populateWeekSelect(selectId, stateKey);
+    sel.addEventListener('change', () => {
+      state[stateKey] = parseInt(sel.value);
+      saveWeekPrefs();
+      cb();
+    });
+  }
+
   function setupWeekNav(prevId, nextId, stateKey, cb) {
-    document.getElementById(prevId).addEventListener('click', () => {
+    // Legacy — kept in case called elsewhere
+    document.getElementById(prevId)?.addEventListener('click', () => {
       if (state[stateKey] > 1) { state[stateKey]--; saveWeekPrefs(); cb(); }
     });
-    document.getElementById(nextId).addEventListener('click', () => {
+    document.getElementById(nextId)?.addEventListener('click', () => {
       const max = parseInt(state.config.weeks || 8);
       if (state[stateKey] < max) { state[stateKey]++; saveWeekPrefs(); cb(); }
     });

@@ -3,6 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0a3d20">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BJ Trainer">
+<meta name="description" content="Blackjack basic strategy trainer with statistics and training mode">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='32' fill='%230a3d20'/%3E%3Crect x='8' y='8' width='176' height='176' rx='28' fill='none' stroke='%23c9a84c' stroke-width='4'/%3E%3Ctext x='96' y='120' font-family='serif' font-size='110' font-weight='900' text-anchor='middle' fill='%23c9a84c'%3E♠%3C/text%3E%3C/svg%3E">
 <title>BlackJack Trainer Pro</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
@@ -1944,6 +1950,101 @@ const chkRepeat = document.getElementById('chk-repeat-bet');
 chkRepeat.checked = G.repeatBet;
 if (G.repeatBet) chkRepeat.closest('label').classList.add('active');
 newHand();
+
+// ═══════════════════════════════════════════════════════════════════════
+// PWA — MANIFEST + SERVICE WORKER (single-file, no external files needed)
+// ═══════════════════════════════════════════════════════════════════════
+
+// Inject web app manifest as a blob link
+(function() {
+  const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="80" fill="#0a3d20"/><rect x="16" y="16" width="480" height="480" rx="70" fill="none" stroke="#c9a84c" stroke-width="12"/><text x="256" y="340" font-family="serif" font-size="300" font-weight="900" text-anchor="middle" fill="#c9a84c">♠</text></svg>`;
+  const iconUrl = 'data:image/svg+xml,' + encodeURIComponent(iconSvg);
+
+  const manifest = {
+    name: 'BlackJack Trainer Pro',
+    short_name: 'BJ Trainer',
+    description: 'Blackjack basic strategy trainer with statistics and training mode',
+    start_url: '.',
+    display: 'standalone',
+    orientation: 'portrait-primary',
+    background_color: '#0a3d20',
+    theme_color: '#0a3d20',
+    icons: [
+      { src: iconUrl, sizes: '192x192', type: 'image/svg+xml', purpose: 'any maskable' },
+      { src: iconUrl, sizes: '512x512', type: 'image/svg+xml', purpose: 'any maskable' }
+    ]
+  };
+
+  const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+  const manifestUrl = URL.createObjectURL(manifestBlob);
+  const link = document.createElement('link');
+  link.rel = 'manifest';
+  link.href = manifestUrl;
+  document.head.appendChild(link);
+})();
+
+// Register service worker via blob — caches this page for offline use
+(function() {
+  if (!('serviceWorker' in navigator)) return;
+
+  const swCode = `
+const CACHE = 'bjt-v1';
+const FONTS = [
+  'https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap'
+];
+
+self.addEventListener('install', e => {
+  e.waitUntil(
+    caches.open(CACHE).then(cache => {
+      // Cache the page itself (the SW's own registration scope)
+      return cache.addAll(FONTS).catch(() => {});
+    }).then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+    ).then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', e => {
+  // Network-first for same-origin (the HTML page), cache-first for fonts/external
+  const url = new URL(e.request.url);
+  if (url.origin === location.origin || e.request.url.startsWith('blob:')) {
+    // Let it through — the page is already loaded in memory
+    return;
+  }
+  e.respondWith(
+    caches.match(e.request).then(cached => {
+      if (cached) return cached;
+      return fetch(e.request).then(resp => {
+        if (resp && resp.status === 200) {
+          const clone = resp.clone();
+          caches.open(CACHE).then(cache => cache.put(e.request, clone));
+        }
+        return resp;
+      }).catch(() => cached);
+    })
+  );
+});
+`;
+
+  const swBlob = new Blob([swCode], { type: 'application/javascript' });
+  const swUrl = URL.createObjectURL(swBlob);
+
+  navigator.serviceWorker.register(swUrl, { scope: './' })
+    .then(reg => {
+      console.log('[BJT] Service worker registered, scope:', reg.scope);
+    })
+    .catch(err => {
+      // Blob-URL SW may be blocked in some browsers (Firefox) — silently fail
+      console.warn('[BJT] SW registration skipped:', err.message);
+    });
+})();
+
 </script>
 </body>
 </html>

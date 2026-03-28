@@ -15,6 +15,24 @@
   input[type=number].score-input::-webkit-outer-spin-button,
   input[type=number].score-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   input[type=number].score-input { -moz-appearance: textfield; }
+
+  /* New-content indicator dot on nav items */
+  .nav-item .new-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    background: var(--green, #2d7a3a);
+    border-radius: 50%;
+    margin-left: 6px;
+    vertical-align: middle;
+    flex-shrink: 0;
+    animation: pulse-dot 1.8s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.45; transform: scale(0.7); }
+  }
+  /* Hide round score badge when the round is expanded — reduces tab-focus noise */
+  details[open] summary .round-badge { display:none; }
 </style>
 </head>
 <body class="court-bg">
@@ -65,18 +83,26 @@
         <div id="my-next-game"></div>
         <div id="player-dash-rules"></div>
         <div class="card-grid" id="my-stats"></div>
-        <div class="card mt-2">
-          <div class="card-header"><div class="card-title">Game History</div></div>
-          <div class="table-wrap" id="my-game-history"></div>
-        </div>
+        <div id="my-upcoming-games"></div>
+        <details id="my-game-history-details" style="margin-top:12px;">
+          <summary style="list-style:none; cursor:pointer; user-select:none;">
+            <div class="card-header" style="display:flex; align-items:center; justify-content:space-between; padding:10px 16px; background:var(--card-bg); border-radius:10px;">
+              <div class="card-title">Game History</div>
+              <span id="history-toggle-icon" style="font-size:0.75rem; color:var(--muted);">▼ Show</span>
+            </div>
+          </summary>
+          <div class="card" style="border-top-left-radius:0; border-top-right-radius:0; margin-top:2px;">
+            <div class="table-wrap" id="my-game-history"></div>
+          </div>
+        </details>
       </section>
 
       <!-- ═══ AVAILABILITY ═══ -->
       <section id="page-attendance" class="tab-panel">
-        <div class="page-header"><h2>My Availability</h2></div>
+        <div class="page-header"><h2 id="ph-availability">My Availability</h2></div>
         <div class="card">
           <p style="font-size:0.88rem; color:var(--muted); margin-bottom:16px;">
-            Tap each session to set your availability. Changes save automatically.
+            Tap each session to set your availability: TBD → In → Out → Sit Out. Changes save automatically.
           </p>
           <div id="my-attendance-grid"></div>
         </div>
@@ -87,7 +113,7 @@
       <!-- ═══ SCORESHEET ═══ -->
       <section id="page-scoresheet" class="tab-panel">
         <div class="page-header">
-          <h2>Scoresheet</h2>
+          <h2 id="ph-scoresheet">Scoresheet</h2>
           <div style="display:flex; align-items:center; gap:8px;">
             <button class="btn btn-secondary" id="btn-refresh-scores" style="padding:5px 12px; font-size:0.78rem;">🔄 Refresh</button>
             <select id="sheet-week-select" class="form-control" style="width:auto; min-width:130px; font-size:0.82rem; padding:4px 8px;">
@@ -102,9 +128,12 @@
       <!-- ═══ SCORE ENTRY ═══ -->
       <section id="page-score-entry" class="tab-panel">
         <div class="page-header">
-          <h2>Score Entry</h2>
-          <select id="player-score-week-select" class="form-control" style="width:auto; min-width:130px; font-size:0.82rem; padding:4px 8px;">
-          </select>
+          <h2 id="ph-score-entry">Score Entry</h2>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button class="btn btn-secondary" id="btn-refresh-score-entry" style="padding:5px 12px; font-size:0.78rem;">🔄 Refresh</button>
+            <select id="player-score-week-select" class="form-control" style="width:auto; min-width:130px; font-size:0.82rem; padding:4px 8px;">
+            </select>
+          </div>
         </div>
         <div class="card">
           <div class="card-header">
@@ -118,7 +147,7 @@
       <!-- ═══ WEEKLY STANDINGS ═══ -->
       <!-- ═══ STANDINGS ═══ -->
       <section id="page-standings" class="tab-panel">
-        <div class="page-header"><h2>Standings</h2></div>
+        <div class="page-header"><h2 id="ph-standings">Standings</h2></div>
         <div class="tabs" id="player-standings-tabs">
           <button class="tab-btn active" data-tab="season">Season Overall</button>
           <button class="tab-btn" data-tab="weekly">By Session</button>
@@ -126,14 +155,14 @@
         </div>
         <div id="player-stand-season" class="tab-panel active">
           <div class="card">
-            <div class="card-header"><div class="card-title">Season Standings</div></div>
+            <div class="card-header"><div class="card-title" id="season-standings-title">Season Standings</div></div>
             <div class="table-wrap" id="season-standings-table"></div>
           </div>
         </div>
         <div id="player-stand-weekly" class="tab-panel">
           <div class="card">
             <div class="card-header">
-              <div class="card-title">Session Standings</div>
+              <div class="card-title" id="weekly-standings-title">Session Standings</div>
               <select id="wstand-select" class="form-control" style="width:auto; min-width:130px; font-size:0.82rem; padding:4px 8px;">
               </select>
               <div id="wstand-label" style="display:none;">Week 1</div>
@@ -143,7 +172,7 @@
         </div>
         <div id="player-stand-trend" class="tab-panel">
           <div class="card">
-            <div class="card-header"><div class="card-title">Overall Ranking by Session</div></div>
+            <div class="card-header"><div class="card-title" id="trend-standings-title">Overall Ranking by Session</div></div>
             <div style="position:relative; width:100%; overflow-x:auto;">
               <canvas id="player-rank-trend-chart" style="width:100%; min-width:320px; display:block;"></canvas>
             </div>
@@ -165,7 +194,7 @@
 
       <!-- ═══ FULL ATTENDANCE ═══ -->
       <section id="page-attendance-all" class="tab-panel">
-        <div class="page-header"><h2>Attendance</h2></div>
+        <div class="page-header"><h2 id="ph-attendance-all">Attendance</h2></div>
         <div class="card">
           <div id="full-attendance-grid"></div>
         </div>

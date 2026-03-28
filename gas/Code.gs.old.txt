@@ -1,0 +1,702 @@
+// ============================================================
+// PICKLEBALL LEAGUE MANAGER — Google Apps Script Backend
+// Deploy as: Web App, Execute as: Me, Who has access: Anyone
+//
+// MULTI-LEAGUE ARCHITECTURE:
+//   - This single GAS deployment serves all leagues
+//   - One "master" Google Sheet holds the league registry
+//   - Each league has its own separate Google Sheet for data
+//   - All requests include a leagueId that routes to the right Sheet
+// ============================================================
+
+// The master registry Sheet ID — create a blank Google Sheet and paste its ID here
+const MASTER_SHEET_ID = '1VPWAWqN1376ewwWUz7laZ8e-_oKbFA2cjv3p0yTvGZ4';
+
+
+// ── Registry helpers ─────────────────────────────────────────
+
+function getMasterSheet() {
+  return SpreadsheetApp.openById(MASTER_SHEET_ID);
+}
+
+function getRegistrySheet() {
+  const ss = getMasterSheet();
+  let sheet = ss.getSheetByName('leagues');
+  if (!sheet) {
+    sheet = ss.insertSheet('leagues');
+    sheet.getRange(1, 1, 1, 4).setValues([['leagueId', 'name', 'sheetId', 'active']]);
+    sheet.getRange(1, 1, 1, 4).setFontWeight('bold');
+  }
+  return sheet;
+}
+
+// Returns all leagues from the registry
+function getLeagueList() {
+  const sheet = getRegistrySheet();
+  const data = sheet.getDataRange().getValues();
+  const leagues = [];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] && data[i][3] !== false) {
+      leagues.push({
+        leagueId: String(data[i][0]),
+        name:     String(data[i][1]),
+        sheetId:  String(data[i][2]),
+        active:   data[i][3] !== false
+      });
+    }
+  }
+  return leagues;
+}
+
+// Resolve a leagueId → Google Sheet for that league's data
+function getLeagueSpreadsheet(leagueId) {
+  const leagues = getLeagueList();
+  const league = leagues.find(l => l.leagueId === leagueId);
+  if (!league) throw new Error('League not found: ' + leagueId);
+  return SpreadsheetApp.openById(league.sheetId);
+}
+
+function getOrCreateSheet(ss, name, headers) {
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    if (headers) {
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    }
+  }
+  return sheet;
+}
+
+// ============================================================
+// CORS + ROUTING
+// ============================================================
+
+function doGet(e) {
+  const action = e.parameter.action;
+  let result;
+  try {
+    if (action === 'getLeagues') {
+      result = { leagues: getLeagueList() };
+    } else {
+      const leagueId = e.parameter.leagueId;
+      if (!leagueId) throw new Error('leagueId is required');
+      const ss = getLeagueSpreadsheet(leagueId);
+      switch (action) {
+        case 'getConfig':       result = getConfig(ss); break;
+        case 'getPlayers':      result = getPlayers(ss); break;
+        case 'getAttendance':   result = getAttendance(ss); break;
+        case 'getPairings':     result = getPairings(ss, e.parameter.week); break;
+        case 'getScores':       result = getScores(ss, e.parameter.week); break;
+        case 'getStandings':    result = getStandings(ss, e.parameter.week); break;
+        case 'getPlayerReport': result = getPlayerReport(ss, e.parameter.player); break;
+        case 'getAllData':       result = getAllData(ss); break;
+        default: result = { error: 'Unknown action: ' + action };
+      }
+    }
+  } catch (err) {
+    result = { error: err.toString() };
+  }
+  return ContentService
+    .createTextOutput(JSON.stringify(result))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  let body;
+  try {
+    body = JSON.parse(e.postData.contents);
+  } catch (err) {
+    return respond({ error: 'Invalid JSON: ' + err.toString() });
+  }
+  const action = body.action;
+  let result;
+  try {
+    if (action === 'addLeague') {
+      result = addLeague(body.leagueId, body.name, body.sheetId, body.sourceLeagueId, body.copyConfig, body.copyPlayers);
+    } else if (action === 'updateLeague') {
+      result = updateLeague(body.leagueId, body.name, body.sheetId, body.active);
+    } else {
+      const leagueId = body.leagueId;
+      if (!leagueId) throw new Error('leagueId is required');
+      const ss = getLeagueSpreadsheet(leagueId);
+      switch (action) {
+        case 'validatePIN':   result = validatePIN(ss, body.name, body.pin); break;
+        case 'saveConfig':    result = saveConfig(ss, body.config); break;
+        case 'savePlayers':   result = savePlayers(ss, body.players); break;
+        case 'setAttendance': result = setAttendance(ss, body.player, body.week, body.status); break;
+        case 'savePairings':  result = savePairings(ss, body.week, body.pairings); break;
+        case 'saveScores':    result = saveScores(ss, body.week, body.scores); break;
+        case 'sendWeeklyReport': result = sendWeeklyReport(ss, body); break;
+        case 'changePin':     result = changePin(ss, body.name, body.currentPin, body.newPin); break;
+        case 'emailPin':      result = emailPin(ss, body.name); break;
+        default: result = { error: 'Unknown action: ' + action };
+      }
+    }
+  } catch (err) {
+    result = { error: err.toString() };
+  }
+  return respond(result);
+}
+
+function respond(data) {
+  return ContentService
+    .createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ============================================================
+// LEAGUE REGISTRY (admin)
+// ============================================================
+
+function addLeague(leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers) {
+  if (!leagueId || !name || !sheetId) throw new Error('leagueId, name, and sheetId are required');
+
+  // Check for duplicate
+  const sheet = getRegistrySheet();
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(leagueId)) throw new Error('League ID already exists: ' + leagueId);
+  }
+
+  // Register the new league
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, 4).setValues([[leagueId, name, sheetId, true]]);
+  SpreadsheetApp.flush();
+
+  const copyWarnings = [];
+
+  if (sourceLeagueId) {
+    try {
+      const sourceSS = getLeagueSpreadsheet(sourceLeagueId);
+      const newSS    = SpreadsheetApp.openById(sheetId);
+
+      // Pre-create sheets so writes don't fail on blank spreadsheets
+      getOrCreateSheet(newSS, 'config',  ['key', 'value']);
+      getOrCreateSheet(newSS, 'players', ['name', 'pin', 'group', 'active', 'email', 'notify']);
+
+      const { config  } = getConfig(sourceSS);
+      const { players } = getPlayers(sourceSS);
+
+      // ── Copy configuration ──────────────────────────────
+      // Always copy adminPin so admin login works on the new league.
+      // If copyConfig is true, copy all other settings too but reset
+      // the league name to the new display name so it shows correctly.
+      if (copyConfig) {
+        // Copy all config keys, override leagueName with the new league's name
+        const newConfig = Object.assign({}, config, { leagueName: name });
+        saveConfig(newSS, newConfig);
+      } else {
+        // Minimal copy: just adminPin so admin can log in
+        if (config.adminPin !== undefined) {
+          saveConfig(newSS, { adminPin: config.adminPin });
+        } else {
+          copyWarnings.push('adminPin not found in source config');
+        }
+      }
+
+      // ── Copy players ────────────────────────────────────
+      if (copyPlayers) {
+        // Copy all active players — reset attendance-related state
+        // but keep name, pin, group, email, notify, active
+        if (players.length > 0) {
+          savePlayers(newSS, players);
+        } else {
+          copyWarnings.push('No players found in source league');
+        }
+      } else {
+        // Always copy Admin player so admin login works
+        const adminPlayer = players.find(p => p.name === 'Admin');
+        if (adminPlayer) {
+          savePlayers(newSS, [adminPlayer]);
+        } else {
+          copyWarnings.push('Admin player not found in source league');
+        }
+      }
+
+    } catch (err) {
+      copyWarnings.push('Copy failed: ' + err.toString());
+      Logger.log('addLeague copy error: ' + err.toString());
+    }
+  }
+
+  return { success: true, warnings: copyWarnings };
+}
+
+function updateLeague(leagueId, name, sheetId, active) {
+  const sheet = getRegistrySheet();
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(leagueId)) {
+      if (name     !== undefined) sheet.getRange(i + 1, 2).setValue(name);
+      if (sheetId  !== undefined) sheet.getRange(i + 1, 3).setValue(sheetId);
+      if (active   !== undefined) sheet.getRange(i + 1, 4).setValue(active);
+      return { success: true };
+    }
+  }
+  throw new Error('League not found: ' + leagueId);
+}
+
+// ============================================================
+// CONFIG
+// ============================================================
+
+function getConfig(ss) {
+  const sheet = getOrCreateSheet(ss, 'config', ['key', 'value']);
+  const data = sheet.getDataRange().getValues();
+  const config = {};
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0]) config[data[i][0]] = data[i][1];
+  }
+  return { config };
+}
+
+function saveConfig(ss, config) {
+  const sheet = getOrCreateSheet(ss, 'config', ['key', 'value']);
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, 2).setValues([['key', 'value']]);
+  sheet.getRange(1, 1, 1, 2).setFontWeight('bold');
+
+  const rows = Object.entries(config).map(([k, v]) => [k, v]);
+  if (rows.length > 0) {
+    // Format entire value column as plain text BEFORE writing values.
+    // This prevents Sheets from misinterpreting numeric config values
+    // (e.g. wRankBalance = 15 → read as a date, adminPin = 0000 → stripped to 0).
+    sheet.getRange(2, 2, rows.length, 1).setNumberFormat('@STRING@');
+
+    // Write all values as strings so the plain-text format is respected
+    const stringRows = rows.map(([k, v]) => [k, String(v)]);
+    sheet.getRange(2, 1, stringRows.length, 2).setValues(stringRows);
+  }
+  return { success: true };
+}
+
+// ============================================================
+// PLAYERS
+// ============================================================
+
+function getPlayers(ss) {
+  const sheet = getOrCreateSheet(ss, 'players', ['name', 'pin', 'group', 'active', 'email', 'notify']);
+  const data = sheet.getDataRange().getValues();
+  const players = [];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0]) {
+      players.push({
+        name:   data[i][0],
+        pin:    String(data[i][1]),
+        group:  data[i][2] || 'M',
+        active: data[i][3] !== false,
+        email:  data[i][4] ? String(data[i][4]) : '',
+        notify: data[i][5] === true || data[i][5] === 'TRUE' || data[i][5] === true,
+      });
+    }
+  }
+  return { players };
+}
+
+function savePlayers(ss, players) {
+  const sheet = getOrCreateSheet(ss, 'players', ['name', 'pin', 'group', 'active', 'email', 'notify']);
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, 6).setValues([['name', 'pin', 'group', 'active', 'email', 'notify']]);
+  sheet.getRange(1, 1, 1, 6).setFontWeight('bold');
+
+  if (players.length > 0) {
+    // Format entire PIN column (col 2) as plain text first so leading zeros are preserved
+    const pinColRange = sheet.getRange(2, 2, players.length, 1);
+    pinColRange.setNumberFormat('@STRING@');
+
+    const rows = players.map(p => [
+      p.name, String(p.pin || ''), p.group || 'M', p.active !== false,
+      p.email || '', p.notify === true || p.notify === 'true'
+    ]);
+    sheet.getRange(2, 1, rows.length, 6).setValues(rows);
+  }
+  return { success: true };
+}
+
+function validatePIN(ss, name, pin) {
+  const { players } = getPlayers(ss);
+  const player = players.find(p => p.name === name);
+  if (!player) return { valid: false, reason: 'Player not found' };
+  if (String(player.pin) === String(pin)) {
+    const adminPin = getConfig(ss).config.adminPin || '0000';
+    return { valid: true, name: player.name, isAdmin: String(pin) === String(adminPin) };
+  }
+  return { valid: false, reason: 'Incorrect PIN' };
+}
+
+// ============================================================
+// ATTENDANCE
+// ============================================================
+
+function getAttendance(ss) {
+  const sheet = getOrCreateSheet(ss, 'attendance', ['player', 'week', 'status']);
+  const data = sheet.getDataRange().getValues();
+  const attendance = [];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0]) {
+      attendance.push({ player: data[i][0], week: data[i][1], status: data[i][2] || 'tbd' });
+    }
+  }
+  return { attendance };
+}
+
+function setAttendance(ss, player, week, status) {
+  const sheet = getOrCreateSheet(ss, 'attendance', ['player', 'week', 'status']);
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === player && String(data[i][1]) === String(week)) {
+      sheet.getRange(i + 1, 3).setValue(status);
+      return { success: true };
+    }
+  }
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, 3).setValues([[player, week, status]]);
+  return { success: true };
+}
+
+// ============================================================
+// PAIRINGS
+// ============================================================
+
+function getPairings(ss, week) {
+  const sheet = getOrCreateSheet(ss, 'pairings', ['week', 'round', 'court', 'p1', 'p2', 'p3', 'p4', 'type']);
+  const data = sheet.getDataRange().getValues();
+  const pairings = [];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] && (week === undefined || String(data[i][0]) === String(week))) {
+      pairings.push({
+        week: data[i][0], round: data[i][1], court: data[i][2],
+        p1: data[i][3], p2: data[i][4], p3: data[i][5], p4: data[i][6],
+        type: data[i][7] || 'game'
+      });
+    }
+  }
+  return { pairings };
+}
+
+function savePairings(ss, week, pairings) {
+  const sheet = getOrCreateSheet(ss, 'pairings', ['week', 'round', 'court', 'p1', 'p2', 'p3', 'p4', 'type']);
+  const data = sheet.getDataRange().getValues();
+  const toDelete = [];
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][0]) === String(week)) toDelete.push(i + 1);
+  }
+  toDelete.forEach(r => sheet.deleteRow(r));
+  if (pairings.length > 0) {
+    const rows = pairings.map(p => [week, p.round, p.court, p.p1||'', p.p2||'', p.p3||'', p.p4||'', p.type||'game']);
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 8).setValues(rows);
+  }
+  return { success: true };
+}
+
+// ============================================================
+// SCORES
+// ============================================================
+
+function getScores(ss, week) {
+  const sheet = getOrCreateSheet(ss, 'scores', ['week', 'round', 'court', 'p1', 'p2', 'score1', 'p3', 'p4', 'score2']);
+  const data = sheet.getDataRange().getValues();
+  const scores = [];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] && (week === undefined || String(data[i][0]) === String(week))) {
+      scores.push({
+        week: data[i][0], round: data[i][1], court: data[i][2],
+        p1: data[i][3], p2: data[i][4], score1: data[i][5],
+        p3: data[i][6], p4: data[i][7], score2: data[i][8]
+      });
+    }
+  }
+  return { scores };
+}
+
+function saveScores(ss, week, scores) {
+  const sheet = getOrCreateSheet(ss, 'scores', ['week', 'round', 'court', 'p1', 'p2', 'score1', 'p3', 'p4', 'score2']);
+  const data = sheet.getDataRange().getValues();
+  const toDelete = [];
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][0]) === String(week)) toDelete.push(i + 1);
+  }
+  toDelete.forEach(r => sheet.deleteRow(r));
+  if (scores.length > 0) {
+    const rows = scores.map(s => [week, s.round, s.court, s.p1||'', s.p2||'', s.score1??'', s.p3||'', s.p4||'', s.score2??'']);
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 9).setValues(rows);
+  }
+  return { success: true };
+}
+
+// ============================================================
+// STANDINGS (calculated server-side)
+// ============================================================
+
+function getStandings(ss, week) {
+  const { scores }   = getScores(ss);
+  const { players }  = getPlayers(ss);
+  const { pairings } = getPairings(ss);
+  const { config }   = getConfig(ss);
+  const maxWeek = week ? parseInt(week) : parseInt(config.weeks || 8);
+
+  const stats = {};
+  players.forEach(p => {
+    stats[p.name] = { name: p.name, wins: 0, losses: 0, points: 0, pointsAgainst: 0, games: 0, byes: 0 };
+  });
+
+  scores.forEach(s => {
+    if (parseInt(s.week) > maxWeek || !s.p1 || !s.p3) return;
+    // Skip games where scores have not been entered
+    if (s.score1 === '' || s.score1 === null || s.score1 === undefined ||
+        s.score2 === '' || s.score2 === null || s.score2 === undefined) return;
+    const score1 = parseInt(s.score1);
+    const score2 = parseInt(s.score2);
+    if (isNaN(score1) || isNaN(score2)) return;
+    const team1 = [s.p1, s.p2].filter(Boolean);
+    const team2 = [s.p3, s.p4].filter(Boolean);
+    const t1win = score1 > score2;
+    team1.forEach(p => {
+      if (!stats[p]) return; // not a registered league player — skip
+      stats[p].wins += t1win ? 1 : 0; stats[p].losses += t1win ? 0 : 1;
+      stats[p].points += score1; stats[p].pointsAgainst += score2; stats[p].games++;
+    });
+    team2.forEach(p => {
+      if (!stats[p]) return; // not a registered league player — skip
+      stats[p].wins += t1win ? 0 : 1; stats[p].losses += t1win ? 1 : 0;
+      stats[p].points += score2; stats[p].pointsAgainst += score1; stats[p].games++;
+    });
+  });
+
+  pairings.forEach(p => {
+    if (p.type === 'bye' && parseInt(p.week) <= maxWeek) {
+      [p.p1, p.p2, p.p3, p.p4].filter(Boolean).forEach(name => { if (stats[name]) stats[name].byes++; });
+    }
+  });
+
+  const standings = Object.values(stats).map(s => {
+    const total = s.wins + s.losses;
+    const ptDiff = s.points - s.pointsAgainst;
+    const ptsPct = (s.points + s.pointsAgainst) > 0 ? s.points / (s.points + s.pointsAgainst) : 0;
+    return { ...s, winPct: total > 0 ? s.wins / total : 0, ptDiff, avgPtDiff: s.games > 0 ? ptDiff / s.games : 0, ptsPct };
+  });
+  const rankingMethod = config.rankingMethod || 'avgptdiff';
+  standings.sort((a, b) => {
+    if (Math.abs(b.winPct - a.winPct) > 0.0001) return b.winPct - a.winPct;
+    if (rankingMethod === 'ptspct') return b.ptsPct - a.ptsPct;
+    return b.avgPtDiff - a.avgPtDiff;
+  });
+  standings.forEach((s, i) => { s.rank = i + 1; });
+  return { standings };
+}
+
+function getPlayerReport(ss, playerName) {
+  const { scores }    = getScores(ss);
+  const { standings } = getStandings(ss);
+  const games = [];
+
+  scores.forEach(s => {
+    if (!s.p1) return;
+    // Skip unscored games
+    if (s.score1 === '' || s.score1 === null || s.score1 === undefined ||
+        s.score2 === '' || s.score2 === null || s.score2 === undefined) return;
+    if (isNaN(parseInt(s.score1)) || isNaN(parseInt(s.score2))) return;
+    const team1 = [s.p1, s.p2].filter(Boolean);
+    const team2 = [s.p3, s.p4].filter(Boolean);
+    let partner = '', opponents = [], myScore = 0, oppScore = 0, won = false, inGame = false;
+    if (team1.includes(playerName)) {
+      inGame = true; partner = team1.find(p => p !== playerName) || '';
+      opponents = team2; myScore = parseInt(s.score1)||0; oppScore = parseInt(s.score2)||0; won = myScore > oppScore;
+    } else if (team2.includes(playerName)) {
+      inGame = true; partner = team2.find(p => p !== playerName) || '';
+      opponents = team1; myScore = parseInt(s.score2)||0; oppScore = parseInt(s.score1)||0; won = myScore > oppScore;
+    }
+    if (inGame) games.push({ week: s.week, round: s.round, court: s.court, partner, opponents, myScore, oppScore, won });
+  });
+
+  games.sort((a, b) => (parseInt(a.week) * 100 + parseInt(a.round)) - (parseInt(b.week) * 100 + parseInt(b.round)));
+  return { player: playerName, games, standing: standings.find(s => s.name === playerName) || null };
+}
+
+// ============================================================
+// PIN MANAGEMENT
+// ============================================================
+
+function changePin(ss, name, currentPin, newPin) {
+  if (!name || !currentPin || !newPin) throw new Error('name, currentPin and newPin are required');
+  if (String(newPin).length < 1) throw new Error('New PIN cannot be empty');
+
+  const { players } = getPlayers(ss);
+  const player = players.find(p => p.name === name);
+  if (!player) return { success: false, reason: 'Player not found' };
+  if (String(player.pin) !== String(currentPin)) return { success: false, reason: 'Current PIN is incorrect' };
+
+  // Update PIN in the players list and save
+  const updated = players.map(p => p.name === name ? { ...p, pin: String(newPin) } : p);
+  savePlayers(ss, updated);
+  return { success: true };
+}
+
+function emailPin(ss, name) {
+  if (!name) throw new Error('name is required');
+
+  const { players } = getPlayers(ss);
+  const player = players.find(p => p.name === name);
+  if (!player) return { success: false, reason: 'Player not found' };
+  if (!player.email) return { success: false, noEmail: true, reason: 'No email address on file' };
+
+  const { config } = getConfig(ss);
+  const leagueName = config.leagueName || 'Pickleball League';
+  const replyTo    = config.replyTo    || '';
+
+  const subject = `${leagueName} — Your PIN`;
+  const html = `
+    <div style="font-family:sans-serif; max-width:480px; margin:0 auto; color:#222;">
+      <h2 style="color:#2d7a3a;">🥒 ${leagueName}</h2>
+      <p>Hi ${player.name},</p>
+      <p>Your PIN is: <strong style="font-size:1.4em; letter-spacing:0.15em;">${player.pin}</strong></p>
+      <p style="color:#888; font-size:0.85em;">
+        If you didn't request this, you can ignore this email.
+        Contact your league manager if you need help.
+      </p>
+    </div>`;
+
+  try {
+    const mailOpts = { htmlBody: html, name: leagueName };
+    if (replyTo) mailOpts.replyTo = replyTo;
+    GmailApp.sendEmail(player.email, subject, '', mailOpts);
+    return { success: true };
+  } catch (e) {
+    return { success: false, reason: 'Email failed: ' + e.toString() };
+  }
+}
+
+// ============================================================
+// WEEKLY EMAIL REPORT
+// ============================================================
+
+function sendWeeklyReport(ss, body) {
+  const {
+    week, weekDate, leagueName, location, sessionTime, notes,
+    weekScores, weekPairings, weekStandings, seasonStandings,
+    recipients, courtNames
+  } = body;
+
+  if (!recipients || !recipients.length) {
+    return { success: false, error: 'No recipients' };
+  }
+
+  const subject = `${leagueName} — Week ${week} Results${weekDate ? ' (' + weekDate + ')' : ''}`;
+
+  // ── Build HTML email ──────────────────────────────────────
+  let html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#222;">
+    <h2 style="color:#2d7a3a;">🥒 ${leagueName}</h2>`;
+
+  if (location || sessionTime || notes) {
+    html += `<p style="color:#666;font-size:0.9em;">`;
+    if (location)    html += `📍 ${location}&nbsp;&nbsp;`;
+    if (sessionTime) html += `🕐 ${sessionTime}&nbsp;&nbsp;`;
+    if (notes)       html += `📌 ${notes}`;
+    html += `</p>`;
+  }
+
+  html += `<h3>Week ${week} Scores${weekDate ? ' — ' + weekDate : ''}</h3>`;
+
+  // Group games by round
+  const rounds = [...new Set((weekPairings || []).map(g => g.round))].sort((a,b)=>a-b);
+  if (rounds.length) {
+    rounds.forEach(r => {
+      html += `<p style="font-weight:bold;margin-bottom:4px;">Round ${r}</p>`;
+      html += `<table style="width:100%;border-collapse:collapse;margin-bottom:12px;">`;
+      const games = weekPairings.filter(g => g.round == r);
+      games.forEach(game => {
+        const cname = (courtNames && courtNames[game.court]) || ('Court ' + game.court);
+        const sc = (weekScores || []).find(s =>
+          parseInt(s.week) === parseInt(week) &&
+          parseInt(s.round) === parseInt(game.round) &&
+          String(s.court) === String(game.court)
+        );
+        const s1 = sc && (sc.score1 !== '' && sc.score1 !== null) ? sc.score1 : '—';
+        const s2 = sc && (sc.score2 !== '' && sc.score2 !== null) ? sc.score2 : '—';
+        const t1win = sc && parseInt(sc.score1) > parseInt(sc.score2);
+        const t2win = sc && parseInt(sc.score2) > parseInt(sc.score1);
+        html += `<tr>
+          <td style="padding:4px 8px;font-size:0.85em;color:#888;">${cname}</td>
+          <td style="padding:4px 8px;font-weight:${t1win?'bold':'normal'};">
+            ${game.p1}${game.p2 ? ' &amp; ' + game.p2 : ''}
+          </td>
+          <td style="padding:4px 8px;text-align:center;font-weight:bold;">
+            ${s1} — ${s2}
+          </td>
+          <td style="padding:4px 8px;font-weight:${t2win?'bold':'normal'};">
+            ${game.p3}${game.p4 ? ' &amp; ' + game.p4 : ''}
+          </td>
+        </tr>`;
+      });
+      html += `</table>`;
+    });
+  } else {
+    html += `<p style="color:#888;">No games recorded for this week.</p>`;
+  }
+
+  // Week standings
+  html += `<h3>Week ${week} Standings</h3>`;
+  html += buildStandingsTable(weekStandings);
+
+  // Season standings
+  html += `<h3>Season Standings</h3>`;
+  html += buildStandingsTable(seasonStandings);
+
+  html += `<p style="font-size:0.8em;color:#aaa;margin-top:24px;">
+    Sent by ${leagueName} League Manager · Reply to unsubscribe
+  </p></div>`;
+
+  // ── Send to each recipient ────────────────────────────────
+  let sent = 0;
+  const errors = [];
+  recipients.forEach(r => {
+    try {
+      const mailOpts = { htmlBody: html, name: leagueName };
+      if (body.replyTo) mailOpts.replyTo = body.replyTo;
+      GmailApp.sendEmail(r.email, subject, '', mailOpts);
+      sent++;
+    } catch (e) {
+      errors.push(r.email + ': ' + e.toString());
+    }
+  });
+
+  return { success: true, sent, errors };
+}
+
+function buildStandingsTable(standings) {
+  if (!standings || !standings.length) return '<p style="color:#888;">No data yet.</p>';
+  const rows = standings.filter(s => s.games > 0).map(s =>
+    `<tr>
+      <td style="padding:4px 8px;text-align:center;">${s.rank}</td>
+      <td style="padding:4px 8px;">${s.name}</td>
+      <td style="padding:4px 8px;text-align:center;">${s.wins}/${s.losses}</td>
+      <td style="padding:4px 8px;text-align:center;">${(s.winPct*100).toFixed(1)}%</td>
+      <td style="padding:4px 8px;text-align:center;">${s.avgPtDiff > 0 ? '+' : ''}${(s.avgPtDiff||0).toFixed(1)}</td>
+    </tr>`
+  ).join('');
+  return `<table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+    <thead><tr style="background:#f0f0f0;">
+      <th style="padding:6px 8px;">#</th>
+      <th style="padding:6px 8px;">Player</th>
+      <th style="padding:6px 8px;">W/L</th>
+      <th style="padding:6px 8px;">Win%</th>
+      <th style="padding:6px 8px;">Avg+/-</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+// ============================================================
+// ALL DATA (initial load for a league)
+// ============================================================
+
+function getAllData(ss) {
+  return {
+    config:     getConfig(ss).config,
+    players:    getPlayers(ss).players,
+    attendance: getAttendance(ss).attendance,
+    pairings:   getPairings(ss).pairings,
+    scores:     getScores(ss).scores,
+    standings:  getStandings(ss).standings
+  };
+}

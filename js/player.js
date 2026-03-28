@@ -21,7 +21,7 @@ function gaPage(pageName) {
 
   const playerName = session.name;
   document.getElementById('topbar-name').textContent = playerName;
-  document.getElementById('topbar-league').textContent = session.leagueName || 'Pickleball';
+  document.getElementById('topbar-league').textContent = session.leagueName || state.config.leagueName || 'League';
   const userRole = session.role || (session.isAdmin ? 'admin' : (session.canScore ? 'scorer' : 'player'));
   const canScore = session.canScore || session.isAdmin || userRole === 'scorer' || userRole === 'assistant';
 
@@ -45,7 +45,8 @@ function gaPage(pageName) {
     config: {}, players: [], attendance: [],
     pairings: [], scores: [], standings: [],
     currentSheetWeek: 1, currentWstandWeek: 1,
-    dataLoaded: false  // true after phase 2 pairings/scores are loaded
+    dataLoaded: false,  // true after phase 2 pairings/scores are loaded
+    saveLocks: {}       // per-week save queue to prevent concurrent writes
   };
 
   // ── Phase 1: Fast load — config, players, attendance ────────
@@ -65,6 +66,12 @@ function gaPage(pageName) {
   renderAll();
   setupNav();
   setupEvents();
+  // Reconcile scoresheet and score-entry week — always start on the same session.
+  if (canScore) {
+    const reconciled = Math.max(state.currentSheetWeek || 1, state.currentScoreEntryWeek || 1);
+    state.currentSheetWeek     = reconciled;
+    state.currentScoreEntryWeek = reconciled;
+  }
   // Populate session selects immediately with phase-1 config
   populateWeekSelect('sheet-week-select', 'currentSheetWeek');
   populateWeekSelect('wstand-select', 'currentWstandWeek');
@@ -127,6 +134,29 @@ function gaPage(pageName) {
       populateWeekSelect('sheet-week-select', 'currentSheetWeek');
       populateWeekSelect('wstand-select', 'currentWstandWeek');
       if (canScore) populateWeekSelect('player-score-week-select', 'currentScoreEntryWeek');
+
+      // ── New pairings indicator ──────────────────────────────
+      // Show a pulsing dot on "My Games" nav if the latest pairing week
+      // is newer than what this player last acknowledged.
+      const seenKey = `pb_seen_week_${session.leagueId}_${playerName}`;
+      const latestPairingWeek = weeksWithPairings.length ? Math.max(...weeksWithPairings) : 0;
+      const lastSeenWeek = parseInt(localStorage.getItem(seenKey) || '0');
+
+      if (latestPairingWeek > lastSeenWeek) {
+        const myGamesActive = document.getElementById('page-my-games')?.classList.contains('active');
+        if (myGamesActive) {
+          // Already on My Games — mark seen immediately, no dot needed
+          localStorage.setItem(seenKey, String(latestPairingWeek));
+        } else {
+          const navMyGames = document.querySelector('.nav-item[data-page="my-games"]');
+          if (navMyGames && !navMyGames.querySelector('.new-dot')) {
+            const dot = document.createElement('span');
+            dot.className = 'new-dot';
+            dot.title = 'New pairings available';
+            navMyGames.appendChild(dot);
+          }
+        }
+      }
     } catch (e) {
       toast('Background data load failed: ' + e.message, 'error');
     }
@@ -146,11 +176,42 @@ function gaPage(pageName) {
         if (page === 'score-entry') renderScoreEntry();
         if (page === 'standings') renderPlayerStandings();
         if (page === 'tournament') renderTournamentBracket();
+        if (page === 'attendance') {
+          // Re-fetch attendance so player sees latest state from server
+          API.getAttendance().then(data => {
+            if (data && data.attendance) state.attendance = data.attendance;
+            // If config.weeks still missing, attempt a config re-fetch
+            if (!state.config.weeks) {
+              API.getConfig().then(cfg => { if (cfg && cfg.config) state.config = cfg.config; }).catch(() => {});
+            }
+            renderMyAttendance();
+          }).catch(() => renderMyAttendance());
+        }
+        if (page === 'attendance-all') {
+          // Re-fetch attendance for the full grid view too
+          API.getAttendance().then(data => {
+            if (data && data.attendance) state.attendance = data.attendance;
+            renderFullAttendance();
+          }).catch(() => renderFullAttendance());
+        }
+
+        // Clear new-pairings dot when player opens My Games
+        if (page === 'my-games') {
+          const dot = item.querySelector('.new-dot');
+          if (dot) dot.remove();
+          const weeksWithPairings = [...new Set(state.pairings.map(p => parseInt(p.week)))];
+          const latestPairingWeek = weeksWithPairings.length ? Math.max(...weeksWithPairings) : 0;
+          if (latestPairingWeek) {
+            const seenKey = `pb_seen_week_${session.leagueId}_${playerName}`;
+            localStorage.setItem(seenKey, String(latestPairingWeek));
+          }
+        }
       });
     });
   }
 
   function renderAll() {
+    updatePageHeaders();
     renderNextGame();
     renderMyGames();
     renderMyAttendance();
@@ -162,6 +223,20 @@ function gaPage(pageName) {
     renderPlayerReportSelect();
     renderTournamentBracket();
     if (canScore) renderScoreEntry();
+  }
+
+  function updatePageHeaders() {
+    const lName = session.leagueName || state.config.leagueName || '';
+    const sep = lName ? '  ·  ' : '';
+    const h = (id, label) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = lName ? lName + sep + label : label;
+    };
+    h('ph-availability',   'My Availability');
+    h('ph-scoresheet',     'Scoresheet');
+    h('ph-score-entry',    'Score Entry');
+    h('ph-standings',      'Standings');
+    h('ph-attendance-all', 'Attendance');
   }
 
   // ── Next Game Widget ───────────────────────────────────────
@@ -220,7 +295,7 @@ function gaPage(pageName) {
 
       el.innerHTML = `<div class="card mt-1" style="border-left:3px solid ${won ? 'var(--green)' : 'var(--danger)'}; margin-bottom:12px;">
         <div class="card-header" style="padding-bottom:8px;">
-          <div class="card-title" style="font-size:0.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">Week ${week}${date} · Round ${lastRound} — All Done</div>
+          <div class="card-title" style="font-size:0.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">Session ${week}${date} · Round ${lastRound} — All Done</div>
           <span class="badge ${won ? 'badge-green' : 'badge-red'}">${won ? 'W' : 'L'} ${myScore}–${oppScore}</span>
         </div>
         <div style="display:flex; gap:24px; flex-wrap:wrap; font-size:0.88rem;">
@@ -241,7 +316,7 @@ function gaPage(pageName) {
 
     el.innerHTML = `<div class="card mt-1" style="border-left:3px solid var(--gold); margin-bottom:12px;">
       <div class="card-header" style="padding-bottom:8px;">
-        <div class="card-title" style="font-size:0.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">Week ${week}${date} · Up Next — Round ${nextRound}</div>
+        <div class="card-title" style="font-size:0.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">Session ${week}${date} · Up Next — Round ${nextRound}</div>
         <span class="badge badge-gold">${courtName(nextGame.court)}</span>
       </div>
       <div style="display:flex; gap:24px; flex-wrap:wrap; font-size:0.88rem;">
@@ -262,13 +337,41 @@ function gaPage(pageName) {
     if (infoEl) {
       const c = state.config;
       const parts = [];
-      if (c.leagueName)   parts.push(`<span>🥒 ${esc(c.leagueName)}</span>`);
+      const displayName = session.leagueName || c.leagueName || '';
+      if (displayName)     parts.push(`<span>🥒 ${esc(displayName)}</span>`);
       if (c.location)     parts.push(`<span>📍 ${esc(c.location)}</span>`);
       if (c.sessionTime)  parts.push(`<span>🕐 ${esc(c.sessionTime)}</span>`);
       if (c.notes)        parts.push(`<span>📌 ${esc(c.notes)}</span>`);
-      infoEl.innerHTML = parts.length
+
+      // Personal login URL — always derived from session.leagueId so slug is always correct
+      let urlHtml = '';
+      const lid = session.leagueId || '';
+      if (lid) {
+        const base = (c.leagueUrl || '').replace(/([?&]league=)[^&]*.*$/, '').replace(/[?&]$/, '')
+                  || 'https://pb-league.github.io/league/index.html';
+        const leagueUrl  = base + '?league=' + encodeURIComponent(lid);
+        const personalUrl = leagueUrl + '&player=' + encodeURIComponent(playerName);
+        urlHtml = `<div style="margin-top:10px; padding:10px 12px; background:rgba(255,255,255,0.04);
+                               border-radius:8px; border:1px solid rgba(255,255,255,0.08);">
+          <div style="font-size:0.72rem; color:var(--muted); text-transform:uppercase;
+                      letter-spacing:0.06em; margin-bottom:6px;">Your personal login link</div>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <code style="font-size:0.75rem; color:var(--green); word-break:break-all;
+                         flex:1; min-width:0;">${esc(personalUrl)}</code>
+            <button onclick="navigator.clipboard.writeText('${personalUrl.replace(/'/g, "\\'")}').then(()=>{ this.textContent='✓ Copied'; setTimeout(()=>this.textContent='Copy',1500); })"
+                    style="flex-shrink:0; font-size:0.72rem; padding:4px 10px; border-radius:5px;
+                           background:rgba(94,194,106,0.15); color:var(--green); border:1px solid rgba(94,194,106,0.3);
+                           cursor:pointer;">Copy</button>
+          </div>
+          <div style="font-size:0.7rem; color:var(--muted); margin-top:5px;">
+            Bookmark this link to go straight to your PIN entry next time.
+          </div>
+        </div>`;
+      }
+
+      infoEl.innerHTML = (parts.length
         ? `<div style="display:flex; flex-wrap:wrap; gap:8px 20px; margin-bottom:12px; font-size:0.85rem; color:var(--muted);">${parts.join('')}</div>`
-        : '';
+        : '') + urlHtml;
     }
 
     const rulesEl = document.getElementById('player-dash-rules');
@@ -297,6 +400,116 @@ function gaPage(pageName) {
       `;
     }
 
+    // ── Upcoming Games ───────────────────────────────────────
+    const upcomingEl = document.getElementById('my-upcoming-games');
+    if (upcomingEl) {
+      const today = state.currentSheetWeek || 1;
+      // Future weeks: have pairings but no scores for this player
+      const upcomingWeeks = [...new Set(
+        state.pairings
+          .filter(p => parseInt(p.week) >= today && (p.type === 'game' || p.type === 'tourn-game' || p.type === 'bye'))
+          .map(p => parseInt(p.week))
+      )].sort((a,b) => a-b);
+
+      let upHtml = '';
+      upcomingWeeks.forEach(w => {
+        const weekPairings = state.pairings.filter(p => parseInt(p.week) === w);
+        const rounds = [...new Set(weekPairings.map(p => p.round))].sort((a,b) => a-b);
+
+        // Check if player has anything this week
+        const hasAny = weekPairings.some(p =>
+          [p.p1, p.p2, p.p3, p.p4].includes(playerName)
+        );
+        if (!hasAny) return;
+
+        const dateStr = formatDateTime(w, state.config);
+        const wLabel = dateStr ? `Session ${w} — ${dateStr}` : `Session ${w}`;
+        upHtml += `<div style="margin-bottom:6px;">
+          <div style="font-size:0.72rem; font-weight:700; text-transform:uppercase;
+                      letter-spacing:0.07em; color:var(--muted); margin-bottom:3px;">${esc(wLabel)}</div>`;
+
+        rounds.forEach(r => {
+          const roundPairings = weekPairings.filter(p => p.round == r);
+          const myRoundGames = roundPairings.filter(p =>
+            (p.type === 'game' || p.type === 'tourn-game') &&
+            [p.p1, p.p2, p.p3, p.p4].includes(playerName)
+          );
+          const myRoundBye = roundPairings.some(p =>
+            (p.type === 'bye' || p.type === 'tourn-bye') &&
+            [p.p1, p.p2].includes(playerName)
+          );
+          if (!myRoundGames.length && !myRoundBye) return;
+
+          upHtml += `<div style="display:flex; align-items:center; gap:10px; margin:5px 0 3px;">
+            <span style="font-size:0.82rem; font-weight:700; color:var(--white); white-space:nowrap;">Round ${r}</span>
+            <div style="flex:1; height:1px; background:rgba(255,255,255,0.1);"></div>
+          </div>`;
+
+          myRoundGames.forEach(g => {
+            const isTeam1 = [g.p1, g.p2].includes(playerName);
+            const myTeamP1 = isTeam1 ? g.p1 : g.p3;
+            const myTeamP2 = isTeam1 ? g.p2 : g.p4;
+            const partner  = (myTeamP1 === playerName ? myTeamP2 : myTeamP1) || '';
+            const opp1 = isTeam1 ? g.p3 : g.p1;
+            const opp2 = isTeam1 ? g.p4 : g.p2;
+            const opponents = [opp1, opp2].filter(Boolean);
+            const cn = courtName(g.court);
+            upHtml += `<div style="display:grid; grid-template-columns:auto 1fr auto 1fr; align-items:center;
+                                    gap:6px; padding:4px 8px; background:var(--card-bg);
+                                    border-radius:7px; margin-bottom:2px; font-size:0.85rem;">
+              <div style="font-size:0.68rem; font-weight:700; text-transform:uppercase;
+                          letter-spacing:0.08em; color:var(--muted); padding-right:4px;">${esc(cn)}</div>
+              <div style="text-align:right; font-weight:600; color:var(--white);">
+                ${esc(playerName)}${partner ? `<br><span style="color:var(--muted); font-weight:400;">${esc(partner)}</span>` : ''}
+              </div>
+              <div style="color:var(--muted); font-size:0.78rem; padding:0 4px;">vs</div>
+              <div style="color:var(--muted);">
+                ${opponents.map(o => esc(o)).join('<br>')}
+              </div>
+            </div>`;
+          });
+
+          if (myRoundBye) {
+            upHtml += `<div style="padding:4px 10px; font-size:0.82rem; color:var(--muted);">⏸ Bye — Round ${r}</div>`;
+          }
+        });
+
+        upHtml += `</div>`;
+      });
+
+      upcomingEl.innerHTML = upHtml ? `
+        <details open style="margin-top:12px;">
+          <summary style="list-style:none; cursor:pointer; user-select:none;">
+            <div class="card-header" style="display:flex; align-items:center; justify-content:space-between;
+                 padding:10px 16px; background:var(--card-bg); border-radius:10px;">
+              <div class="card-title">Upcoming Games</div>
+              <span class="upcoming-toggle-icon" style="font-size:0.75rem; color:var(--muted);">▲ Hide</span>
+            </div>
+          </summary>
+          <div class="card" style="border-top-left-radius:0; border-top-right-radius:0; margin-top:2px; padding:8px 12px;">
+            ${upHtml}
+          </div>
+        </details>` : '';
+
+      // Update toggle icon when opened/closed
+      upcomingEl.querySelectorAll('details').forEach(d => {
+        d.addEventListener('toggle', () => {
+          const icon = d.querySelector('.upcoming-toggle-icon');
+          if (icon) icon.textContent = d.open ? '▲ Hide' : '▼ Show';
+        });
+      });
+    }
+
+    // ── Game History toggle icon ──────────────────────────────
+    const histDetails = document.getElementById('my-game-history-details');
+    const histIcon = document.getElementById('history-toggle-icon');
+    if (histDetails && histIcon && !histDetails.dataset.wired) {
+      histDetails.dataset.wired = '1';
+      histDetails.addEventListener('toggle', () => {
+        histIcon.textContent = histDetails.open ? '▲ Hide' : '▼ Show';
+      });
+    }
+
     if (!report.games.length) {
       document.getElementById('my-game-history').innerHTML = state.dataLoaded
         ? '<p class="text-muted">No games recorded yet.</p>'
@@ -307,7 +520,7 @@ function gaPage(pageName) {
       return;
     }
 
-    let html = `<table>
+    let html = `<table class="compact-table" style="width:100%;">
       <thead><tr><th>Ses</th><th>Rd</th><th>Partner</th><th>Opponents</th><th>Score</th><th>Result</th></tr></thead>
       <tbody>`;
 
@@ -328,7 +541,13 @@ function gaPage(pageName) {
 
   // ── My Attendance ──────────────────────────────────────────
   function renderMyAttendance() {
-    const weeks = parseInt(state.config.weeks || 8);
+    const weeks = parseInt(state.config.weeks) || 0;
+    if (!weeks) {
+      // Config not yet loaded — show spinner, phase 1 renderAll() will re-render
+      document.getElementById('my-attendance-grid').innerHTML =
+        '<div style="text-align:center; padding:24px; color:var(--muted); font-size:0.85rem;">⏳ Loading…</div>';
+      return;
+    }
     let html = '<div style="display:flex; flex-wrap:wrap; gap:10px;">';
 
     for (let w = 1; w <= weeks; w++) {
@@ -352,7 +571,7 @@ function gaPage(pageName) {
       cell.addEventListener('click', async () => {
         const myPlayer = state.players.find(pl => pl.name === playerName);
         const isSpectatorRole = myPlayer && myPlayer.role === 'spectator';
-        const states = isSpectatorRole ? ['absent', 'tbd'] : ['present', 'absent', 'tbd', 'sit-out'];
+        const states = isSpectatorRole ? ['absent', 'tbd'] : ['tbd', 'present', 'absent', 'sit-out'];
         const curStatus = states.find(s => cell.classList.contains(s)) || 'tbd';
         const next = states[(states.indexOf(curStatus) + 1) % states.length];
         const week = cell.dataset.week;
@@ -504,7 +723,10 @@ function gaPage(pageName) {
   function renderScoresheet() {
     const week = state.currentSheetWeek;
     const dateStr = formatDateTime(week, state.config);
-    const title = dateStr ? `Session ${week} — ${dateStr}` : `Session ${week}`;
+    const lName = session.leagueName || state.config.leagueName || '';
+    const title = lName
+      ? (dateStr ? `${lName}  ·  Session ${week} — ${dateStr}` : `${lName}  ·  Session ${week}`)
+      : (dateStr ? `Session ${week} — ${dateStr}` : `Session ${week}`);
     const weekLabelEl = document.getElementById('sheet-week-label');
     if (weekLabelEl) weekLabelEl.textContent = title;
     const sheetWkSel = document.getElementById('sheet-week-select');
@@ -536,7 +758,7 @@ function gaPage(pageName) {
       const badgeColor = allDone ? 'var(--green)' : scored > 0 ? 'var(--gold)' : 'var(--muted)';
       const badgeText = allDone ? `${scored}/${roundGames.length} ✓` : scored > 0 ? `${scored}/${roundGames.length}` : `${roundGames.length} game${roundGames.length!==1?'s':''}`;
 
-      html += `<details ${!allDone ? 'open' : ''} style="margin-bottom:5px;">
+      html += `<details open style="margin-bottom:5px;">
         <summary style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;
           padding:4px 8px; border-radius:7px; background:var(--card-bg); list-style:none; user-select:none;"
           class="round-summary">
@@ -544,19 +766,23 @@ function gaPage(pageName) {
             <span class="collapse-arrow" style="font-size:0.68rem; color:var(--green); opacity:0.6;">${!allDone ? '▲' : '▼'}</span>
             <span style="font-size:0.76rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">Round ${r}</span>
           </span>
-          <span style="font-size:0.7rem; color:${badgeColor}; font-weight:600;">${badgeText}</span>
+          <span class="round-badge" style="font-size:0.7rem; color:${badgeColor}; font-weight:600;">${badgeText}</span>
         </summary>
         <div style="padding-top:3px;">`;
 
-      allWeekPairings.filter(p => p.round == r && p.type === 'bye').forEach(bye => {
-        const isMe = bye.p1 === playerName;
-        html += `<div style="padding:4px 8px; margin-bottom:3px; font-size:0.82rem;
-          background:rgba(122,155,181,0.07); border-radius:6px;
-          ${isMe ? 'border-left:3px solid var(--gold);' : ''}">
-          ⏸ <strong style="${isMe ? 'color:var(--gold);' : 'color:var(--white);'}">${esc(bye.p1)}${bye.p2 ? ' &amp; ' + esc(bye.p2) : ''}</strong>
-          <span style="color:var(--muted);"> — Bye</span>
+      // Byes after games — one compact line, highlight if it's me
+      const byePlayers1 = [...new Set(
+        allWeekPairings.filter(p => p.round == r && p.type === 'bye')
+                       .flatMap(p => [p.p1, p.p2].filter(Boolean))
+      )];
+      if (byePlayers1.length) {
+        const isMyBye = byePlayers1.includes(playerName);
+        html += `<div style="padding:4px 8px; font-size:0.82rem; display:flex; align-items:center; gap:6px;
+          ${isMyBye ? 'border-left:3px solid var(--gold); padding-left:8px;' : ''}">
+          <span style="color:var(--muted);">⏸ Bye:</span>
+          <strong style="${isMyBye ? 'color:var(--gold)' : 'color:var(--white)'}">${byePlayers1.map(p => esc(p)).join(', ')}</strong>
         </div>`;
-      });
+      }
 
       roundGames.forEach(game => {
         const score = state.scores.find(
@@ -574,21 +800,21 @@ function gaPage(pageName) {
         const t2style = entered ? (t2win ? winStyle : loseStyle) : (myTeam === 2 ? 'font-weight:700; color:var(--white);' : '');
         const tieWarning = entered && !t1win && !t2win;
 
-        html += `<div style="background:var(--card-bg); border-radius:7px; padding:5px 10px; margin-bottom:3px;">
-          <div style="font-size:0.65rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:3px;">${courtName(game.court)}</div>
-          <div style="display:grid; grid-template-columns:1fr 90px 1fr; align-items:center; gap:4px;">
-            <div style="min-width:0;">
-              <div style="${t1style} font-size:0.85rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p1)}</div>
-              ${game.p2 ? `<div style="${t1style} font-size:0.85rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p2)}</div>` : ''}
-            </div>
-            <div style="display:flex; align-items:center; justify-content:center; gap:3px; ${tieWarning ? 'border:1px solid var(--danger); border-radius:5px;' : ''}">
-              <div class="score-display ${entered ? (t1win ? 'winner' : 'loser') : 'pending'}" style="min-width:24px; text-align:center; font-size:0.9rem;">${entered ? s1 : '—'}</div>
-              <div style="color:var(--muted); font-size:0.7rem;">vs</div>
-              <div class="score-display ${entered ? (t2win ? 'winner' : 'loser') : 'pending'}" style="min-width:24px; text-align:center; font-size:0.9rem;">${entered ? s2 : '—'}</div>
-            </div>
+        html += `<div style="background:var(--card-bg); border-radius:7px; padding:6px 10px; margin-bottom:3px;">
+          <div style="display:grid; grid-template-columns:auto 1fr auto 1fr; align-items:center; gap:6px;">
+            <div style="font-size:0.7rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); padding-right:4px; white-space:nowrap;">${courtName(game.court)}</div>
             <div style="min-width:0; text-align:right;">
-              <div style="${t2style} font-size:0.85rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p3)}</div>
-              ${game.p4 ? `<div style="${t2style} font-size:0.85rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p4)}</div>` : ''}
+              <div style="${t1style} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p1)}</div>
+              ${game.p2 ? `<div style="${t1style} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p2)}</div>` : ''}
+            </div>
+            <div style="display:flex; align-items:center; justify-content:center; gap:4px; flex-shrink:0; padding:0 4px; ${tieWarning ? 'border:1px solid var(--danger); border-radius:5px;' : ''}">
+              <div class="score-display ${entered ? (t1win ? 'winner' : 'loser') : 'pending'}" style="min-width:28px; text-align:center;">${entered ? s1 : '—'}</div>
+              <div style="color:var(--muted); font-size:0.75rem;">vs</div>
+              <div class="score-display ${entered ? (t2win ? 'winner' : 'loser') : 'pending'}" style="min-width:28px; text-align:center;">${entered ? s2 : '—'}</div>
+            </div>
+            <div style="min-width:0;">
+              <div style="${t2style} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p3)}</div>
+              ${game.p4 ? `<div style="${t2style} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p4)}</div>` : ''}
             </div>
           </div>
           ${tieWarning ? `<div style="margin-top:3px; font-size:0.68rem; color:var(--danger); text-align:center;">⚠️ Tied score</div>` : ''}
@@ -608,67 +834,223 @@ function gaPage(pageName) {
     const scoreWkLbl = document.getElementById('player-score-week-label');
     if (scoreWkLbl) scoreWkLbl.textContent = `Session ${week}`;
 
-    const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && (p.type === 'game' || p.type === 'tourn-game'));
+    const allWeekPairings = state.pairings.filter(p => parseInt(p.week) === week);
+    const weekPairings    = allWeekPairings.filter(p => p.type === 'game' || p.type === 'tourn-game');
 
-    if (!weekPairings.length) {
+    if (!allWeekPairings.length) {
       document.getElementById('player-scoresheet-entry').innerHTML =
         '<p class="text-muted">No pairings for this session yet.</p>';
       return;
     }
 
-    const rounds = [...new Set(weekPairings.map(p => p.round))].sort((a,b) => a-b);
+    const rounds = [...new Set(allWeekPairings.map(p => p.round))].sort((a,b) => a-b);
     let html = '';
 
     rounds.forEach(r => {
-      html += `<div class="round-header">Round ${r}</div>`;
-      weekPairings.filter(p => p.round == r).forEach(game => {
+      const roundGames = weekPairings.filter(p => p.round == r);
+      const roundByes  = allWeekPairings.filter(p => p.round == r && p.type === 'bye');
+      const total      = roundGames.length;
+      const scored     = roundGames.filter(g => {
+        const sc = state.scores.find(s => parseInt(s.week) === week && parseInt(s.round) === r && String(s.court) === String(g.court));
+        return sc && sc.score1 !== '' && sc.score1 !== null && sc.score2 !== '' && sc.score2 !== null;
+      }).length;
+      const remaining = total - scored;
+      const allDone   = remaining === 0 && total > 0;
+
+      const badgeColor = allDone ? 'var(--green)' : scored > 0 ? 'var(--gold)' : 'var(--muted)';
+      const badgeText  = allDone ? `${scored}/${total} ✓`
+                       : scored > 0 ? `${scored}/${total} · ${remaining} left`
+                       : `${total} game${total !== 1 ? 's' : ''}`;
+
+      html += `<details open style="margin-bottom:6px;">
+        <summary style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;
+                        padding:5px 8px; border-radius:7px; background:var(--card-bg);
+                        list-style:none; user-select:none;"
+                 class="round-summary">
+          <span style="display:flex; align-items:center; gap:6px;">
+            <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">${!allDone ? '▲' : '▼'}</span>
+            <span style="font-size:0.78rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">Round ${r}</span>
+          </span>
+          <span class="round-badge" style="font-size:0.73rem; color:${badgeColor}; font-weight:600;">${badgeText}</span>
+        </summary>
+        <div style="padding-top:4px;">`;
+
+      roundGames.forEach(game => {
         const existingScore = state.scores.find(
           s => parseInt(s.week) === week && parseInt(s.round) === parseInt(game.round) &&
                String(s.court) === String(game.court)
         );
         const s1 = existingScore ? existingScore.score1 : '';
         const s2 = existingScore ? existingScore.score2 : '';
-        const entered = s1 !== '' && s2 !== '';
-        const t1win = entered && parseInt(s1) > parseInt(s2);
-        const t2win = entered && parseInt(s2) > parseInt(s1);
+        const entered  = s1 !== '' && s2 !== '';
+        const t1win    = entered && parseInt(s1) > parseInt(s2);
+        const t2win    = entered && parseInt(s2) > parseInt(s1);
         const winStyle  = 'color:var(--green); font-weight:700;';
         const loseStyle = 'color:var(--muted);';
 
-        html += `<div class="game-card" style="background:var(--card-bg); border-radius:10px; padding:10px 12px; margin-bottom:8px;"
-            data-week="${week}" data-round="${game.round}" data-court="${game.court}">
-          <div class="court-label" style="font-size:0.7rem; margin-bottom:6px;">${courtName(game.court)}</div>
-          <div style="display:grid; grid-template-columns:1fr 110px 1fr; align-items:center; gap:6px;">
-            <div style="min-width:0;">
-              <div style="${entered ? (t1win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p1)}</div>
-              ${game.p2 ? `<div style="${entered ? (t1win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p2)}</div>` : ''}
-            </div>
-            <div style="display:flex; align-items:center; justify-content:center; gap:4px;">
-              <input type="number" class="score-input" data-score="1"
-                     value="${s1}" min="0" max="30" placeholder="0"
-                     inputmode="numeric"
-                     style="width:44px; text-align:center; padding:4px; -moz-appearance:textfield;">
-              <div style="color:var(--muted); font-size:0.8rem;">—</div>
-              <input type="number" class="score-input" data-score="2"
-                     value="${s2}" min="0" max="30" placeholder="0"
-                     inputmode="numeric"
-                     style="width:44px; text-align:center; padding:4px; -moz-appearance:textfield;">
-            </div>
-            <div style="min-width:0; text-align:right;">
-              <div style="${entered ? (t2win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p3)}</div>
-              ${game.p4 ? `<div style="${entered ? (t2win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p4)}</div>` : ''}
-            </div>
-          </div>
-        </div>`;
+        const p2div = game.p2 ? '<div style="' + (entered ? (t1win ? winStyle : loseStyle) : '') + ' font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + esc(game.p2) + '</div>' : '';
+        const p4div = game.p4 ? '<div style="' + (entered ? (t2win ? winStyle : loseStyle) : '') + ' font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + esc(game.p4) + '</div>' : '';
+
+        html += '<div class="game-card" style="background:var(--card-bg); border-radius:10px; padding:10px 12px; margin-bottom:8px;"'
+             +  ' data-week="' + week + '" data-round="' + game.round + '" data-court="' + game.court + '">'
+             +  '<div style="font-size:0.7rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); margin-bottom:5px;">' + courtName(game.court) + '</div>'
+             +  '<div style="display:grid; grid-template-columns:1fr 110px 1fr; align-items:center; gap:6px;">'
+             +    '<div style="min-width:0;">'
+             +      '<div style="' + (entered ? (t1win ? winStyle : loseStyle) : '') + ' font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + esc(game.p1) + '</div>'
+             +      p2div
+             +    '</div>'
+             +    '<div style="display:flex; align-items:center; justify-content:center; gap:4px;">'
+             +      '<input type="number" class="score-input" data-score="1" value="' + s1 + '" min="0" max="30" placeholder="0" inputmode="numeric" style="width:44px; text-align:center; padding:4px; -moz-appearance:textfield;">'
+             +      '<div style="color:var(--muted); font-size:0.8rem;">–</div>'
+             +      '<input type="number" class="score-input" data-score="2" value="' + s2 + '" min="0" max="30" placeholder="0" inputmode="numeric" style="width:44px; text-align:center; padding:4px; -moz-appearance:textfield;">'
+             +    '</div>'
+             +    '<div style="min-width:0; text-align:right;">'
+             +      '<div style="' + (entered ? (t2win ? winStyle : loseStyle) : '') + ' font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + esc(game.p3) + '</div>'
+             +      p4div
+             +    '</div>'
+             +  '</div>'
+             + '</div>';
       });
+
+      // Byes after games — one compact line
+      const byePlayers = [...new Set(
+        roundByes.flatMap(b => [b.p1, b.p2].filter(Boolean))
+      )];
+      if (byePlayers.length) {
+        const isMyBye = byePlayers.includes(playerName);
+        html += `<div style="padding:4px 8px; font-size:0.82rem; display:flex; align-items:center; gap:6px;
+          ${isMyBye ? 'border-left:3px solid var(--gold); padding-left:8px;' : ''}">
+          <span style="color:var(--muted);">⏸ Bye:</span>
+          <strong style="${isMyBye ? 'color:var(--gold)' : 'color:var(--white)'}">${byePlayers.map(p => esc(p)).join(', ')}</strong>
+        </div>`;
+      }
+
+      html += `</div></details>`;
+    });
+
+    // Snapshot which rounds are currently collapsed before overwriting the DOM
+    const collapsedRounds = new Set();
+    document.querySelectorAll('#player-scoresheet-entry details').forEach(d => {
+      if (!d.open) {
+        const m = (d.querySelector('.round-summary')?.textContent || '').match(/Round\s*(\d+)/);
+        if (m) collapsedRounds.add(parseInt(m[1]));
+      }
     });
 
     document.getElementById('player-scoresheet-entry').innerHTML = html;
+
+    // Restore collapsed state
+    if (collapsedRounds.size) {
+      document.querySelectorAll('#player-scoresheet-entry details').forEach(d => {
+        const m = (d.querySelector('.round-summary')?.textContent || '').match(/Round\s*(\d+)/);
+        if (m && collapsedRounds.has(parseInt(m[1]))) d.open = false;
+      });
+    }
+
+    // ── Auto-save on input — same as admin ──────────────────
+    // As soon as both score inputs for a game are filled, save
+    // immediately to the server without requiring the Save button.
+    document.querySelectorAll('#player-scoresheet-entry .game-card').forEach(card => {
+      const inputs = card.querySelectorAll('.score-input');
+      if (!inputs.length) return;
+
+      inputs.forEach(input => {
+        input.addEventListener('change', async () => {
+          const s1val = card.querySelector('[data-score="1"]').value;
+          const s2val = card.querySelector('[data-score="2"]').value;
+          if (s1val === '' || s2val === '') return; // wait until both filled
+
+          const round  = card.dataset.round;
+          const court  = card.dataset.court;
+          const wk     = parseInt(card.dataset.week);
+          const wkPairings = state.pairings.filter(p => parseInt(p.week) === wk && (p.type === 'game' || p.type === 'tourn-game'));
+          const pairing = wkPairings.find(p => String(p.round) === String(round) && String(p.court) === String(court));
+          if (!pairing) return;
+
+          const score1 = parseInt(s1val) || 0;
+          const score2 = parseInt(s2val) || 0;
+
+          // Warn if overwriting a score entered by someone else
+          const existing = state.scores.find(e =>
+            parseInt(e.week) === wk && parseInt(e.round) === parseInt(round) && String(e.court) === String(court)
+          );
+          if (existing &&
+              (String(existing.score1) !== String(score1) || String(existing.score2) !== String(score2))) {
+            if (!confirm(`⚠️ ${courtName(court)} Round ${round} already has scores ${existing.score1}–${existing.score2}. Overwrite with ${score1}–${score2}?`)) {
+              // Revert inputs to existing values
+              card.querySelector('[data-score="1"]').value = existing.score1;
+              card.querySelector('[data-score="2"]').value = existing.score2;
+              return;
+            }
+          }
+
+          // Warn on tie
+          if (score1 === score2) {
+            if (!confirm(`⚠️ Tied score ${score1}–${score2} on ${courtName(court)}. Save anyway?`)) return;
+          }
+
+          const newScore = {
+            week: wk, round: parseInt(round), court,
+            p1: pairing.p1, p2: pairing.p2, score1,
+            p3: pairing.p3, p4: pairing.p4, score2
+          };
+
+          // Merge into local state
+          state.scores = state.scores.filter(s =>
+            !(parseInt(s.week) === wk && parseInt(s.round) === parseInt(round) && String(s.court) === String(court))
+          );
+          state.scores.push(newScore);
+          state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance);
+
+          // Show saving indicator on the card
+          const indicator = document.createElement('div');
+          indicator.style.cssText = 'font-size:0.65rem; color:var(--muted); text-align:center; margin-top:2px;';
+          indicator.textContent = '⏳ saving…';
+          card.appendChild(indicator);
+
+          try {
+            const weekScores = state.scores.filter(s => parseInt(s.week) === wk);
+
+            // Queue saves per week — prevents concurrent writes causing duplicate rows.
+            // If a save is already in flight for this week, chain onto it.
+            const prevLock = state.saveLocks[wk] || Promise.resolve();
+            const thisLock = prevLock.then(async () => {
+              await API.saveScores(wk, weekScores);
+            });
+            state.saveLocks[wk] = thisLock.catch(() => {}); // keep chain alive on error
+
+            await thisLock;
+            indicator.textContent = '✓ saved';
+            indicator.style.color = 'var(--green)';
+            setTimeout(() => indicator.remove(), 1800);
+            // No re-render needed — badge is hidden on open rounds so there's
+            // nothing to update, and re-rendering would lose focus and clear
+            // any scores currently being typed.
+          } catch (e) {
+            indicator.textContent = '⚠ save failed';
+            indicator.style.color = 'var(--danger)';
+            setTimeout(() => indicator.remove(), 3000);
+          }
+        });
+      });
+    });
   }
 
   // ── Session Standings ───────────────────────────────────────
   function renderPlayerStandings() {
+    const lName = session.leagueName || state.config.leagueName || '';
+    const prefix = lName ? lName + '  ·  ' : '';
+
+    // Update card titles with league name
+    const seasonTitle  = document.getElementById('season-standings-title');
+    const weeklyTitle  = document.getElementById('weekly-standings-title');
+    const trendTitle   = document.getElementById('trend-standings-title');
+    if (seasonTitle) seasonTitle.textContent = prefix + 'Season Standings';
+    if (weeklyTitle) weeklyTitle.textContent = prefix + 'Session Standings';
+    if (trendTitle)  trendTitle.textContent  = prefix + 'Overall Ranking by Session';
+
     // Season tab
-    const season = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod);
+    const season = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance);
     document.getElementById('season-standings-table').innerHTML = renderStandingsTable(season, playerName);
 
     // Weekly tab
@@ -715,8 +1097,14 @@ function gaPage(pageName) {
 
   // ── Full Attendance ────────────────────────────────────────
   function renderFullAttendance() {
-    const weeks = parseInt(state.config.weeks || 8);
+    const weeks = parseInt(state.config.weeks) || 0;
     const players = state.players.filter(p => p.active === true);
+
+    if (!weeks || !players.length) {
+      document.getElementById('full-attendance-grid').innerHTML =
+        '<p class="text-muted">Attendance data not yet loaded.</p>';
+      return;
+    }
 
     let html = '<div class="att-grid">';
     html += '<div class="att-row"><div></div>';
@@ -778,7 +1166,7 @@ function gaPage(pageName) {
           playerName: targetPlayer,
           email:      me.email,
           report,
-          leagueName: state.config.leagueName || 'Pickleball League',
+          leagueName: session.leagueName || state.config.leagueName || 'League',
           replyTo:    state.config.replyTo    || '',
         });
         toast(`Report emailed to ${me.email}.`);
@@ -791,7 +1179,12 @@ function gaPage(pageName) {
       if (!state.currentScoreEntryWeek) state.currentScoreEntryWeek = state.currentSheetWeek;
       document.getElementById('player-score-week-select')?.addEventListener('change', (e) => {
         state.currentScoreEntryWeek = parseInt(e.target.value);
+        // Sync scoresheet selector to match
+        state.currentSheetWeek = state.currentScoreEntryWeek;
+        const sheetSel = document.getElementById('sheet-week-select');
+        if (sheetSel && sheetSel.value != state.currentScoreEntryWeek) sheetSel.value = state.currentScoreEntryWeek;
         renderScoreEntry();
+        renderScoresheet();
       });
 
       document.getElementById('player-btn-save-scores').addEventListener('click', async () => {
@@ -824,6 +1217,24 @@ function gaPage(pageName) {
           if (!alreadyIncluded) scores.push(existing);
         });
 
+        // Warn if any entered scores would overwrite existing different scores
+        const overwritten = scores.filter(s => {
+          const existing = state.scores.find(e =>
+            parseInt(e.week) === week && parseInt(e.round) === s.round && String(e.court) === String(s.court)
+          );
+          return existing &&
+            (String(existing.score1) !== String(s.score1) || String(existing.score2) !== String(s.score2));
+        });
+        if (overwritten.length) {
+          const msg = overwritten.map(s => {
+            const ex = state.scores.find(e =>
+              parseInt(e.week) === week && parseInt(e.round) === s.round && String(e.court) === String(s.court)
+            );
+            return `Round ${s.round} ${courtName(s.court)}: existing ${ex.score1}–${ex.score2} → new ${s.score1}–${s.score2}`;
+          }).join('\n');
+          if (!confirm(`⚠️ These scores already exist and will be overwritten:\n${msg}\n\nSave anyway?`)) return;
+        }
+
         // Warn on ties
         const ties = scores.filter(s => s.score1 === s.score2);
         if (ties.length) {
@@ -836,17 +1247,59 @@ function gaPage(pageName) {
           await API.saveScores(week, scores);
           state.scores = state.scores.filter(s => parseInt(s.week) !== week);
           state.scores.push(...scores);
-          state.standings = Reports.computeStandings(state.scores, state.players, state.pairings);
+          state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, null, state.attendance);
           toast(`Scores for Session ${week} saved!`);
           renderScoreEntry();
         } catch (e) { toast('Save failed: ' + e.message, 'error'); }
         finally { showLoading(false); }
       });
+
+      // Refresh button — fetch latest scores from server
+      const refreshScoreEntry = async () => {
+        const btn = document.getElementById('btn-refresh-score-entry');
+        if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+        const week = state.currentScoreEntryWeek || state.currentSheetWeek;
+        if (!week) {
+          if (btn) { btn.disabled = false; btn.textContent = '🔄 Refresh'; }
+          return;
+        }
+        // Timeout after 15 seconds so the button never hangs forever
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 15000);
+        try {
+          const data = await API.getScores(week);
+          if (data && data.scores) {
+            state.scores = state.scores.filter(s => parseInt(s.week) !== week);
+            state.scores.push(...data.scores.filter(s => parseInt(s.week) === week));
+          }
+          renderScoreEntry();
+        } catch (e) {
+          const msg = e.name === 'AbortError' ? 'Refresh timed out — try again' : e.message;
+          toast('Refresh failed: ' + msg, 'error');
+        } finally {
+          clearTimeout(timer);
+          if (btn) { btn.disabled = false; btn.textContent = '🔄 Refresh'; }
+        }
+      };
+
+      document.getElementById('btn-refresh-score-entry')?.addEventListener('click', refreshScoreEntry);
+
+      // Auto-refresh every 60 seconds when on the score-entry page
+      const autoRefreshInterval = setInterval(() => {
+        const scoreEntryActive = document.getElementById('page-score-entry')?.classList.contains('active');
+        if (scoreEntryActive) refreshScoreEntry();
+      }, 60000);
     }
 
     // Scoresheet week select
     document.getElementById('sheet-week-select')?.addEventListener('change', async (e) => {
       state.currentSheetWeek = parseInt(e.target.value);
+      // Sync score entry selector to match
+      if (canScore) {
+        state.currentScoreEntryWeek = state.currentSheetWeek;
+        const scoreSel = document.getElementById('player-score-week-select');
+        if (scoreSel && scoreSel.value != state.currentSheetWeek) scoreSel.value = state.currentSheetWeek;
+      }
       document.getElementById('player-scoresheet').innerHTML =
         `<div style="text-align:center; padding:32px; color:var(--muted); font-size:0.85rem;">
           <div style="font-size:1.8rem; margin-bottom:8px; animation:spin 0.8s linear infinite; display:inline-block;">⏳</div>
@@ -856,6 +1309,7 @@ function gaPage(pageName) {
       await ensureWeekLoaded(state.currentSheetWeek);
       e.target.disabled = false;
       renderScoresheet();
+      if (canScore) renderScoreEntry();
     });
 
     // Refresh tournament bracket
@@ -958,9 +1412,12 @@ function gaPage(pageName) {
     const sortedOpponents = Object.entries(opponentMap).sort((a, b) => b[1].count - a[1].count);
     const sortedPartners  = Object.entries(partnerMap).sort((a, b) => b[1].count - a[1].count);
 
+    const lName = session.leagueName || state.config.leagueName || '';
+    const reportTitle = lName ? `${esc(lName)}  ·  ${esc(name)}` : esc(name);
+
     let html = `<div class="card">
       <div class="card-header">
-        <div class="card-title">${esc(name)}</div>
+        <div class="card-title">${reportTitle}</div>
         ${s ? `<div>
           <span class="badge badge-gold">Rank #${s.rank}</span>
           <span class="badge badge-green ml-1">${Reports.wl(s.wins, s.losses)}</span>
@@ -1016,6 +1473,10 @@ function gaPage(pageName) {
     if (!standings || !standings.length) return '<p class="text-muted">No standings data yet.</p>';
     const rm = state.config.rankingMethod || 'avgptdiff';
     const usePtsPct = rm === 'ptspct';
+    const minPct = state.config.minParticipation !== null && state.config.minParticipation !== undefined
+      ? parseFloat(state.config.minParticipation) / 100 : 0.50;
+    const hasParticipation = standings.some(s => s.participationPct !== null);
+
     const rows = standings.filter(s => s.games > 0).map((s, i) => {
       const isMe = s.name === highlightPlayer;
       const top = i < 3 ? 'top' : '';
@@ -1024,18 +1485,38 @@ function gaPage(pageName) {
       const secCol = usePtsPct
         ? `<td>${ptsPctVal}</td>`
         : `<td>${s.avgPtDiff > 0 ? '+' : ''}${s.avgPtDiff.toFixed(1)}</td>`;
+
+      let partHtml = '';
+      if (hasParticipation) {
+        if (s.participationPct === null) {
+          partHtml = `<td style="color:var(--muted);">—</td>`;
+        } else {
+          const eligible = s.participationPct >= minPct;
+          const pctStr = Math.round(s.participationPct * 100) + '%';
+          partHtml = `<td style="white-space:nowrap;">
+            <span style="color:${eligible ? 'var(--green)' : 'var(--danger)'}; font-weight:600;">${pctStr}</span>
+            <span title="${eligible ? 'Prize eligible' : 'Below minimum — ineligible for prizes'}"
+              style="margin-left:4px; font-size:0.8rem;">${eligible ? '✓' : '✗'}</span>
+          </td>`;
+        }
+      }
+
       return `<tr ${isMe ? 'style="background:rgba(94,194,106,0.08);"' : ''}>
         <td class="rank-cell ${top}">${s.rank}</td>
         <td class="player-name" ${isMe ? 'style="color:var(--green);"' : ''}>${esc(s.name)}${isMe ? ' ◀' : ''}</td>
         <td>${s.wins}/${s.losses}</td>
         <td>${Reports.pct(s.winPct)}</td>
         ${secCol}
+        ${hasParticipation ? partHtml : ''}
         <td class="text-muted">${s.games}</td>
       </tr>`;
     });
-    const secHeader = usePtsPct ? '<th>Pts%</th>' : '<th title="Average point differential per game — your average score minus your opponent\'s average score. Positive means you score more than your opponents on average; used as a tiebreaker when win percentage is equal." style="cursor:help;">Avg+/-</th>';
+    const secHeader = usePtsPct ? '<th>Pts%</th>' : '<th title="Average point differential per game — your average score minus your opponent&#39;s average score. Positive means you score more than your opponents on average; used as a tiebreaker when win percentage is equal." style="cursor:help;">Avg+/-</th>';
+    const pctHeader = hasParticipation
+      ? `<th title="(Games + byes) / total league rounds. Min: ${Math.round(minPct*100)}% for prize eligibility" style="cursor:help;">Partic.</th>`
+      : '';
     return `<table class="compact-table">
-      <thead><tr><th>#</th><th>Player</th><th>W/L</th><th>Win%</th>${secHeader}<th>Games</th></tr></thead>
+      <thead><tr><th>#</th><th>Player</th><th>W/L</th><th>Win%</th>${secHeader}${pctHeader}<th>Games</th></tr></thead>
       <tbody>${rows.join('')}</tbody>
     </table>`;
   }
@@ -1377,18 +1858,24 @@ function gaPage(pageName) {
         const winStyle = 'color:var(--green); font-weight:700;', loseStyle = 'color:rgba(255,255,255,0.35);';
         const t1style = scored ? (t1win ? winStyle : loseStyle) : (isMe1 ? 'color:var(--white); font-weight:700;' : 'color:var(--white);');
         const t2style = scored ? (!t1win ? winStyle : loseStyle) : (isMe2 ? 'color:var(--white); font-weight:700;' : 'color:var(--white);');
-        const scoreHtml = scored
-          ? `<span style="font-size:0.78rem; font-weight:700; color:var(--white);">${s1}–${s2}</span>`
-          : `<span style="font-size:0.7rem; color:var(--muted);">pending</span>`;
+        const score1Html = scored
+          ? `<span style="font-size:0.82rem; font-weight:700; color:${t1win ? 'var(--green)' : 'rgba(255,255,255,0.5)'}; min-width:22px; text-align:right;">${s1}</span>`
+          : `<span style="font-size:0.72rem; color:var(--muted); min-width:22px; text-align:right;">—</span>`;
+        const score2Html = scored
+          ? `<span style="font-size:0.82rem; font-weight:700; color:${!t1win ? 'var(--green)' : 'rgba(255,255,255,0.5)'}; min-width:22px; text-align:right;">${s2}</span>`
+          : `<span style="font-size:0.72rem; color:var(--muted); min-width:22px; text-align:right;">—</span>`;
         const border = (isMe1||isMe2) ? 'border:1px solid rgba(94,194,106,0.4);' : 'border:1px solid rgba(255,255,255,0.08);';
 
         html += `<div style="background:var(--card-bg); ${border} border-radius:8px; padding:7px 10px; margin:2px 4px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
             <div style="${t1style} font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px;">${teamLabel(g.p1, g.p2)}</div>
-            <div style="margin-left:6px; flex-shrink:0;">${scoreHtml}</div>
+            <div style="margin-left:6px; flex-shrink:0;">${score1Html}</div>
           </div>
           <div style="border-top:1px solid rgba(255,255,255,0.06); margin:3px 0;"></div>
-          <div style="${t2style} font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px; margin-top:4px;">${teamLabel(g.p3, g.p4)}</div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+            <div style="${t2style} font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px;">${teamLabel(g.p3, g.p4)}</div>
+            <div style="margin-left:6px; flex-shrink:0;">${score2Html}</div>
+          </div>
         </div>`;
       });
 

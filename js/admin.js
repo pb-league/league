@@ -12,13 +12,15 @@ function gaPage(pageName) {
 }
 
 // ── QR Code modal ────────────────────────────────────────────
-function showLeagueQR(event, url) {
+function showLeagueQR(event, url, leagueName) {
   event.preventDefault();
   const modal = document.getElementById('qr-modal');
   const wrap  = document.getElementById('qr-canvas-wrap');
   const label = document.getElementById('qr-url-label');
+  const title = document.getElementById('qr-modal-title');
   if (!modal || !wrap) return;
 
+  if (title) title.textContent = leagueName ? `${leagueName} — QR Code` : 'League QR Code';
   label.textContent = url;
   wrap.innerHTML = ''; // clear previous
 
@@ -48,6 +50,20 @@ function showLeagueQR(event, url) {
   modal.style.display = 'flex';
   modal.onclick = e => { if (e.target === modal) modal.style.display = 'none'; };
 }
+
+// ── Role display config ──────────────────────────────────────
+const ROLE_ORDER  = ['admin','assistant','scorer','','sub','spectator','pend'];
+const ROLE_LABELS = {
+  admin: '⚙️ League Admin', assistant: '🤝 Admin Assistant',
+  scorer: '✏️ Scorer', '': '🎾 Players',
+  sub: '🔄 Substitutes', spectator: '👁 Spectators', pend: '⏳ Pending Approval'
+};
+const ROLE_COLORS = {
+  admin: 'rgba(45,122,58,0.25)', assistant: 'rgba(122,155,181,0.2)',
+  scorer: 'rgba(94,194,106,0.15)', '': 'rgba(255,255,255,0.06)',
+  sub: 'rgba(232,184,75,0.12)', spectator: 'rgba(232,184,75,0.08)',
+  pend: 'rgba(224,85,85,0.12)'
+};
 
 // ============================================================
 // admin.js — Admin dashboard logic
@@ -120,7 +136,9 @@ function showLeagueQR(event, url) {
     pairings: [], scores: [], standings: [],
     currentPairWeek: 1, currentScoreWeek: 1,
     currentStandWeek: 1, currentTournWeek: 1, pendingPairings: null,
-    tournament: null  // { week, mode, round, seeds }
+    tournament: null,  // { week, mode, round, seeds }
+    bestGeneration: null, // { score, pairings, breakdown, normalizedWeights, inputHash, totalTries }
+    saveLocks: {}       // per-week save queue to prevent concurrent writes
   };
 
   // ── Load persisted week selections from localStorage ────────
@@ -159,6 +177,7 @@ function showLeagueQR(event, url) {
     state.pairings   = data.pairings || [];
     state.scores     = data.scores || [];
     state.standings  = data.standings || [];
+    if (data.limits) state.limits = data.limits;
   } catch (e) {
     toast('Failed to load data: ' + e.message, 'error');
   } finally {
@@ -169,8 +188,16 @@ function showLeagueQR(event, url) {
   gaPage('Admin Dashboard');
   gaEvent('login', { role: userRole });
   renderAll();
+  applyLimitRestrictions();
   setupNav();
   setupEvents();
+  // Reconcile pair and score week selectors — they should always show the same session.
+  // If saved prefs diverged, use the higher value (most recent session).
+  {
+    const reconciled = Math.max(state.currentPairWeek || 1, state.currentScoreWeek || 1);
+    state.currentPairWeek  = reconciled;
+    state.currentScoreWeek = reconciled;
+  }
   // Populate all session dropdowns with correct options and saved selections
   populateWeekSelect('pair-week-select',  'currentPairWeek');
   populateWeekSelect('score-week-select', 'currentScoreWeek');
@@ -193,8 +220,15 @@ function showLeagueQR(event, url) {
         if (page === 'standings') renderStandings();
         if (page === 'tourn-results') renderAdminTournamentResults();
         if (page === 'player-report') renderPlayerReportSelect();
+        if (page === 'dashboard') refreshDashboard();
         if (page === 'scores') {
-          // Fetch latest scores from server before rendering — players may have entered scores
+          // Show loading indicator immediately before fetching
+          const scoreEl = document.getElementById('scoresheet');
+          if (scoreEl) scoreEl.innerHTML = `
+            <div style="text-align:center; padding:32px; color:var(--muted); font-size:0.85rem;">
+              <div style="font-size:1.8rem; margin-bottom:8px; animation:spin 0.8s linear infinite; display:inline-block;">⏳</div>
+              <div>Loading Session ${state.currentScoreWeek}…</div>
+            </div>`;
           API.getScores(state.currentScoreWeek).then(data => {
             if (data && data.scores) {
               const week = state.currentScoreWeek;
@@ -205,7 +239,21 @@ function showLeagueQR(event, url) {
           }).catch(() => renderScoresheet());
         }
         if (page === 'pairings') { renderPairingsPreview(); renderEditPairingForm(); }
-        if (page === 'attendance') renderAttendance();
+        if (page === 'attendance') {
+          // Show refreshing indicator immediately, then fetch and re-render
+          const grid = document.getElementById('attendance-grid');
+          if (grid) {
+            const indicator = document.createElement('div');
+            indicator.id = 'att-refresh-indicator';
+            indicator.style.cssText = 'font-size:0.78rem; color:var(--muted); padding:8px 4px; display:flex; align-items:center; gap:6px;';
+            indicator.innerHTML = '<span style="animation:spin 0.8s linear infinite; display:inline-block;">⏳</span> Refreshing attendance…';
+            grid.prepend(indicator);
+          }
+          API.getAttendance().then(data => {
+            if (data && data.attendance) state.attendance = data.attendance;
+            renderAttendance();
+          }).catch(() => renderAttendance());
+        }
         if (page === 'leagues') renderLeagues();
         if (page === 'head-to-head') renderHeadToHead();
       });
@@ -420,20 +468,51 @@ function showLeagueQR(event, url) {
       </div>`;
   }
 
+  // ── Dashboard Refresh ──────────────────────────────────────
+  async function refreshDashboard() {
+    const btn = document.getElementById('btn-refresh-dashboard');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+    try {
+      const data = await API.getAllData();
+      state.scores    = data.scores    || state.scores;
+      state.pairings  = data.pairings  || state.pairings;
+      state.standings = data.standings || state.standings;
+      state.players   = data.players   || state.players;
+      state.attendance= data.attendance|| state.attendance;
+      if (data.limits) state.limits = data.limits;
+      renderDashboard();
+    } catch (e) {
+      toast('Refresh failed: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '🔄 Refresh'; }
+    }
+  }
+
   // ── Dashboard ──────────────────────────────────────────────
   function renderDashboard() {
     document.getElementById('dash-league-name').textContent =
-      state.config.leagueName || 'League Dashboard';
+      Auth.getSession()?.leagueName || state.config.leagueName || 'League Dashboard';
 
     const c = state.config;
     const infoParts = [];
     if (c.location)    infoParts.push(`<span>📍 ${esc(c.location)}</span>`);
     if (c.sessionTime) infoParts.push(`<span>🕐 ${esc(c.sessionTime)}</span>`);
     if (c.notes)       infoParts.push(`<span>📌 ${esc(c.notes)}</span>`);
-    if (c.leagueUrl) {
-      infoParts.push(`<span style="display:inline-flex; align-items:center; gap:6px;">
-        🔗 <a href="${esc(c.leagueUrl)}" target="_blank" style="color:var(--green);">League Link</a>
-        <a href="#" onclick="showLeagueQR(event, '${esc(c.leagueUrl)}')"
+    if (c.leagueUrl || Auth.getSession()?.leagueId) {
+      // Always derive URL from leagueId so it stays correct regardless of config value
+      const sess = Auth.getSession();
+      const lid  = sess?.leagueId || '';
+      const base = (c.leagueUrl || '').replace(/([?&]league=)[^&]*.*$/, '').replace(/[?&]$/, '')
+                || 'https://pb-league.github.io/league/index.html';
+      const leagueUrl = lid ? base + '?league=' + encodeURIComponent(lid) : (c.leagueUrl || '');
+      const lName = sess?.leagueName || state.config.leagueName || '';
+
+      infoParts.push(`<span style="display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap;">
+        🔗 <a href="${esc(leagueUrl)}" target="_blank" style="color:var(--green);">${esc(leagueUrl)}</a>
+        <button onclick="navigator.clipboard.writeText('${leagueUrl.replace(/'/g, "\\'")}').then(()=>{ this.textContent='✓ Copied'; setTimeout(()=>this.textContent='Copy',1500); })"
+          style="font-size:0.72rem; padding:1px 8px; border-radius:4px; cursor:pointer; line-height:1.6;
+                 background:rgba(94,194,106,0.12); color:var(--green); border:1px solid rgba(94,194,106,0.3);">Copy</button>
+        <a href="#" onclick="showLeagueQR(event, '${esc(leagueUrl)}', '${esc(lName)}')"
           style="color:var(--muted); font-size:0.75rem; text-decoration:none; border:1px solid rgba(255,255,255,0.15);
                  border-radius:4px; padding:1px 6px; line-height:1.6;"
           title="Show QR code">&#x25A6; QR</a>
@@ -519,8 +598,22 @@ function showLeagueQR(event, url) {
             <th>Session</th><th>Round</th><th>Entered</th><th>Total</th><th style="min-width:80px;">Progress</th>
           </tr></thead><tbody>`;
 
-        weeks.forEach(w => {
+        // Show all configured sessions (1..totalWeeks), not just those with pairings
+        const allWeeks = Array.from({ length: totalWeeks }, (_, i) => i + 1);
+        allWeeks.forEach(w => {
           const rounds = [...new Set(gamePairings.filter(p=>parseInt(p.week)===w).map(p=>parseInt(p.round)))].sort((a,b)=>a-b);
+
+          if (!rounds.length) {
+            // Session exists in config but has no pairings yet
+            html += `<tr>
+              <td style="font-weight:600; color:var(--white);">S${w}</td>
+              <td style="color:var(--muted);">—</td>
+              <td style="color:var(--muted);">—</td>
+              <td style="color:var(--muted);">—</td>
+              <td style="color:var(--muted); font-size:0.78rem;">No pairings</td>
+            </tr>`;
+            return;
+          }
           rounds.forEach((r, ri) => {
             const roundGames = gamePairings.filter(p => parseInt(p.week)===w && parseInt(p.round)===r);
             const total = roundGames.length;
@@ -555,6 +648,71 @@ function showLeagueQR(event, url) {
         progressEl.innerHTML = html;
       }
     }
+    // ── League Restrictions box ──────────────────────────────
+    const limitsEl     = document.getElementById('dash-limits');
+    const limitsDetail = document.getElementById('dash-limits-details');
+    const L2 = state.limits || {};
+    const hasLimits = L2.expiryDays != null || L2.maxPlayers != null ||
+                      L2.maxCourts != null  || L2.maxRounds  != null || L2.maxSessions != null;
+
+    if (limitsDetail) limitsDetail.style.display = hasLimits ? '' : 'none';
+
+    if (limitsEl && hasLimits) {
+      const totalWeeks  = parseInt(state.config.weeks  || 0);
+      const totalCourts = parseInt(state.config.courts || 0);
+      const activePlCount = state.players.filter(p => p.active === true).length;
+
+      const limitRow = (label, used, max, unit = '') => {
+        if (max == null) return '';
+        const over = used !== null && used > max;
+        const pct  = used !== null && max > 0 ? Math.min(100, Math.round(used / max * 100)) : 0;
+        const barColor = over ? 'var(--danger)' : pct >= 80 ? 'var(--gold)' : 'var(--green)';
+        return `<tr>
+          <td style="color:var(--muted); font-size:0.82rem; padding:6px 12px 6px 0; white-space:nowrap;">${label}</td>
+          <td style="font-size:0.82rem; padding:6px 8px; color:${over ? 'var(--danger)' : 'var(--white)'}; font-weight:${over?'700':'400'};">
+            ${used !== null ? used + (unit ? ' '+unit : '') : '—'} / ${max}${unit ? ' '+unit : ''}
+          </td>
+          <td style="padding:6px 0; min-width:80px;">
+            <div style="height:5px; background:rgba(255,255,255,0.08); border-radius:3px; overflow:hidden;">
+              <div style="width:${pct}%; height:100%; background:${barColor}; border-radius:3px; transition:width 0.3s;"></div>
+            </div>
+          </td>
+          ${over ? '<td style="font-size:0.75rem; color:var(--danger); padding:6px 0 6px 8px;">⚠ over limit</td>' : '<td></td>'}
+        </tr>`;
+      };
+
+      // Expiry row
+      let expiryRow = '';
+      if (L2.expiryDays != null) {
+        const expLabel = L2.daysRemaining != null
+          ? (L2.expired ? '<span style="color:var(--danger);">Expired</span>'
+             : `<span style="color:${L2.daysRemaining <= 14 ? 'var(--gold)' : 'var(--muted)'};">${L2.daysRemaining} days remaining</span>`)
+          : '—';
+        const created = L2.createdDate ? ` <span style="color:var(--muted); font-size:0.75rem;">(from ${L2.createdDate})</span>` : '';
+        expiryRow = `<tr>
+          <td style="color:var(--muted); font-size:0.82rem; padding:6px 12px 6px 0;">Expiry</td>
+          <td colspan="3" style="font-size:0.82rem; padding:6px 0;">${L2.expiryDays} days${created} — ${expLabel}</td>
+        </tr>`;
+      }
+
+      limitsEl.innerHTML = `
+        <table style="width:100%; border-collapse:collapse;">
+          <thead><tr>
+            <th style="text-align:left; font-size:0.72rem; color:var(--muted); letter-spacing:0.06em; text-transform:uppercase; padding:4px 12px 8px 0;">Restriction</th>
+            <th style="text-align:left; font-size:0.72rem; color:var(--muted); letter-spacing:0.06em; text-transform:uppercase; padding:4px 8px 8px;">Used / Max</th>
+            <th style="padding:4px 0 8px;"></th>
+            <th></th>
+          </tr></thead>
+          <tbody>
+            ${expiryRow}
+            ${limitRow('Active Players',  activePlCount,  L2.maxPlayers)}
+            ${limitRow('Courts',          totalCourts,    L2.maxCourts)}
+            ${limitRow('Rounds/Session',  null,           L2.maxRounds)}
+            ${limitRow('Sessions',        totalWeeks,     L2.maxSessions)}
+          </tbody>
+        </table>`;
+    }
+
     document.getElementById('dash-version').innerHTML =
       `<div style="text-align:right; font-size:0.7rem; color:rgba(255,255,255,0.2); margin-top:10px;">
         v${APP_VERSION} &nbsp;·&nbsp; Built ${APP_BUILD_DATE}
@@ -573,23 +731,33 @@ function showLeagueQR(event, url) {
   // ── Setup ──────────────────────────────────────────────────
   function renderSetup() {
     const c = state.config;
+    // Apply limit caps after setup fields are populated (called at end of this function)
     document.getElementById('cfg-name').value     = c.leagueName  || '';
     document.getElementById('cfg-location').value = c.location    || '';
     document.getElementById('cfg-time').value     = c.sessionTime || '';
     document.getElementById('cfg-notes').value    = c.notes       || '';
     // Auto-populate URL if blank using current leagueId
     const leagueId = Auth.getSession()?.leagueId || '';
-    const defaultUrl = 'https://pb-league.github.io/league/index.html?league=' + leagueId;
-    document.getElementById('cfg-league-url').value = c.leagueUrl || defaultUrl;
-    document.getElementById('cfg-allow-registration').checked = c.allowRegistration === true;
+    // URL is always derived from leagueId — not editable, preserves any custom base URL from config
+    const baseUrl = (c.leagueUrl || '').replace(/([?&]league=)[^&]*.*$/, '').replace(/[?&]$/, '')
+                 || 'https://pb-league.github.io/league/index.html';
+    const generatedUrl = leagueId ? baseUrl + '?league=' + encodeURIComponent(leagueId) : (c.leagueUrl || '');
+    const urlEl = document.getElementById('cfg-league-url');
+    if (urlEl) urlEl.value = generatedUrl;
+    const idDisplay = document.getElementById('cfg-league-id-display');
+    if (idDisplay) idDisplay.value = leagueId;
+    document.getElementById('cfg-allow-registration').checked = c.allowRegistration === true || c.allowRegistration === 'true';
+    const adminOnlyEl = document.getElementById('cfg-admin-only-email');
+    if (adminOnlyEl) adminOnlyEl.checked = c.adminOnlyEmail === true || c.adminOnlyEmail === 'true';
     document.getElementById('cfg-reg-code').value         = c.registrationCode   || '';
     document.getElementById('cfg-reg-max-pending').value  = c.maxPendingReg      || 10;
     // Show/hide registration options based on checkbox
     document.getElementById('cfg-registration-options').style.display =
-      c.allowRegistration ? '' : 'none';
+      (c.allowRegistration === true || c.allowRegistration === 'true') ? '' : 'none';
     document.getElementById('cfg-allow-registration').addEventListener('change', function() {
       document.getElementById('cfg-registration-options').style.display = this.checked ? '' : 'none';
     });
+
     document.getElementById('cfg-rules').value    = c.rules       || '';
     document.getElementById('cfg-admin-pin').value = '';
     document.getElementById('cfg-reply-to').value    = c.replyTo || '';
@@ -599,6 +767,9 @@ function showLeagueQR(event, url) {
     document.getElementById('cfg-tries').value   = c.optimizerTries || 100;
     document.getElementById('cfg-game-mode').value      = c.gameMode      || 'doubles';
     document.getElementById('cfg-ranking-method').value = c.rankingMethod || 'avgptdiff';
+    document.getElementById('cfg-min-participation').value = c.minParticipation !== undefined ? c.minParticipation : '';
+    // Cap inputs per registry limits
+    applyLimitRestrictions();
 
     // Optimizer weights
     const D = Pairings.DEFAULTS;
@@ -610,6 +781,10 @@ function showLeagueQR(event, url) {
     document.getElementById('cfg-w-session-bye').value       = c.wSessionBye       ?? D.sessionByeWeight;
     document.getElementById('cfg-w-rank-balance').value           = c.wRankBalance           ?? D.rankBalanceWeight;
     document.getElementById('cfg-w-rank-std-dev').value            = c.wRankStdDev            ?? D.rankStdDevWeight;
+    const localImproveEl = document.getElementById('cfg-local-improve');
+    if (localImproveEl) localImproveEl.checked = c.localImprove === undefined ? true : (c.localImprove === true || c.localImprove === 'true');
+    const swapPassesEl = document.getElementById('cfg-swap-passes');
+    if (swapPassesEl) swapPassesEl.value = c.swapPasses !== undefined ? c.swapPasses : 5;
 
     // Session dates
     const weeks = parseInt(c.weeks || 8);
@@ -643,41 +818,82 @@ function showLeagueQR(event, url) {
   }
 
   // ── Players ────────────────────────────────────────────────
+  function makePlayerRow(p, i) {
+    const row = document.createElement('div');
+    row.className = 'player-row';
+    row.style.gridTemplateColumns = 'minmax(120px,1fr) 68px 90px minmax(140px,180px) 44px 44px 54px 90px 72px 34px';
+    row.innerHTML = `
+      <input class="form-control" data-field="name" data-idx="${i}" value="${esc(p.name)}" placeholder="Player name">
+      <input class="form-control" data-field="pin" data-idx="${i}" type="text" value="${esc(String(p.pin || ''))}" placeholder="PIN" maxlength="8">
+      <select class="form-control" data-field="group" data-idx="${i}">
+        <option value="M" ${p.group==='M'?'selected':''}>Male</option>
+        <option value="F" ${p.group==='F'?'selected':''}>Female</option>
+        <option value="Either" ${p.group==='Either'?'selected':''}>Either</option>
+      </select>
+      <input class="form-control" data-field="email" data-idx="${i}" type="email" value="${esc(p.email || '')}" placeholder="email@example.com">
+      <input type="checkbox" data-field="notify" data-idx="${i}" ${p.notify ? 'checked' : ''} style="width:18px;height:18px;margin:auto;">
+      <input type="checkbox" data-field="canScore" data-idx="${i}" ${p.canScore ? 'checked' : ''} style="width:18px;height:18px;margin:auto;">
+      <input class="form-control" data-field="initialRank" data-idx="${i}" type="number" min="1" value="${p.initialRank || ''}" placeholder="—" style="text-align:center;">
+      <select class="form-control" data-field="role" data-idx="${i}">
+        <option value="" ${!p.role?'selected':''}>Player</option>
+        <option value="scorer" ${p.role==='scorer'?'selected':''}>Scorer</option>
+        <option value="assistant" ${p.role==='assistant'?'selected':''}>Assistant</option>
+        <option value="admin" ${p.role==='admin'?'selected':''}>Admin</option>
+        <option value="spectator" ${p.role==='spectator'?'selected':''}>Spectator</option>
+        <option value="sub" ${p.role==='sub'?'selected':''}>Sub (substitute)</option>
+      </select>
+      <select class="form-control" data-field="active" data-idx="${i}">
+        <option value="true" ${p.active===true?'selected':''}>Active</option>
+        <option value="pend" ${p.active==='pend'?'selected':''}>Pending</option>
+        <option value="false" ${p.active===false?'selected':''}>Inactive</option>
+      </select>
+      <button class="btn btn-danger" data-remove="${i}" style="padding:6px 10px;">✕</button>
+    `;
+    return row;
+  }
+
   function renderPlayers() {
     const list = document.getElementById('player-list');
     list.innerHTML = '';
+
+    // Group players by role key
+    const groups = {};
+    ROLE_ORDER.forEach(r => { groups[r] = []; });
     state.players.forEach((p, i) => {
-      const row = document.createElement('div');
-      row.className = 'player-row';
-      row.style.gridTemplateColumns = 'minmax(120px,1fr) 68px 90px minmax(140px,180px) 44px 44px 54px 90px 72px 34px';
-      row.innerHTML = `
-        <input class="form-control" data-field="name" data-idx="${i}" value="${esc(p.name)}" placeholder="Player name">
-        <input class="form-control" data-field="pin" data-idx="${i}" type="text" value="${esc(String(p.pin || ''))}" placeholder="PIN" maxlength="8">
-        <select class="form-control" data-field="group" data-idx="${i}">
-          <option value="M" ${p.group==='M'?'selected':''}>Male</option>
-          <option value="F" ${p.group==='F'?'selected':''}>Female</option>
-          <option value="Either" ${p.group==='Either'?'selected':''}>Either</option>
-        </select>
-        <input class="form-control" data-field="email" data-idx="${i}" type="email" value="${esc(p.email || '')}" placeholder="email@example.com">
-        <input type="checkbox" data-field="notify" data-idx="${i}" ${p.notify ? 'checked' : ''} style="width:18px;height:18px;margin:auto;">
-        <input type="checkbox" data-field="canScore" data-idx="${i}" ${p.canScore ? 'checked' : ''} style="width:18px;height:18px;margin:auto;">
-        <input class="form-control" data-field="initialRank" data-idx="${i}" type="number" min="1" value="${p.initialRank || ''}" placeholder="—" style="text-align:center;">
-        <select class="form-control" data-field="role" data-idx="${i}">
-          <option value="" ${!p.role?'selected':''}>Player</option>
-          <option value="scorer" ${p.role==='scorer'?'selected':''}>Scorer</option>
-          <option value="assistant" ${p.role==='assistant'?'selected':''}>Assistant</option>
-          <option value="admin" ${p.role==='admin'?'selected':''}>Admin</option>
-          <option value="spectator" ${p.role==='spectator'?'selected':''}>Spectator</option>
-          <option value="sub" ${p.role==='sub'?'selected':''}>Sub (substitute)</option>
-        </select>
-        <select class="form-control" data-field="active" data-idx="${i}">
-          <option value="true" ${p.active===true?'selected':''}>Active</option>
-          <option value="pend" ${p.active==='pend'?'selected':''}>Pending</option>
-          <option value="false" ${p.active===false?'selected':''}>Inactive</option>
-        </select>
-        <button class="btn btn-danger" data-remove="${i}" style="padding:6px 10px;">✕</button>
-      `;
-      list.appendChild(row);
+      const rk = p.active === 'pend' ? 'pend' : (p.role || '');
+      if (!groups[rk]) groups[rk] = [];
+      groups[rk].push({ p, i });
+    });
+
+    ROLE_ORDER.forEach(rk => {
+      const members = groups[rk] || [];
+      if (!members.length) return;
+
+      const label = ROLE_LABELS[rk] || rk;
+      const color = ROLE_COLORS[rk] || 'rgba(255,255,255,0.06)';
+
+      // Collapsible group header
+      const details = document.createElement('details');
+      details.open = true;
+      details.style.marginBottom = '6px';
+
+      const summary = document.createElement('summary');
+      summary.style.cssText = `list-style:none; cursor:pointer; display:flex; align-items:center;
+        gap:8px; padding:6px 12px; border-radius:8px; background:${color};
+        border:1px solid rgba(255,255,255,0.07); user-select:none; margin-bottom:4px;`;
+      summary.innerHTML = `
+        <span class="collapse-arrow" style="font-size:0.68rem; color:var(--green); opacity:0.7;">▲</span>
+        <span style="font-weight:600; font-size:0.82rem; color:var(--white);">${label}</span>
+        <span style="font-size:0.72rem; color:var(--muted); margin-left:auto;">${members.length} player${members.length!==1?'s':''}</span>`;
+      details.appendChild(summary);
+
+      const body = document.createElement('div');
+      body.style.paddingBottom = '4px';
+      members.forEach(({ p, i }) => {
+        body.appendChild(makePlayerRow(p, i));
+      });
+      details.appendChild(body);
+      list.appendChild(details);
     });
 
     // Live update
@@ -714,7 +930,8 @@ function showLeagueQR(event, url) {
   // ── Attendance ─────────────────────────────────────────────
   function renderAttendance() {
     const weeks = parseInt(state.config.weeks || 8);
-    const players = state.players.filter(p => p.active !== false);
+    // Exclude pending players — not yet authorized
+    const attPlayers = state.players.filter(p => p.active !== 'pend');
 
     let html = '<div class="att-grid">';
 
@@ -727,7 +944,7 @@ function showLeagueQR(event, url) {
     }
     html += '</div>';
 
-    players.forEach(p => {
+    attPlayers.forEach(p => {
       html += '<div class="att-row">';
       html += `<div class="att-player-name">${esc(p.name)}</div>`;
       for (let w = 1; w <= weeks; w++) {
@@ -742,7 +959,7 @@ function showLeagueQR(event, url) {
     html += '<div class="att-row" style="border-top:1px solid rgba(255,255,255,0.1); margin-top:4px; padding-top:4px;">';
     html += '<div class="att-player-name" style="font-size:0.75rem; color:var(--muted); font-weight:600;">Players In</div>';
     for (let w = 1; w <= weeks; w++) {
-      const count = players.filter(p => {
+      const count = attPlayers.filter(p => {
         const rec = state.attendance.find(a => a.player === p.name && String(a.week) === String(w));
         return rec && rec.status === 'present';
       }).length;
@@ -750,13 +967,36 @@ function showLeagueQR(event, url) {
     }
     html += '</div>';
 
+    // In mixed-doubles mode, show M / F / Either breakdown per session
+    if ((state.config.gameMode || 'doubles') === 'mixed-doubles') {
+      const groupRows = [
+        { key: 'M', label: 'Male (M)', color: 'var(--muted)' },
+        { key: 'F', label: 'Female (F)', color: 'var(--muted)' },
+        { key: 'Either', label: 'Either (E)', color: 'var(--muted)' },
+      ];
+      groupRows.forEach(({ key, label, color }) => {
+        const groupPlayers = attPlayers.filter(p => (p.group || 'M') === key);
+        if (!groupPlayers.length) return;
+        html += `<div class="att-row" style="border-top:1px dashed rgba(255,255,255,0.06); padding-top:2px;">`;
+        html += `<div class="att-player-name" style="font-size:0.7rem; color:${color}; font-weight:500;">${esc(label)}</div>`;
+        for (let w = 1; w <= weeks; w++) {
+          const count = groupPlayers.filter(p => {
+            const rec = state.attendance.find(a => a.player === p.name && String(a.week) === String(w));
+            return rec && rec.status === 'present';
+          }).length;
+          html += `<div class="att-week-header" style="font-size:0.78rem; color:${count > 0 ? 'var(--white)' : 'var(--muted)'}; font-weight:${count > 0 ? '600' : '400'};">${count}</div>`;
+        }
+        html += '</div>';
+      });
+    }
+
     html += '</div>';
     document.getElementById('attendance-grid').innerHTML = html;
 
     document.querySelectorAll('.att-cell.editable').forEach(cell => {
       cell.addEventListener('click', async () => {
         const isSpectatorRole = (() => { const p = state.players.find(pl => pl.name === cell.dataset.player); return p && p.role === 'spectator'; })();
-        const states = isSpectatorRole ? ['absent', 'tbd'] : ['present', 'absent', 'tbd', 'sit-out'];
+        const states = isSpectatorRole ? ['absent', 'tbd'] : ['tbd', 'present', 'absent', 'sit-out'];
         const cur = states.indexOf(cell.className.split(' ').find(c => states.includes(c)));
         const next = states[(cur + 1) % states.length];
         const player = cell.dataset.player;
@@ -770,7 +1010,7 @@ function showLeagueQR(event, url) {
         if (rec) { rec.status = next; } else { state.attendance.push({ player, week, status: next }); }
 
         // Live-update the totals cell for this week
-        const players = state.players.filter(p => p.active !== false);
+        const players = state.players.filter(p => p.active !== 'pend');
         const count = players.filter(p => {
           const r = state.attendance.find(a => a.player === p.name && String(a.week) === String(week));
           return r && r.status === 'present';
@@ -822,39 +1062,53 @@ function showLeagueQR(event, url) {
     if (!toShow.length) {
       document.getElementById('pairings-preview').innerHTML =
         '<div class="card"><p class="text-muted" style="font-size:0.88rem;">No pairings generated yet for this session.</p></div>';
+      const w = document.getElementById('pairings-unsaved-warning');
+      if (w) w.style.display = 'none';
       return;
     }
 
     const rounds = [...new Set(toShow.map(p => p.round))].sort((a,b) => a-b);
     let html = '';
     rounds.forEach(r => {
+      const roundGames = toShow.filter(p => p.round == r && p.type !== 'bye' && p.type !== 'tourn-bye');
+      const roundByePlayers = [...new Set(
+        toShow.filter(p => p.round == r && (p.type === 'bye' || p.type === 'tourn-bye'))
+              .flatMap(p => [p.p1, p.p2].filter(Boolean))
+      )];
+
       html += `<div class="round-header">Round ${r}</div>`;
-      toShow.filter(p => p.round == r).forEach(game => {
-        if (game.type === 'bye' || game.type === 'tourn-bye') {
-          html += `<div class="game-card" style="grid-template-columns:1fr; background:rgba(122,155,181,0.07);">
-            <span class="text-muted" style="font-size:0.8rem;">⏸ BYE: <strong style="color:var(--white);">${esc(game.p1)}${game.p2 ? ' &amp; ' + esc(game.p2) : ''}</strong></span>
-          </div>`;
-        } else {
-          html += `<div style="background:var(--card-bg); border-radius:10px; padding:10px 12px; margin-bottom:8px;">
-            <div class="court-label" style="font-size:0.7rem; margin-bottom:6px;">${courtName(game.court)}</div>
-            <div style="display:grid; grid-template-columns:1fr 40px 1fr; align-items:center; gap:6px;">
-              <div style="min-width:0;">
+
+      // Games first
+      roundGames.forEach(game => {
+        html += `<div style="background:var(--card-bg); border-radius:10px; padding:10px 12px; margin-bottom:8px;">
+            <div style="display:grid; grid-template-columns:auto 1fr auto 1fr; align-items:center; gap:6px;">
+              <div style="font-size:0.7rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); padding-right:4px; white-space:nowrap;">${courtName(game.court)}</div>
+              <div style="min-width:0; text-align:right;">
                 <div style="font-size:0.9rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p1)}</div>
                 ${game.p2 ? `<div style="font-size:0.9rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p2)}</div>` : ''}
               </div>
-              <div style="text-align:center; color:var(--muted); font-size:0.8rem; font-weight:600; flex-shrink:0;">VS</div>
-              <div style="min-width:0; text-align:right;">
+              <div style="text-align:center; color:var(--muted); font-size:0.8rem; font-weight:600; flex-shrink:0; padding:0 4px;">VS</div>
+              <div style="min-width:0;">
                 <div style="font-size:0.9rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p3)}</div>
                 ${game.p4 ? `<div style="font-size:0.9rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p4)}</div>` : ''}
               </div>
             </div>
           </div>`;
-        }
       });
+
+      // Byes after — all on one compact line
+      if (roundByePlayers.length) {
+        html += `<div style="padding:4px 8px; font-size:0.8rem; color:var(--muted); display:flex; align-items:center; gap:6px;">
+          <span>⏸ Bye:</span>
+          <strong style="color:var(--white);">${roundByePlayers.map(p => esc(p)).join(', ')}</strong>
+        </div>`;
+      }
     });
 
     document.getElementById('pairings-preview').innerHTML = html;
     document.getElementById('btn-lock-pairings').disabled = !state.pendingPairings;
+    const unsavedWarn = document.getElementById('pairings-unsaved-warning');
+    if (unsavedWarn) unsavedWarn.style.display = state.pendingPairings ? 'flex' : 'none';
 
     // Populate round-scope dropdown with locked rounds + individual options
     const scopeSel = document.getElementById('round-scope');
@@ -875,6 +1129,115 @@ function showLeagueQR(event, url) {
     }
   }
 
+  // ── Print / PDF Scoresheet ─────────────────────────────────
+  function printScoresheet() {
+    const week    = state.currentScoreWeek;
+    const c       = state.config;
+    const lName   = Auth.getSession()?.leagueName || c.leagueName || 'League';
+    const dateStr = formatDateTime(week, c);
+    const title   = dateStr ? `${lName} — Session ${week} — ${dateStr}` : `${lName} — Session ${week}`;
+    const loc     = c.location    ? `📍 ${c.location}`    : '';
+    const tim     = c.sessionTime ? `🕐 ${c.sessionTime}` : '';
+
+    const allWeekPairings = state.pairings.filter(p => parseInt(p.week) === week);
+    const rounds = [...new Set(allWeekPairings.map(p => p.round))].sort((a,b) => a-b);
+
+    let body = '';
+    rounds.forEach(r => {
+      const games = allWeekPairings.filter(p => p.round == r && p.type !== 'bye' && p.type !== 'tourn-bye');
+      const byeNames = [...new Set(
+        allWeekPairings.filter(p => p.round == r && (p.type === 'bye' || p.type === 'tourn-bye'))
+                       .flatMap(p => [p.p1, p.p2].filter(Boolean))
+      )];
+
+      body += `<div class="round"><div class="round-label">Round ${r}</div>`;
+
+      games.forEach(game => {
+        const score = state.scores.find(
+          s => parseInt(s.week) === week && parseInt(s.round) === parseInt(game.round) && String(s.court) === String(game.court)
+        );
+        const s1 = score && score.score1 !== '' && score.score1 !== null ? score.score1 : '';
+        const s2 = score && score.score2 !== '' && score.score2 !== null ? score.score2 : '';
+        const cn = courtName(game.court);
+
+        body += `<div class="game">
+          <div class="court">${cn}</div>
+          <div class="teams">
+            <div class="team">
+              <span class="name">${esc(game.p1)}</span>
+              ${game.p2 ? `<span class="name">${esc(game.p2)}</span>` : ''}
+            </div>
+            <div class="score-box">
+              <span class="score">${s1 !== '' ? s1 : '<span class="blank">___</span>'}</span>
+              <span class="dash">–</span>
+              <span class="score">${s2 !== '' ? s2 : '<span class="blank">___</span>'}</span>
+            </div>
+            <div class="team right">
+              <span class="name">${esc(game.p3)}</span>
+              ${game.p4 ? `<span class="name">${esc(game.p4)}</span>` : ''}
+            </div>
+          </div>
+        </div>`;
+      });
+
+      if (byeNames.length) {
+        body += `<div class="bye">⏸ Bye: ${byeNames.map(p => esc(p)).join(', ')}</div>`;
+      }
+
+      body += `</div>`;
+    });
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${title}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; color: #111; padding: 20px 28px; }
+    h1 { font-size: 14pt; font-weight: 700; margin-bottom: 4px; }
+    .meta { font-size: 9pt; color: #555; margin-bottom: 18px; display: flex; gap: 16px; }
+    .round { margin-bottom: 18px; page-break-inside: avoid; }
+    .round-label { font-size: 9pt; font-weight: 700; text-transform: uppercase;
+                   letter-spacing: 0.08em; color: #555; border-bottom: 1px solid #ccc;
+                   padding-bottom: 3px; margin-bottom: 6px; }
+    .game { display: grid; grid-template-columns: 60px 1fr; gap: 6px;
+            align-items: center; padding: 5px 0; border-bottom: 1px solid #eee; }
+    .court { font-size: 8pt; font-weight: 700; text-transform: uppercase;
+             letter-spacing: 0.06em; color: #777; }
+    .teams { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
+    .team { display: flex; flex-direction: column; gap: 1px; }
+    .team.right { text-align: right; }
+    .name { font-size: 10.5pt; }
+    .score-box { display: flex; align-items: center; gap: 6px;
+                 justify-content: center; white-space: nowrap; }
+    .score { font-size: 13pt; font-weight: 700; min-width: 22px; text-align: center; }
+    .blank { font-size: 11pt; color: #aaa; letter-spacing: 2px; }
+    .dash { font-size: 11pt; color: #999; }
+    .bye { font-size: 9pt; color: #777; padding: 4px 0 2px; font-style: italic; }
+    @media print {
+      body { padding: 12px 20px; }
+      @page { margin: 1.5cm; }
+    }
+  </style>
+</head>
+<body>
+  <h1>${title}</h1>
+  <div class="meta">${[loc, tim].filter(Boolean).join(' &nbsp;·&nbsp; ')}</div>
+  ${body}
+  <script>window.onload = () => window.print();<\/script>
+</body>
+</html>`;
+
+    const win = window.open('', '_blank', 'width=720,height=900');
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+    } else {
+      toast('Pop-up blocked — please allow pop-ups for this page and try again.', 'warn');
+    }
+  }
+
   // ── Scoresheet ─────────────────────────────────────────────
   function renderScoresheet() {
     const week = state.currentScoreWeek;
@@ -886,7 +1249,10 @@ function showLeagueQR(event, url) {
     const scoresheetTitle = document.querySelector('#page-scores .card-title');
     if (scoresheetTitle) {
       const date = formatDateTime(week, state.config);
-      scoresheetTitle.textContent = date ? `Session ${week}  ·  ${date}` : `Session ${week}`;
+      const lName = Auth.getSession()?.leagueName || state.config.leagueName || '';
+      scoresheetTitle.textContent = lName
+        ? (date ? `${lName}  ·  Session ${week}  ·  ${date}` : `${lName}  ·  Session ${week}`)
+        : (date ? `Session ${week}  ·  ${date}` : `Session ${week}`);
     }
 
     const allWeekPairings = state.pairings.filter(p => parseInt(p.week) === week);
@@ -918,7 +1284,7 @@ function showLeagueQR(event, url) {
                        : scored > 0 ? `${scored}/${total} · ${remaining} left`
                        : `${total} game${total !== 1 ? 's' : ''}`;
 
-      html += `<details ${!allDone ? 'open' : ''} style="margin-bottom:6px;">
+      html += `<details open style="margin-bottom:6px;">
         <summary style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;
                         padding:5px 8px; border-radius:7px; background:var(--card-bg);
                         list-style:none; user-select:none;"
@@ -927,17 +1293,9 @@ function showLeagueQR(event, url) {
             <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">${!allDone ? '▲' : '▼'}</span>
             <span style="font-size:0.78rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">Round ${r}</span>
           </span>
-          <span style="font-size:0.73rem; color:${badgeColor}; font-weight:600;">${badgeText}</span>
+          <span class="round-badge" style="font-size:0.73rem; color:${badgeColor}; font-weight:600;">${badgeText}</span>
         </summary>
         <div style="padding-top:4px;">`;
-
-      // Byes
-      roundByes.forEach(bye => {
-        html += `<div style="padding:3px 8px; margin-bottom:3px; color:var(--muted); font-size:0.82rem;
-                             background:rgba(122,155,181,0.07); border-radius:6px;">
-          ⏸ <strong style="color:var(--white);">${esc(bye.p1)}${bye.p2 ? ' &amp; ' + esc(bye.p2) : ''}</strong> — Bye
-        </div>`;
-      });
 
       roundGames.forEach(game => {
         const existingScore = state.scores.find(
@@ -952,15 +1310,15 @@ function showLeagueQR(event, url) {
         const loseStyle = 'color:var(--muted);';
         const readOnly  = !session.isAdmin ? 'readonly style="opacity:0.5;pointer-events:none;"' : '';
 
-        html += `<div style="background:var(--card-bg); border-radius:7px; padding:5px 10px; margin-bottom:4px;"
+        html += `<div style="background:var(--card-bg); border-radius:7px; padding:6px 10px; margin-bottom:4px;"
             data-week="${week}" data-round="${game.round}" data-court="${game.court}">
-          <div style="display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:6px;">
-            <div style="min-width:0;">
+          <div style="display:grid; grid-template-columns:auto 1fr auto 1fr; align-items:center; gap:6px;">
+            <div style="font-size:0.7rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); padding-right:4px; white-space:nowrap;">${courtName(game.court)}</div>
+            <div data-team="1" style="min-width:0; text-align:right;">
               <div style="${entered ? (t1win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p1)}</div>
               ${game.p2 ? `<div style="${entered ? (t1win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p2)}</div>` : ''}
-              <div style="font-size:0.65rem; color:var(--muted); margin-top:1px;">${courtName(game.court)}</div>
             </div>
-            <div style="display:flex; align-items:center; justify-content:center; gap:4px; flex-shrink:0;">
+            <div style="display:flex; align-items:center; justify-content:center; gap:4px; flex-shrink:0; padding:0 4px;">
               <input type="number" class="score-input" data-score="1"
                      value="${s1}" min="0" max="30" placeholder="0" ${readOnly}
                      inputmode="numeric"
@@ -971,7 +1329,7 @@ function showLeagueQR(event, url) {
                      inputmode="numeric"
                      style="width:44px; text-align:center; padding:4px; -moz-appearance:textfield;">
             </div>
-            <div style="min-width:0; text-align:right;">
+            <div data-team="2" style="min-width:0;">
               <div style="${entered ? (t2win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p3)}</div>
               ${game.p4 ? `<div style="${entered ? (t2win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p4)}</div>` : ''}
             </div>
@@ -979,10 +1337,38 @@ function showLeagueQR(event, url) {
         </div>`;
       });
 
+      // Byes after games — all players on one compact line
+      const byePlayerNames = [...new Set(
+        roundByes.flatMap(b => [b.p1, b.p2].filter(Boolean))
+      )];
+      if (byePlayerNames.length) {
+        html += `<div style="padding:4px 8px; font-size:0.8rem; color:var(--muted); display:flex; align-items:center; gap:6px;">
+          <span>⏸ Bye:</span>
+          <strong style="color:var(--white);">${byePlayerNames.map(p => esc(p)).join(', ')}</strong>
+        </div>`;
+      }
+
       html += `</div></details>`;
     });
 
+    // Snapshot which rounds are currently collapsed before overwriting the DOM
+    const collapsedRounds = new Set();
+    document.querySelectorAll('#scoresheet details').forEach(d => {
+      if (!d.open) {
+        const m = (d.querySelector('.round-summary')?.textContent || '').match(/Round\s*(\d+)/);
+        if (m) collapsedRounds.add(parseInt(m[1]));
+      }
+    });
+
     document.getElementById('scoresheet').innerHTML = html;
+
+    // Restore collapsed state
+    if (collapsedRounds.size) {
+      document.querySelectorAll('#scoresheet details').forEach(d => {
+        const m = (d.querySelector('.round-summary')?.textContent || '').match(/Round\s*(\d+)/);
+        if (m && collapsedRounds.has(parseInt(m[1]))) d.open = false;
+      });
+    }
 
     // ── Auto-save scores on input ───────────────────────────
     document.querySelectorAll('#scoresheet [data-round]').forEach(card => {
@@ -1027,7 +1413,7 @@ function showLeagueQR(event, url) {
             !(parseInt(s.week) === wk && parseInt(s.round) === parseInt(round) && String(s.court) === String(court))
           );
           state.scores.push(newScore);
-          state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod);
+          state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance);
 
           // Save to server silently — show small indicator on the card
           const indicator = document.createElement('div');
@@ -1038,12 +1424,28 @@ function showLeagueQR(event, url) {
           try {
             // Build full week scores to send (merge this score with existing week scores)
             const weekScores = state.scores.filter(s => parseInt(s.week) === wk);
-            await API.saveScores(wk, weekScores);
+
+            // Queue saves per week — prevents concurrent writes causing duplicate rows
+            const prevLock = state.saveLocks[wk] || Promise.resolve();
+            const thisLock = prevLock.then(async () => {
+              await API.saveScores(wk, weekScores);
+            });
+            state.saveLocks[wk] = thisLock.catch(() => {});
+
+            await thisLock;
             indicator.textContent = '✓ saved';
             indicator.style.color = 'var(--green)';
             setTimeout(() => indicator.remove(), 1800);
-            // Update round badge without full re-render
-            renderScoresheet();
+            // Re-render just this card to apply win/loss styling, without touching
+            // the rest of the scoresheet (preserves focus and other in-progress inputs)
+            const s1now = parseInt(card.querySelector('[data-score="1"]').value) || 0;
+            const s2now = parseInt(card.querySelector('[data-score="2"]').value) || 0;
+            const t1win = s1now > s2now;
+            const t2win = s2now > s1now;
+            const winSty  = 'color:var(--green); font-weight:700; font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+            const loseSty = 'color:var(--muted); font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+            card.querySelectorAll('[data-team="1"] div').forEach(el => el.style.cssText = t1win ? winSty : loseSty);
+            card.querySelectorAll('[data-team="2"] div').forEach(el => el.style.cssText = t2win ? winSty : loseSty);
           } catch (e) {
             indicator.textContent = '⚠ save failed';
             indicator.style.color = 'var(--danger)';
@@ -1056,10 +1458,16 @@ function showLeagueQR(event, url) {
 
   // ── Standings ──────────────────────────────────────────────
   function renderStandings() {
-    const season = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod);
+    // Update page title with league name
+    const standTitle = document.getElementById('standings-page-title');
+    if (standTitle) {
+      const name = Auth.getSession()?.leagueName || state.config.leagueName || '';
+      standTitle.textContent = name ? `${name} — Standings` : 'Standings';
+    }
+    const season = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance);
     document.getElementById('standings-season-table').innerHTML = renderStandingsTable(season);
 
-    const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, state.currentStandWeek, state.config.rankingMethod);
+    const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, state.currentStandWeek, state.config.rankingMethod, state.attendance);
     document.getElementById('standings-weekly-table').innerHTML = renderStandingsTable(weekStand);
     document.getElementById('stand-week-label').textContent = `Session ${state.currentStandWeek}`;
     const standWkSel = document.getElementById('stand-week-select');
@@ -1271,6 +1679,10 @@ function showLeagueQR(event, url) {
     if (!standings || !standings.length) return '<p class="text-muted">No standings data yet.</p>';
     const rm = state.config.rankingMethod || 'avgptdiff';
     const usePtsPct = rm === 'ptspct';
+    const minPct = (state.config.minParticipation !== null && state.config.minParticipation !== undefined)
+      ? parseFloat(state.config.minParticipation) / 100 : 0.50;
+    const hasParticipation = standings.some(s => s.participationPct !== null && s.participationPct !== undefined);
+
     const rows = standings.filter(s => s.games > 0).map((s, i) => {
       const top = i < 3 ? 'top' : '';
       const ptsTot = s.points + s.pointsAgainst;
@@ -1278,20 +1690,42 @@ function showLeagueQR(event, url) {
       const secCol = usePtsPct
         ? `<td>${ptsPctVal}</td>`
         : `<td>${s.avgPtDiff > 0 ? '+' : ''}${s.avgPtDiff.toFixed(1)}</td>`;
+
+      let partHtml = '';
+      if (hasParticipation) {
+        if (s.participationPct === null || s.participationPct === undefined) {
+          partHtml = `<td style="color:var(--muted);">—</td>`;
+        } else {
+          const eligible = s.participationPct >= minPct;
+          const pctStr = Math.round(s.participationPct * 100) + '%';
+          partHtml = `<td style="white-space:nowrap;">
+            <span style="color:${eligible ? 'var(--green)' : 'var(--danger)'}; font-weight:600;">${pctStr}</span>
+            <span title="${eligible ? 'Prize eligible' : 'Below minimum participation — ineligible for prizes'}"
+              style="margin-left:3px; font-size:0.82rem;">${eligible ? '✓' : '✗'}</span>
+          </td>`;
+        }
+      }
+
       return `<tr>
         <td class="rank-cell ${top}">${s.rank}</td>
         <td class="player-name">${esc(s.name)}</td>
         <td>${s.wins}/${s.losses}</td>
         <td>${Reports.pct(s.winPct)}</td>
         ${secCol}
+        ${hasParticipation ? partHtml : ''}
         ${!compact ? `<td class="text-muted">${s.games}</td><td class="text-muted">${s.byes}</td>` : ''}
       </tr>`;
     });
-    const secHeader = usePtsPct ? '<th>Pts%</th>' : '<th title="Average point differential per game — your average score minus your opponent\'s average score. Positive means you score more than your opponents on average; used as a tiebreaker when win percentage is equal." style="cursor:help;">Avg+/-</th>';
+
+    const secHeader = usePtsPct ? '<th>Pts%</th>' : '<th title="Average point differential per game — your average score minus your opponent&#39;s average score. Positive means you score more than your opponents on average; used as a tiebreaker when win percentage is equal." style="cursor:help;">Avg+/-</th>';
+    const pctHeader = hasParticipation
+      ? `<th title="(Games played + byes) / total league rounds. Min ${Math.round(minPct*100)}% for prize eligibility." style="cursor:help;">Partic.</th>`
+      : '';
     return `<table class="compact-table">
       <thead><tr>
         <th>#</th><th>Player</th><th>W/L</th><th>Win%</th>
         ${secHeader}
+        ${pctHeader}
         ${!compact ? '<th>Games</th><th>Byes</th>' : ''}
       </tr></thead>
       <tbody>${rows.join('')}</tbody>
@@ -1564,9 +1998,12 @@ function showLeagueQR(event, url) {
         const defStyle  = 'color:var(--white);';
         const t1style = scored ? (t1win ? winStyle : loseStyle) : (isMe1 ? 'color:var(--white); font-weight:700;' : defStyle);
         const t2style = scored ? (!t1win ? winStyle : loseStyle) : (isMe2 ? 'color:var(--white); font-weight:700;' : defStyle);
-        const scoreHtml = scored
-          ? `<span style="font-size:0.78rem; font-weight:700; color:var(--white);">${s1}–${s2}</span>`
-          : `<span style="font-size:0.72rem; color:var(--muted);">pending</span>`;
+        const score1Html = scored
+          ? `<span style="font-size:0.82rem; font-weight:700; color:${t1win ? 'var(--green)' : 'rgba(255,255,255,0.5)'}; min-width:22px; text-align:right;">${s1}</span>`
+          : `<span style="font-size:0.72rem; color:var(--muted); min-width:22px; text-align:right;">—</span>`;
+        const score2Html = scored
+          ? `<span style="font-size:0.82rem; font-weight:700; color:${!t1win ? 'var(--green)' : 'rgba(255,255,255,0.5)'}; min-width:22px; text-align:right;">${s2}</span>`
+          : `<span style="font-size:0.72rem; color:var(--muted); min-width:22px; text-align:right;">—</span>`;
         const border = (isMe1 || isMe2)
           ? 'border:1px solid rgba(94,194,106,0.4);'
           : 'border:1px solid rgba(255,255,255,0.08);';
@@ -1576,11 +2013,14 @@ function showLeagueQR(event, url) {
             <div style="${t1style} font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px;">
               ${teamLabel(g.p1, g.p2)}
             </div>
-            <div style="margin-left:6px; flex-shrink:0;">${scoreHtml}</div>
+            <div style="margin-left:6px; flex-shrink:0;">${score1Html}</div>
           </div>
           <div style="border-top:1px solid rgba(255,255,255,0.06); margin:3px 0;"></div>
-          <div style="${t2style} font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px; margin-top:4px;">
-            ${teamLabel(g.p3, g.p4)}
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+            <div style="${t2style} font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px;">
+              ${teamLabel(g.p3, g.p4)}
+            </div>
+            <div style="margin-left:6px; flex-shrink:0;">${score2Html}</div>
           </div>
         </div>`;
       });
@@ -1601,10 +2041,26 @@ function showLeagueQR(event, url) {
 
     html += `</div></div>`;
 
-    // Champion banner
+    // Champion banner — only show when the last game is truly the final:
+    // all players who received byes in earlier rounds must have since played a real game.
     const lastRound = lockedRounds[lockedRounds.length - 1];
     const lastGames = weekPairings.filter(g => g.round === lastRound && (g.type === 'game' || g.type === 'tourn-game'));
-    if (lastGames.length === 1) {
+
+    // Collect all players who had a bye in any round
+    const byePlayerNames = new Set();
+    weekPairings.filter(g => g.type === 'tourn-bye' || g.type === 'bye').forEach(g => {
+      if (g.p1) byePlayerNames.add(g.p1);
+      if (g.p2) byePlayerNames.add(g.p2);
+    });
+    // Collect all players who appeared in a real game in any round
+    const gamePlayers = new Set();
+    weekPairings.filter(g => g.type === 'game' || g.type === 'tourn-game').forEach(g => {
+      [g.p1, g.p2, g.p3, g.p4].filter(Boolean).forEach(n => gamePlayers.add(n));
+    });
+    // All bye recipients must have also played a real game before we declare a champion
+    const byesUnresolved = [...byePlayerNames].some(n => !gamePlayers.has(n));
+
+    if (lastGames.length === 1 && !byesUnresolved) {
       const fg = lastGames[0];
       const fs = scores.find(s => parseInt(s.week) === week && parseInt(s.round) === lastRound && String(s.court) === String(fg.court));
       if (fs && fs.score1 !== '' && fs.score1 !== null && fs.score2 !== '' && fs.score2 !== null) {
@@ -1894,7 +2350,8 @@ function showLeagueQR(event, url) {
         return;
       }
 
-      const result = Tournament.advanceTournament(t.seeds, roundScores, t.round, parseInt(state.config.courts || 3), week, t.mode);
+      const weekPairings = state.pairings.filter(p => parseInt(p.week) === week);
+      const result = Tournament.advanceTournament(t.seeds, roundScores, t.round, parseInt(state.config.courts || 3), week, t.mode, weekPairings);
 
       state.tournament.seeds = result.seeds;
 
@@ -1944,39 +2401,52 @@ function showLeagueQR(event, url) {
   // ── Events ─────────────────────────────────────────────────
   function wireEditLimits() {
     document.querySelectorAll('[data-edit-limits]').forEach(btn => {
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', () => {
         const lid = btn.dataset.editLimits;
         const cur = JSON.parse(btn.dataset.limits || '{}');
-        const v = p => (cur[p] !== null && cur[p] !== undefined) ? cur[p] : '';
-        const inp = s => prompt(s);
-        const expiryDays  = inp(`Expiry days (blank = no expiry)\nCurrent: ${v('expiryDays') || 'none'}`);
-        if (expiryDays === null) return;
-        const maxPlayers  = inp(`Max active players (blank = no limit)\nCurrent: ${v('maxPlayers') || 'none'}`);
-        if (maxPlayers === null) return;
-        const maxCourts   = inp(`Max courts (blank = no limit)\nCurrent: ${v('maxCourts') || 'none'}`);
-        if (maxCourts === null) return;
-        const maxRounds   = inp(`Max rounds per session (blank = no limit)\nCurrent: ${v('maxRounds') || 'none'}`);
-        if (maxRounds === null) return;
-        const maxSessions = inp(`Max sessions (blank = no limit)\nCurrent: ${v('maxSessions') || 'none'}`);
-        if (maxSessions === null) return;
-        const custId      = inp(`Customer ID (blank to clear)\nCurrent: ${v('customerId') || 'none'}`);
-        if (custId === null) return;
-        const parse = s => (s === null || s.trim() === '') ? null : parseInt(s);
-        const limits = {
-          expiryDays:  parse(expiryDays),
-          maxPlayers:  parse(maxPlayers),
-          maxCourts:   parse(maxCourts),
-          maxRounds:   parse(maxRounds),
-          maxSessions: parse(maxSessions),
-          customerId:  custId.trim() === '' ? null : custId.trim(),
-        };
-        showLoading(true);
-        try {
-          await API.updateLeague(lid, undefined, undefined, undefined, undefined, undefined, undefined, limits);
-          toast('Limits updated.');
-          renderLeagues();
-        } catch (e) { toast('Failed: ' + e.message, 'error'); }
-        finally { showLoading(false); }
+        const leagueName = btn.dataset.leagueName || lid;
+        const intOrEmpty = v => (v !== null && v !== undefined && v !== '') ? String(v) : '';
+
+        document.getElementById('limits-modal-league').textContent = leagueName;
+        document.getElementById('lim-expiry').value   = intOrEmpty(cur.expiryDays);
+        document.getElementById('lim-players').value  = intOrEmpty(cur.maxPlayers);
+        document.getElementById('lim-courts').value   = intOrEmpty(cur.maxCourts);
+        document.getElementById('lim-rounds').value   = intOrEmpty(cur.maxRounds);
+        document.getElementById('lim-sessions').value = intOrEmpty(cur.maxSessions);
+        document.getElementById('lim-customer').value = cur.customerId || '';
+
+        // Replace save button to remove stale listeners
+        const saveBtn = document.getElementById('lim-save-btn');
+        const newSave = saveBtn.cloneNode(true);
+        saveBtn.parentNode.replaceChild(newSave, saveBtn);
+        newSave.addEventListener('click', async () => {
+          const parse = id => {
+            const v = document.getElementById(id).value.trim();
+            return v === '' ? null : parseInt(v);
+          };
+          const custId = document.getElementById('lim-customer').value.trim();
+          const limits = {
+            expiryDays:  parse('lim-expiry'),
+            maxPlayers:  parse('lim-players'),
+            maxCourts:   parse('lim-courts'),
+            maxRounds:   parse('lim-rounds'),
+            maxSessions: parse('lim-sessions'),
+            customerId:  custId === '' ? null : custId,
+          };
+          newSave.disabled = true; newSave.textContent = '\u23f3 Saving\u2026';
+          try {
+            await API.updateLeague(lid, undefined, undefined, undefined, undefined, undefined, undefined, limits);
+            document.getElementById('limits-modal').style.display = 'none';
+            toast('Limits updated.');
+            renderLeagues();
+          } catch (e) {
+            toast('Failed: ' + e.message, 'error');
+          } finally {
+            newSave.disabled = false; newSave.textContent = 'Save Limits';
+          }
+        });
+
+        document.getElementById('limits-modal').style.display = 'flex';
       });
     });
   }
@@ -1984,6 +2454,8 @@ function showLeagueQR(event, url) {
     function setupEvents() {
     setupEditPairing();
     setupTournament();
+    // Dashboard refresh button
+    document.getElementById('btn-refresh-dashboard')?.addEventListener('click', () => refreshDashboard());
     // Save config
     document.getElementById('btn-save-config').addEventListener('click', async () => {
       if (isAssistant) { toast('Admin assistants cannot change league settings.', 'warn'); return; }
@@ -1995,6 +2467,7 @@ function showLeagueQR(event, url) {
         notes:          document.getElementById('cfg-notes').value.trim(),
         leagueUrl:           document.getElementById('cfg-league-url').value.trim(),
         allowRegistration:   document.getElementById('cfg-allow-registration').checked,
+        adminOnlyEmail:      document.getElementById('cfg-admin-only-email')?.checked === true,
         registrationCode:    document.getElementById('cfg-reg-code').value.trim(),
         maxPendingReg:       parseInt(document.getElementById('cfg-reg-max-pending').value) || 10,
         rules:          document.getElementById('cfg-rules').value.trim(),
@@ -2006,6 +2479,7 @@ function showLeagueQR(event, url) {
         optimizerTries: parseInt(document.getElementById('cfg-tries').value),
         gameMode:       document.getElementById('cfg-game-mode').value,
         rankingMethod:  document.getElementById('cfg-ranking-method').value,
+        minParticipation: document.getElementById('cfg-min-participation').value !== '' ? parseFloat(document.getElementById('cfg-min-participation').value) : null,
         wSessionPartner:  parseFloat(document.getElementById('cfg-w-session-partner').value),
         wSessionOpponent: parseFloat(document.getElementById('cfg-w-session-opponent').value),
         wHistoryPartner:  parseFloat(document.getElementById('cfg-w-history-partner').value),
@@ -2014,6 +2488,8 @@ function showLeagueQR(event, url) {
         wSessionBye:      parseFloat(document.getElementById('cfg-w-session-bye').value),
         wRankBalance:     parseFloat(document.getElementById('cfg-w-rank-balance').value),
         wRankStdDev:      parseFloat(document.getElementById('cfg-w-rank-std-dev').value),
+        localImprove:     document.getElementById('cfg-local-improve')?.checked === true,
+        swapPasses:       parseInt(document.getElementById('cfg-swap-passes')?.value) || 5,
       };
       for (let w = 1; w <= weeks; w++) {
         const el = document.getElementById('cfg-date-' + w);
@@ -2029,19 +2505,34 @@ function showLeagueQR(event, url) {
       // Enforce registry limits on config save
       const cfgCourts  = parseInt(config.courts)  || 0;
       const cfgWeeks   = parseInt(config.weeks)   || 0;
+      const cfgRounds  = parseInt(config.gamesPerSession) || 0;
       const maxC = state.limits && state.limits.maxCourts;
       const maxS = state.limits && state.limits.maxSessions;
+      const maxR = state.limits && state.limits.maxRounds;
       if (maxC !== null && maxC !== undefined && cfgCourts > maxC) {
         toast(`Court limit exceeded: this league allows up to ${maxC} courts.`, 'warn'); return;
       }
       if (maxS !== null && maxS !== undefined && cfgWeeks > maxS) {
         toast(`Session limit exceeded: this league allows up to ${maxS} sessions.`, 'warn'); return;
       }
+      if (maxR !== null && maxR !== undefined && cfgRounds > maxR) {
+        toast(`Round limit exceeded: this league allows up to ${maxR} rounds per session.`, 'warn'); return;
+      }
 
       showLoading(true);
       try {
         await API.saveConfig(config);
         state.config = config;
+
+        // Update registry with league name and admin email so the app manager sees current values
+        const session = Auth.getSession();
+        if (session && session.leagueId) {
+          const registryName  = config.leagueName || undefined;
+          const registryEmail = config.replyTo    || undefined;
+          API.updateLeague(session.leagueId, registryName, undefined, undefined, undefined, undefined, registryEmail)
+            .catch(() => {}); // fire-and-forget — config save already succeeded
+        }
+
         toast('Configuration saved!');
         renderDashboard();
         renderAttendance();
@@ -2129,7 +2620,9 @@ function showLeagueQR(event, url) {
           body,
           leagueInfo,
           replyTo: c.replyTo || '',
-          recipients: recipients.map(p => ({ name: p.name, email: p.email })),
+          recipients: (state.config.adminOnlyEmail === true || state.config.adminOnlyEmail === 'true') && c.replyTo
+            ? [{ name: 'Admin', email: c.replyTo }]
+            : recipients.map(p => ({ name: p.name, email: p.email })),
         });
         statusEl.textContent = `✓ Sent to ${result.sent} player(s).`;
         statusEl.style.color = 'var(--green)';
@@ -2179,6 +2672,12 @@ function showLeagueQR(event, url) {
           });
         }
       });
+      // Safety guard — never save an empty player list (would wipe the sheet)
+      if (players.length === 0) {
+        toast('No players to save — player list is empty. Reload the page and try again.', 'warn');
+        return;
+      }
+
       // Enforce maxPlayers limit
       const newActiveCount = players.filter(p => p.active === true).length;
       const maxP = state.limits && state.limits.maxPlayers;
@@ -2189,7 +2688,10 @@ function showLeagueQR(event, url) {
 
       showLoading(true);
       try {
-        await API.savePlayers(players);
+        // Sort by role order before saving
+      const roleRank = r => { const k = ROLE_ORDER.indexOf(r || ''); return k === -1 ? 99 : k; };
+      players.sort((a, b) => roleRank(a.role) - roleRank(b.role) || (a.name||'').localeCompare(b.name||''));
+      await API.savePlayers(players);
         state.players = players;
         toast('Players saved!');
         renderDashboard();
@@ -2202,11 +2704,25 @@ function showLeagueQR(event, url) {
     // Week navigators
     setupWeekSelect('pair-week-select', 'currentPairWeek', () => {
       state.pendingPairings = null;
+      state.bestGeneration  = null;
+      document.getElementById('btn-generate-fresh')?.classList.add('hidden');
+      // Sync score selector to match
+      state.currentScoreWeek = state.currentPairWeek;
+      const scoreSelEl = document.getElementById('score-week-select');
+      if (scoreSelEl && scoreSelEl.value != state.currentPairWeek) scoreSelEl.value = state.currentPairWeek;
       renderPairingsPreview();
+      renderScoresheet();
       const epWeek = document.getElementById('ep-week');
       if (epWeek) epWeek.value = state.currentPairWeek;
     });
     setupWeekSelect('score-week-select', 'currentScoreWeek', async () => {
+      // Sync pair selector to match
+      state.currentPairWeek = state.currentScoreWeek;
+      const pairSelEl = document.getElementById('pair-week-select');
+      if (pairSelEl && pairSelEl.value != state.currentScoreWeek) pairSelEl.value = state.currentScoreWeek;
+      const epWeek = document.getElementById('ep-week');
+      if (epWeek) epWeek.value = state.currentScoreWeek;
+      renderPairingsPreview();
       saveWeekPrefs();
       const scoreEl = document.getElementById('scoresheet');
       if (scoreEl) scoreEl.innerHTML = `
@@ -2228,6 +2744,10 @@ function showLeagueQR(event, url) {
       renderScoresheet();
     });
 
+    document.getElementById('btn-print-scoresheet').addEventListener('click', () => {
+      printScoresheet();
+    });
+
     document.getElementById('btn-refresh-scoresheet').addEventListener('click', async () => {
       const btn = document.getElementById('btn-refresh-scoresheet');
       btn.disabled = true; btn.textContent = '⏳';
@@ -2243,6 +2763,23 @@ function showLeagueQR(event, url) {
       } catch (e) { toast('Refresh failed: ' + e.message, 'error'); }
       finally { btn.disabled = false; btn.textContent = '🔄 Refresh'; }
     });
+
+    // Auto-refresh scores every 30 seconds when the scores page is active
+    setInterval(async () => {
+      const scoresPageActive = document.getElementById('page-scores')?.classList.contains('active');
+      if (!scoresPageActive) return;
+      // Don't refresh if the user is mid-edit (any score input is focused)
+      if (document.activeElement && document.activeElement.classList.contains('score-input')) return;
+      try {
+        const week = state.currentScoreWeek;
+        const data = await API.getScores(week);
+        if (data && data.scores) {
+          state.scores = state.scores.filter(s => parseInt(s.week) !== week);
+          state.scores.push(...data.scores.filter(s => parseInt(s.week) === week));
+          renderScoresheet();
+        }
+      } catch (e) { /* silent — manual refresh available if needed */ }
+    }, 30000);
     // Tournament results week nav
     setupWeekSelect('tourn-week-select', 'currentTournWeek', renderAdminTournamentResults);
 
@@ -2272,27 +2809,33 @@ function showLeagueQR(event, url) {
         await API.sendTournamentReport({
           week,
           weekDate,
-          leagueName: state.config.leagueName || 'Pickleball League',
+          leagueName: Auth.getSession()?.leagueName || state.config.leagueName || 'League',
           replyTo:    state.config.replyTo    || '',
           leagueUrl:  state.config.leagueUrl  || '',
           weekScores,
           weekPairings,
-          recipients: recipients.map(p => ({ name: p.name, email: p.email })),
+          recipients: (state.config.adminOnlyEmail === true || state.config.adminOnlyEmail === 'true') && state.config.replyTo
+            ? [{ name: 'Admin', email: state.config.replyTo }]
+            : recipients.map(p => ({ name: p.name, email: p.email })),
         });
-        toast(`Session ${week} tournament bracket sent to ${recipients.length} player(s)!`);
+        const sentCount = (state.config.adminOnlyEmail === true || state.config.adminOnlyEmail === 'true') && state.config.replyTo ? 1 : recipients.length;
+        toast(`Session ${week} tournament bracket sent to ${sentCount} recipient(s)!`);
       } catch (e) { toast('Send failed: ' + e.message, 'error'); }
       finally { showLoading(false); }
     });
 
     setupWeekSelect('stand-week-select', 'currentStandWeek', () => {
-      const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, state.currentStandWeek, state.config.rankingMethod);
+      const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, state.currentStandWeek, state.config.rankingMethod, state.attendance);
       document.getElementById('standings-weekly-table').innerHTML = renderStandingsTable(weekStand);
       const swDate = formatDateTime(state.currentStandWeek, state.config);
       document.getElementById('stand-week-label').textContent = `Session ${state.currentStandWeek}${swDate ? ' — ' + swDate : ''}`;
     });
 
-    // Generate pairings
-    document.getElementById('btn-generate').addEventListener('click', () => {
+    // Generate pairings — keep-best across multiple attempts
+    document.getElementById('btn-generate').addEventListener('click', () => runGenerate(false));
+    document.getElementById('btn-generate-fresh')?.addEventListener('click', () => runGenerate(true));
+
+    async function runGenerate(forceFresh) {
       const week = state.currentPairWeek;
       const scope = document.getElementById('round-scope')?.value || 'all';
       const totalRounds = parseInt(state.config.gamesPerSession || 7);
@@ -2300,39 +2843,25 @@ function showLeagueQR(event, url) {
         state.pairings.filter(p => parseInt(p.week) === week).map(p => parseInt(p.round))
       )].sort((a,b)=>a-b);
 
-      // Determine which rounds to generate
       let startRound, rounds;
       if (scope === 'all') {
-        startRound = 1;
-        rounds = totalRounds;
+        startRound = 1; rounds = totalRounds;
       } else if (scope === 'remaining') {
         const nextRound = lockedRounds.length ? Math.max(...lockedRounds) + 1 : 1;
-        startRound = nextRound;
-        rounds = totalRounds - nextRound + 1;
-        if (rounds <= 0) {
-          toast(`All ${totalRounds} rounds are already generated for Session ${week}.`, 'warn'); return;
-        }
+        startRound = nextRound; rounds = totalRounds - nextRound + 1;
+        if (rounds <= 0) { toast(`All ${totalRounds} rounds are already generated for Session ${week}.`, 'warn'); return; }
       } else {
-        // Specific round
-        startRound = parseInt(scope);
-        rounds = 1;
+        startRound = parseInt(scope); rounds = 1;
       }
 
-      // Block generation if scores exist for the rounds being generated
       const hasScores = state.scores.some(s =>
-        parseInt(s.week) === week && parseInt(s.round) >= startRound &&
-        parseInt(s.round) < startRound + rounds
+        parseInt(s.week) === week && parseInt(s.round) >= startRound && parseInt(s.round) < startRound + rounds
       );
-      if (hasScores) {
-        toast(`Scores already exist for the selected round(s). Clear them first.`, 'warn');
-        return;
-      }
+      if (hasScores) { toast('Scores already exist for the selected round(s). Clear them first.', 'warn'); return; }
 
-      const weeks = parseInt(state.config.weeks || 8);
       const courts = parseInt(state.config.courts || 3);
-      const tries = parseInt(state.config.optimizerTries || 100);
+      const tries  = parseInt(state.config.optimizerTries || 100);
 
-      // Get present players for this week — exclude spectators, pending, and spectating
       const presentPlayers = state.players
         .filter(p => p.active === true && p.role !== 'spectator')
         .filter(p => {
@@ -2341,150 +2870,231 @@ function showLeagueQR(event, url) {
         })
         .map(p => p.name);
 
-      const gameMode     = state.config.gameMode || 'doubles';
-      const singles      = gameMode === 'singles';
+      const gameMode = state.config.gameMode || 'doubles';
+      const singles  = gameMode === 'singles';
       const playersPerCourt = singles ? 2 : 4;
       if (presentPlayers.length < courts * playersPerCourt) {
         const maxCourts = Math.floor(presentPlayers.length / playersPerCourt);
-        if (maxCourts === 0) {
-          toast(`Not enough players to fill even one court (${presentPlayers.length} present, need ${playersPerCourt}). No pairings generated.`, 'warn');
-          return;
-        }
+        if (maxCourts === 0) { toast(`Not enough players to fill even one court (${presentPlayers.length} present, need ${playersPerCourt}). No pairings generated.`, 'warn'); return; }
         toast(`Only ${presentPlayers.length} players present — pairings generated for ${maxCourts} of ${courts} court${maxCourts !== 1 ? 's' : ''}. Remaining players will receive a bye.`, 'warn');
       }
 
-      // Enforce maxRounds limit
       const maxR = state.limits && state.limits.maxRounds;
       if (maxR !== null && maxR !== undefined && rounds > maxR) {
-        toast(`Round limit exceeded: this league allows up to ${maxR} rounds per session.`, 'warn');
-        return;
+        toast(`Round limit exceeded: this league allows up to ${maxR} rounds per session.`, 'warn'); return;
+      }
+
+      // Input hash — detect when inputs change so best is automatically reset
+      const inputHash = JSON.stringify({
+        week, scope, courts, gameMode,
+        players: [...presentPlayers].sort().join(','), tries
+      });
+      const inputsChanged = !state.bestGeneration || state.bestGeneration.inputHash !== inputHash;
+      if (forceFresh || inputsChanged) {
+        state.bestGeneration = null;
+        document.getElementById('btn-generate-fresh').classList.add('hidden');
       }
 
       gaEvent('generate_pairings', { session: week, mode: gameMode });
-      // Show pickleball spinner and defer heavy work so browser paints first
-      const overlay = document.getElementById('pairing-overlay');
+      const overlay    = document.getElementById('pairing-overlay');
       const overlayMsg = document.getElementById('pairing-overlay-msg');
-      overlayMsg.textContent = `${tries} iterations · ${presentPlayers.length} players`;
+      const totalTriesSoFar = (state.bestGeneration?.totalTries || 0) + tries;
+      overlayMsg.textContent = state.bestGeneration
+        ? `${tries} more iterations · ${totalTriesSoFar} total · ${presentPlayers.length} players`
+        : `${tries} iterations · ${presentPlayers.length} players`;
       overlay.classList.remove('hidden');
       overlay.style.display = 'flex';
 
-      setTimeout(() => {
-        try {
-          // Include already-locked rounds of this week as session history for the optimizer
-          const pastPairings = state.pairings.filter(p => parseInt(p.week) < week);
-          const lockedThisWeek = state.pairings.filter(p =>
-            parseInt(p.week) === week && parseInt(p.round) < startRound
-          );
+      // Yield to the browser so the overlay renders before we start heavy work
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-          const weights = {
-            sessionPartnerWeight:  state.config.wSessionPartner  ?? Pairings.DEFAULTS.sessionPartnerWeight,
-            sessionOpponentWeight: state.config.wSessionOpponent ?? Pairings.DEFAULTS.sessionOpponentWeight,
-            historyPartnerWeight:  state.config.wHistoryPartner  ?? Pairings.DEFAULTS.historyPartnerWeight,
-            historyOpponentWeight: state.config.wHistoryOpponent ?? Pairings.DEFAULTS.historyOpponentWeight,
-            byeVarianceWeight:     state.config.wByeVariance     ?? Pairings.DEFAULTS.byeVarianceWeight,
-            sessionByeWeight:      state.config.wSessionBye      ?? Pairings.DEFAULTS.sessionByeWeight,
-            rankBalanceWeight:          state.config.wRankBalance           ?? Pairings.DEFAULTS.rankBalanceWeight,
-            rankStdDevWeight:           state.config.wRankStdDev            ?? Pairings.DEFAULTS.rankStdDevWeight,
-          };
+      // Run optimizer in a Web Worker so the main thread stays responsive
+      // and the browser never shows an "unresponsive page" dialog.
+      const pastPairings   = state.pairings.filter(p => parseInt(p.week) < week);
+      const lockedThisWeek = state.pairings.filter(p => parseInt(p.week) === week && parseInt(p.round) < startRound);
 
-          const playerGroups = {};
-          state.players.forEach(p => { playerGroups[p.name] = p.group || 'M'; });
+      const weights = {
+        sessionPartnerWeight:  state.config.wSessionPartner  ?? Pairings.DEFAULTS.sessionPartnerWeight,
+        sessionOpponentWeight: state.config.wSessionOpponent ?? Pairings.DEFAULTS.sessionOpponentWeight,
+        historyPartnerWeight:  state.config.wHistoryPartner  ?? Pairings.DEFAULTS.historyPartnerWeight,
+        historyOpponentWeight: state.config.wHistoryOpponent ?? Pairings.DEFAULTS.historyOpponentWeight,
+        byeVarianceWeight:     state.config.wByeVariance     ?? Pairings.DEFAULTS.byeVarianceWeight,
+        sessionByeWeight:      state.config.wSessionBye      ?? Pairings.DEFAULTS.sessionByeWeight,
+        rankBalanceWeight:     state.config.wRankBalance      ?? Pairings.DEFAULTS.rankBalanceWeight,
+        rankStdDevWeight:      state.config.wRankStdDev       ?? Pairings.DEFAULTS.rankStdDevWeight,
+      };
+      const playerGroups = {};
+      state.players.forEach(p => { playerGroups[p.name] = p.group || 'M'; });
 
-          const { pairings: result, score, breakdown, normalizedWeights, error } = Pairings.optimize({
-            presentPlayers, courts, rounds, pastPairings, tries, weights,
-            standings: state.standings,
-            gameMode,
-            playerGroups,
-            startRound,
-            sessionHistory: lockedThisWeek,
-          });
+      const useLocalImprove = state.config.localImprove === undefined ? true : (state.config.localImprove === true || state.config.localImprove === 'true');
+      const swapPasses = parseInt(state.config.swapPasses) || 5;
+      const workerParams = {
+        presentPlayers, courts, rounds, pastPairings, tries, weights,
+        standings: state.standings, gameMode, playerGroups,
+        startRound, sessionHistory: lockedThisWeek, players: state.players,
+        useLocalImprove, swapPasses,
+      };
 
+      // Derive worker URL from the page location so it works on any deployment.
+      const workerUrl = new URL('js/pairing-worker.js', window.location.href).href;
+
+      // Run optimizer in a Web Worker so the main thread stays responsive.
+      // Falls back to chunked async execution if workers aren't available.
+      const runOptimize = () => new Promise((resolve, reject) => {
+        // Try Worker first
+        if (typeof Worker !== 'undefined') {
+          try {
+            const worker = new Worker(workerUrl);
+            worker.onmessage = (e) => {
+              if (e.data.progress) {
+                const { phase, iteration, tries: t } = e.data;
+                const pct = Math.round((iteration / t) * 100);
+                overlayMsg.textContent = phase === 'swap'
+                  ? `Iteration ${iteration}/${t} · Swap optimising… (${pct}%)`
+                  : `Iteration ${iteration}/${t} · Generating… (${pct}%)`;
+                return;
+              }
+              worker.terminate();
+              if (e.data.ok) resolve(e.data.result);
+              else reject(new Error(e.data.error));
+            };
+            worker.onerror = () => {
+              worker.terminate();
+              // Worker failed to load — run in chunks on main thread
+              runInChunks(resolve, reject);
+            };
+            worker.postMessage(workerParams);
+            return;
+          } catch (e) { /* fall through */ }
+        }
+        // No Worker support — run in chunks
+        runInChunks(resolve, reject);
+      });
+
+      // Chunked fallback: runs batches of attempts with setTimeout(0) between
+      // each batch so the browser can repaint and stay responsive.
+      function runInChunks(resolve, reject) {
+        const CHUNK = 10; // attempts per chunk
+        let remaining = workerParams.tries;
+        let best = null;
+
+        // We run optimize with small try counts and accumulate the best result
+        function nextChunk() {
+          try {
+            const batchTries = Math.min(CHUNK, remaining);
+            const res = Pairings.optimize({ ...workerParams, tries: batchTries });
+            if (!best || res.score < best.score) best = res;
+            remaining -= batchTries;
+            overlayMsg.textContent = `${workerParams.tries - remaining}/${workerParams.tries} iterations · ${workerParams.presentPlayers.length} players`;
+            if (remaining > 0) {
+              setTimeout(nextChunk, 0);
+            } else {
+              resolve(best);
+            }
+          } catch (err) {
+            reject(err);
+          }
+        }
+        setTimeout(nextChunk, 0);
+      }
+
+      runOptimize().then(({ pairings: result, score, breakdown, normalizedWeights, error }) => {
           overlay.classList.add('hidden');
           overlay.style.display = 'none';
-
           if (error) { toast(error, 'error'); return; }
 
-          if (gameMode === 'mixed-doubles' && breakdown && breakdown.mixedViolations && breakdown.mixedViolations.raw > 0) {
+          if (gameMode === 'mixed-doubles' && breakdown?.mixedViolations?.raw > 0) {
             toast(`⚠️ Mixed doubles: ${breakdown.mixedViolations.raw} same-gender partnership(s) could not be avoided — check player groups and attendance.`, 'warn');
           }
 
-          // Merge newly generated rounds with already-locked rounds of this week
-          const otherRounds = state.pairings.filter(p =>
-            parseInt(p.week) === week &&
-            (parseInt(p.round) < startRound || parseInt(p.round) >= startRound + rounds)
-          );
-          const newRounds = result.map(p => ({ ...p, week,
-            round: p.round + startRound - 1  // offset round numbers to correct position
-          }));
-          state.pendingPairings = [
-            ...otherRounds,
-            ...newRounds,
-          ].sort((a,b) => parseInt(a.round)-parseInt(b.round) || String(a.court).localeCompare(String(b.court), undefined, {numeric:true}));
+          // ── Keep best — only replace pairings if this attempt scored better ──
+          const previousBest  = state.bestGeneration;
+          const isImprovement = !previousBest || score < previousBest.score;
+
+          if (isImprovement) {
+            const otherRounds = state.pairings.filter(p =>
+              parseInt(p.week) === week &&
+              (parseInt(p.round) < startRound || parseInt(p.round) >= startRound + rounds)
+            );
+            const newRounds = result.map(p => ({ ...p, week, round: p.round + startRound - 1 }));
+            const merged = [...otherRounds, ...newRounds]
+              .sort((a,b) => parseInt(a.round)-parseInt(b.round) || String(a.court).localeCompare(String(b.court), undefined, {numeric:true}));
+
+            state.bestGeneration = { score, pairings: merged, breakdown, normalizedWeights, inputHash, totalTries: totalTriesSoFar };
+            state.pendingPairings = merged;
+          }
+
+          const best        = state.bestGeneration;
+          const improvedEl  = document.getElementById('optimizer-improved');
+          if (previousBest) {
+            if (isImprovement) {
+              const delta = previousBest.score - score;
+              improvedEl.innerHTML = `<span style="color:var(--green);">▲ Improved by ${delta.toFixed(1)}</span>`;
+            } else {
+              improvedEl.innerHTML = `<span style="color:var(--muted);">No improvement this attempt</span>`;
+            }
+          } else {
+            improvedEl.innerHTML = '';
+          }
 
           document.getElementById('optimizer-status').classList.remove('hidden');
-          document.getElementById('optimizer-score').textContent = score.toFixed(1);
-          document.getElementById('optimizer-msg').textContent = `${tries} iterations · ${presentPlayers.length} players`;
+          document.getElementById('optimizer-score').textContent = best.score.toFixed(1);
+          const swapInfo = useLocalImprove ? ` · swap ${swapPasses} passes` : ' · no swap';
+          document.getElementById('optimizer-msg').textContent =
+            `${best.totalTries} iterations${swapInfo} · ${presentPlayers.length} players — press again to keep searching`;
+          document.getElementById('btn-generate-fresh').classList.remove('hidden');
 
-          // Breakdown table
           const LABELS = {
-        mixedViolations: 'Mixed doubles violations',
-        sessionPartner:  'Repeat Partner (this session)',
-        sessionOpponent: 'Repeat Opponent (this session)',
-        historyPartner:  'Repeat Partner (prior weeks)',
-        historyOpponent: 'Repeat Opponent (prior weeks)',
-        sessionBye:      'Byes this session',
-        byeVariance:     'Bye spread (season)',
-        rankBalance:         'Rank imbalance',
-        rankStdDev:          'Rank std dev (all-player spread)',
-      };
-          if (breakdown) {
-        // Map criterion key -> user weight and normalized weight
-        const USER_WEIGHT_KEYS = {
-          sessionPartner:  'sessionPartnerWeight',
-          sessionOpponent: 'sessionOpponentWeight',
-          historyPartner:  'historyPartnerWeight',
-          historyOpponent: 'historyOpponentWeight',
-          sessionBye:      'sessionByeWeight',
-          byeVariance:     'byeVarianceWeight',
-          rankBalance:         'rankBalanceWeight',
-          rankStdDev:          'rankStdDevWeight',
-        };
-        let bhtml = `<table style="font-size:0.78rem; width:100%; border-collapse:collapse; margin-top:4px;">
-          <thead><tr>
-            <th style="text-align:left; padding:3px 8px; color:var(--muted); font-weight:500;">Criterion</th>
-            <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">Raw</th>
-            <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">User Weight</th>
-            <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">Norm. Weight</th>
-            <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">Score</th>
-          </tr></thead><tbody>`;
-        Object.entries(breakdown).forEach(([key, v]) => {
-          const nonzero = v.weighted > 0;
-          const wKey = USER_WEIGHT_KEYS[key];
-          // User weight from the weights object passed to optimize
-          const userW = wKey ? (weights[wKey] ?? Pairings.DEFAULTS[wKey] ?? '—') : '—';
-          // Normalized weight from calibration (v.weight is now the normalized value)
-          const normW = (wKey && normalizedWeights && normalizedWeights[wKey] != null) ? normalizedWeights[wKey].toFixed(2) : '—';
-          bhtml += `<tr style="${nonzero ? 'color:var(--white);' : 'color:var(--muted);'}">
-            <td style="padding:3px 8px;">${LABELS[key] || key}</td>
-            <td style="text-align:right; padding:3px 8px;">${(v.raw != null && typeof v.raw === 'number') ? v.raw.toFixed(2) : '—'}</td>
-            <td style="text-align:right; padding:3px 8px;">${typeof userW === 'number' ? userW : userW}</td>
-            <td style="text-align:right; padding:3px 8px; color:var(--muted);">${normW}</td>
-            <td style="text-align:right; padding:3px 8px; font-weight:${nonzero ? '600' : '400'};">${(v.weighted != null && typeof v.weighted === 'number') ? v.weighted.toFixed(1) : '—'}</td>
-          </tr>`;
-        });
-        bhtml += `</tbody></table>`;
+            mixedViolations: 'Mixed doubles violations',
+            sessionPartner:  'Repeat Partner (this session)',
+            sessionOpponent: 'Repeat Opponent (this session)',
+            historyPartner:  'Repeat Partner (prior weeks)',
+            historyOpponent: 'Repeat Opponent (prior weeks)',
+            sessionBye:      'Byes this session',
+            byeVariance:     'Bye spread (season)',
+            rankBalance:     'Rank imbalance',
+            rankStdDev:      'Rank std dev (all-player spread)',
+          };
+          const USER_WEIGHT_KEYS = {
+            sessionPartner:  'sessionPartnerWeight',  sessionOpponent: 'sessionOpponentWeight',
+            historyPartner:  'historyPartnerWeight',  historyOpponent: 'historyOpponentWeight',
+            sessionBye:      'sessionByeWeight',      byeVariance:     'byeVarianceWeight',
+            rankBalance:     'rankBalanceWeight',      rankStdDev:      'rankStdDevWeight',
+          };
+          if (best.breakdown) {
+            let bhtml = `<table style="font-size:0.78rem; width:100%; border-collapse:collapse; margin-top:4px;">
+              <thead><tr>
+                <th style="text-align:left; padding:3px 8px; color:var(--muted); font-weight:500;">Criterion</th>
+                <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">Raw</th>
+                <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">User Weight</th>
+                <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">Norm. Weight</th>
+                <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">Score</th>
+              </tr></thead><tbody>`;
+            Object.entries(best.breakdown).forEach(([key, v]) => {
+              const nonzero = v.weighted > 0;
+              const wKey  = USER_WEIGHT_KEYS[key];
+              const userW = wKey ? (weights[wKey] ?? Pairings.DEFAULTS[wKey] ?? '—') : '—';
+              const normW = (wKey && best.normalizedWeights?.[wKey] != null) ? best.normalizedWeights[wKey].toFixed(2) : '—';
+              bhtml += `<tr style="${nonzero ? 'color:var(--white);' : 'color:var(--muted);'}">
+                <td style="padding:3px 8px;">${LABELS[key] || key}</td>
+                <td style="text-align:right; padding:3px 8px;">${typeof v.raw === 'number' ? v.raw.toFixed(2) : '—'}</td>
+                <td style="text-align:right; padding:3px 8px;">${userW}</td>
+                <td style="text-align:right; padding:3px 8px; color:var(--muted);">${normW}</td>
+                <td style="text-align:right; padding:3px 8px; font-weight:${nonzero?'600':'400'};">${typeof v.weighted === 'number' ? v.weighted.toFixed(1) : '—'}</td>
+              </tr>`;
+            });
+            bhtml += `</tbody></table>`;
             document.getElementById('optimizer-breakdown').innerHTML = bhtml;
           }
-          document.getElementById('btn-lock-pairings').disabled = false;
 
+          document.getElementById('btn-lock-pairings').disabled = false;
           renderPairingsPreview();
-        } catch (err) {
+        }).catch(err => {
           overlay.classList.add('hidden');
           overlay.style.display = 'none';
           toast('Generation failed: ' + err.message, 'error');
-        }
-      }, 50); // 50ms delay lets browser paint the spinner
-    });
+        });
+    }
 
     // Lock pairings
     document.getElementById('btn-lock-pairings').addEventListener('click', async () => {
@@ -2500,15 +3110,16 @@ function showLeagueQR(event, url) {
               : (p.type === 'tourn-game' || p.type === 'tourn-loser-game' || p.type === 'tourn-grand-final') ? 'tourn-game'
               : p.type
         }));
-        // For tournament rounds, preserve existing rounds by merging all week pairings
-        // (savePairings replaces the whole week, so we must send all rounds together)
-        const existingWeekPairings = state.pairings.filter(p => parseInt(p.week) === week);
-        const allWeekPairings = [...existingWeekPairings, ...normalizedPairings];
-        await API.savePairings(week, allWeekPairings);
-        // Update local state — add new round without removing existing rounds
+        // pendingPairings already contains all rounds for the week (existing locked
+        // rounds outside the generated scope are merged in during generation).
+        // Do NOT re-merge with existingWeekPairings here — that causes duplicates.
+        await API.savePairings(week, normalizedPairings);
+        // Update local state — replace entire week
         state.pairings = state.pairings.filter(p => parseInt(p.week) !== week);
-        state.pairings.push(...allWeekPairings);
+        state.pairings.push(...normalizedPairings);
         state.pendingPairings = null;
+        state.bestGeneration  = null;
+        document.getElementById('btn-generate-fresh')?.classList.add('hidden');
         document.getElementById('btn-lock-pairings').disabled = true;
         toast(`Pairings for Session ${week} saved!`);
         renderPairingsPreview();
@@ -2567,6 +3178,8 @@ function showLeagueQR(event, url) {
           state.pairings = state.pairings.filter(p => parseInt(p.week) !== week);
         }
         state.pendingPairings = null;
+        state.bestGeneration  = null;
+        document.getElementById('btn-generate-fresh')?.classList.add('hidden');
 
         if (affectedScores.length) {
           const keptScores = state.scores.filter(s =>
@@ -2575,7 +3188,7 @@ function showLeagueQR(event, url) {
           const weekKeptScores = keptScores.filter(s => parseInt(s.week) === week);
           await API.saveScores(week, weekKeptScores);
           state.scores = keptScores;
-          state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod);
+          state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance);
         }
         toast(`${scopeLabel.charAt(0).toUpperCase() + scopeLabel.slice(1)} cleared.`);
         renderPairingsPreview();
@@ -2643,7 +3256,7 @@ function showLeagueQR(event, url) {
         state.scores = state.scores.filter(s => parseInt(s.week) !== week);
         state.scores.push(...scores);
         // Refresh standings
-        state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod);
+        state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance);
         toast(`Scores for Session ${week} saved!`);
       } catch (e) { toast('Save failed: ' + e.message, 'error'); }
       finally { showLoading(false); }
@@ -2663,7 +3276,7 @@ function showLeagueQR(event, url) {
       // Build report data
       const weekScores   = state.scores.filter(s => parseInt(s.week) === week);
       const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && (p.type === 'game' || p.type === 'tourn-game'));
-      const weekStand    = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week);
+      const weekStand    = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week, state.config.rankingMethod, state.attendance);
       const seasonStand  = Reports.computeStandings(state.scores, state.players, state.pairings);
       const weekDate     = formatDateTime(week, state.config);
 
@@ -2672,7 +3285,7 @@ function showLeagueQR(event, url) {
         await API.sendWeeklyReport({
           week,
           weekDate,
-          leagueName:   state.config.leagueName || 'Pickleball League',
+          leagueName:   Auth.getSession()?.leagueName || state.config.leagueName || 'League',
           location:     state.config.location   || '',
           sessionTime:  state.config.sessionTime || '',
           notes:        state.config.notes       || '',
@@ -2682,14 +3295,17 @@ function showLeagueQR(event, url) {
           weekPairings,
           weekStandings:  weekStand,
           seasonStandings: seasonStand,
-          recipients:   recipients.map(p => ({ name: p.name, email: p.email })),
+          recipients:   (state.config.adminOnlyEmail === true || state.config.adminOnlyEmail === 'true') && state.config.replyTo
+            ? [{ name: 'Admin', email: state.config.replyTo }]
+            : recipients.map(p => ({ name: p.name, email: p.email })),
           courtNames:   Object.fromEntries(
             Array.from({ length: parseInt(state.config.courts || 3) }, (_, i) => [
               i + 1, state.config['courtName_' + (i + 1)] || ('Court ' + (i + 1))
             ])
           ),
         });
-        toast(`Session ${week} results sent to ${recipients.length} player(s)!`);
+        const actualCount = (state.config.adminOnlyEmail === true || state.config.adminOnlyEmail === 'true') && state.config.replyTo ? 1 : recipients.length;
+        toast(`Session ${week} results sent to ${actualCount} recipient(s)!`);
       } catch (e) { toast('Send failed: ' + e.message, 'error'); }
       finally { showLoading(false); }
     });
@@ -2715,7 +3331,7 @@ function showLeagueQR(event, url) {
           playerName,
           email: player.email,
           report,
-          leagueName: state.config.leagueName || 'Pickleball League',
+          leagueName: Auth.getSession()?.leagueName || state.config.leagueName || 'League',
           replyTo:    state.config.replyTo    || '',
         });
         toast(`Report emailed to ${player.email}.`);
@@ -2795,7 +3411,7 @@ function showLeagueQR(event, url) {
     const L = state.limits;
     if (!L) return;
 
-    // Expired: disable generate, lock, tournament, score save
+    // ── Expired: disable generate, lock, tournament, score save ──
     if (L.expired) {
       const disableIds = ['btn-generate', 'btn-lock-pairings', 'btn-tourn-generate', 'btn-save-scores', 'btn-send-report'];
       disableIds.forEach(id => {
@@ -2804,6 +3420,32 @@ function showLeagueQR(event, url) {
       });
       toast('This league subscription has expired. Generate and score functions are disabled.', 'warn');
     }
+
+    // ── Enforce input field max attributes from registry limits ──
+    // Helper: set max on an input and add/update a hint note beside its label
+    const capInput = (inputId, max, noun) => {
+      if (max == null) return;
+      const el = document.getElementById(inputId);
+      if (!el) return;
+      el.max = max;
+      // Cap current value if over limit
+      if (parseInt(el.value) > max) el.value = max;
+      // Add or update hint label
+      const fg = el.closest('.form-group');
+      if (!fg) return;
+      let hint = fg.querySelector('.limit-hint');
+      if (!hint) {
+        hint = document.createElement('div');
+        hint.className = 'limit-hint';
+        hint.style.cssText = 'font-size:0.7rem; color:var(--gold); margin-top:3px;';
+        fg.appendChild(hint);
+      }
+      hint.textContent = `Max ${max} ${noun} (plan limit)`;
+    };
+
+    capInput('cfg-weeks',  L.maxSessions, 'sessions');
+    capInput('cfg-courts', L.maxCourts,   'courts');
+    capInput('cfg-games',  L.maxRounds,   'rounds/session');
   }
 
   function updateTournamentResultsNav() {
@@ -2871,6 +3513,7 @@ function showLeagueQR(event, url) {
         ].filter(Boolean).join(' · ') || 'No limits'}</td>
         <td><button class="btn btn-secondary" style="padding:4px 10px; font-size:0.72rem;"
           data-edit-limits="${esc(l.leagueId)}"
+          data-league-name="${esc(l.name)}"
           data-limits='${JSON.stringify({expiryDays:l.expiryDays,maxPlayers:l.maxPlayers,maxCourts:l.maxCourts,maxRounds:l.maxRounds,maxSessions:l.maxSessions,customerId:l.customerId})}'>
           ✏️ Limits
         </button></td>` : ''}
@@ -2932,6 +3575,9 @@ function showLeagueQR(event, url) {
         } catch (e) { toast('Failed: ' + e.message, 'error'); }
       });
     });
+
+    // Wire the limits edit modal buttons now that the DOM is populated
+    wireEditLimits();
   }
 
   // ── Helpers ────────────────────────────────────────────────

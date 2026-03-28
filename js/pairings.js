@@ -26,7 +26,8 @@ const Pairings = (() => {
     byeVarianceWeight:      20,   // variance of season bye counts
     sessionByeWeight:       30,   // penalty per bye a player takes this session
     rankBalanceWeight:      15,   // penalty per rank-point difference between team averages
-    rankStdDevWeight:          8,   // penalty for std dev of all four player ranks in a game
+    rankStdDevWeight:        8,   // penalty for std dev of all four player ranks in a game
+    mixedViolationWeight:  500,   // penalty per same-gender partnership in mixed doubles
   };
 
   // ── Helpers ────────────────────────────────────────────────
@@ -114,11 +115,13 @@ const Pairings = (() => {
   // ── Constructive round builder ──────────────────────────────
   //
   // For each court in turn, try all C(pool,4) * 3 team-split
-  // combinations and greedily pick the best. The session state
-  // is updated after each court so the next court on the same
-  // round benefits from knowing what was just assigned.
+  // combinations. A small random noise is added to each score
+  // during construction so different combos win on different
+  // iterations — this is the primary source of variation across
+  // the `tries` runs. The noise is NOT applied when scoring the
+  // final candidate, so the best-of-N comparison is always fair.
 
-  function buildRound(round, playing, courts, sessionPartners, sessionOpponents, history, w) {
+  function buildRound(round, playing, courts, sessionPartners, sessionOpponents, history, w, noise = 0) {
     const result = [];
     const ppc = w.playersPerCourt || 4;  // players per court: 2 singles, 4 doubles
     let pool = shuffle(playing);
@@ -127,16 +130,19 @@ const Pairings = (() => {
       if (pool.length < ppc) break;
 
       let bestScore = Infinity;
-      let bestCombo = null;
+      let bestCombos = []; // collect all tied-best combos for random selection
 
       if (ppc === 2) {
         // Singles: pick best 2-player matchup (1v1, no partners)
         for (let i = 0; i < pool.length - 1; i++) {
           for (let j = i + 1; j < pool.length; j++) {
-            const sc = gameScore(pool[i], null, pool[j], null, sessionPartners, sessionOpponents, history, w);
-            if (sc < bestScore) {
+            const sc = gameScore(pool[i], null, pool[j], null, sessionPartners, sessionOpponents, history, w)
+                     + Math.random() * noise;
+            if (sc < bestScore - 1e-9) {
               bestScore = sc;
-              bestCombo = { p1: pool[i], p2: null, p3: pool[j], p4: null };
+              bestCombos = [{ p1: pool[i], p2: null, p3: pool[j], p4: null }];
+            } else if (sc < bestScore + 1e-9) {
+              bestCombos.push({ p1: pool[i], p2: null, p3: pool[j], p4: null });
             }
           }
         }
@@ -152,10 +158,13 @@ const Pairings = (() => {
                   [four[0], four[2], four[1], four[3]],
                   [four[0], four[3], four[1], four[2]],
                 ].forEach(([a, b, c2, d]) => {
-                  const sc = gameScore(a, b, c2, d, sessionPartners, sessionOpponents, history, w);
-                  if (sc < bestScore) {
+                  const sc = gameScore(a, b, c2, d, sessionPartners, sessionOpponents, history, w)
+                           + Math.random() * noise;
+                  if (sc < bestScore - 1e-9) {
                     bestScore = sc;
-                    bestCombo = { p1: a, p2: b, p3: c2, p4: d };
+                    bestCombos = [{ p1: a, p2: b, p3: c2, p4: d }];
+                  } else if (sc < bestScore + 1e-9) {
+                    bestCombos.push({ p1: a, p2: b, p3: c2, p4: d });
                   }
                 });
               }
@@ -164,7 +173,10 @@ const Pairings = (() => {
         }
       }
 
-      if (!bestCombo) break;
+      if (!bestCombos.length) break;
+
+      // Randomly select among all tied-best combos — genuine variation across tries
+      const bestCombo = bestCombos[Math.floor(Math.random() * bestCombos.length)];
 
       result.push({ round, court: c, ...bestCombo, type: 'game' });
 
@@ -221,7 +233,7 @@ const Pairings = (() => {
 
   // ── Full week construction ──────────────────────────────────
 
-  function constructWeek(presentPlayers, courts, rounds, history, byeCounts, weightsWithRank, initPartners = {}, initOpponents = {}) {
+  function constructWeek(presentPlayers, courts, rounds, history, byeCounts, weightsWithRank, initPartners = {}, initOpponents = {}, noise = 0) {
     const result          = [];
     const sessionPartners  = Object.assign({}, initPartners);
     const sessionOpponents = Object.assign({}, initOpponents);
@@ -232,11 +244,9 @@ const Pairings = (() => {
         presentPlayers, courts, sessionByes, byeCounts, weightsWithRank.playersPerCourt
       );
 
-      // Build games — passes session state objects by reference so
-      // each court within the round updates them before the next court
       const { games, unassigned } = buildRound(
         round, playing, courts,
-        sessionPartners, sessionOpponents, history, weightsWithRank
+        sessionPartners, sessionOpponents, history, weightsWithRank, noise
       );
       result.push(...games);
 
@@ -337,7 +347,7 @@ const Pairings = (() => {
     }
 
     const breakdown = {
-      mixedViolations: { raw: raw.mixedViolations||0, weight: 1e6, weighted: (raw.mixedViolations||0) * 1e6 },
+      mixedViolations: { raw: raw.mixedViolations||0, weight: w.mixedViolationWeight, weighted: (raw.mixedViolations||0) * w.mixedViolationWeight },
       sessionPartner:  { raw: raw.sessionPartner,  weight: w.sessionPartnerWeight,  weighted: raw.sessionPartner  * w.sessionPartnerWeight  },
       sessionOpponent: { raw: raw.sessionOpponent, weight: w.sessionOpponentWeight, weighted: raw.sessionOpponent * w.sessionOpponentWeight },
       historyPartner:  { raw: raw.historyPartner,  weight: w.historyPartnerWeight,  weighted: raw.historyPartner  * w.historyPartnerWeight  },
@@ -461,6 +471,218 @@ const Pairings = (() => {
     return { normalized, scaleFactors };
   }
 
+  // ── Local improvement — hill climbing ──────────────────────
+  //
+  // After constructWeek builds a candidate, run swap passes to
+  // climb to a local optimum. Two swap types:
+  //
+  //   1. Within-round player swaps: try swapping one player between
+  //      two different games in the same round. For doubles this means
+  //      one player moves courts; for singles same idea. Tests all
+  //      (game_a, game_b, slot_in_a, slot_in_b) combos per round.
+  //
+  //   2. Cross-round partner swaps: for each pair of rounds, try
+  //      swapping the partner of a given player between the two rounds.
+  //      Targets the sessionPartner repeat penalty directly.
+  //
+  // Repeats until no improvement is found or maxPasses is reached.
+  // Rescores the full week after each accepted swap (cheap — pure arithmetic).
+
+  function localImprove(pairings, history, byeCounts, weights, maxPasses = 5) {
+    const singles = weights.singles;
+
+    // Work on a mutable copy — games only, byes unchanged
+    let current = pairings.map(g => ({ ...g }));
+
+    // Helper: rescore full week, return total
+    function score(p) {
+      const bc = { ...byeCounts };
+      p.forEach(g => {
+        if (g.type === 'bye') {
+          [g.p1, g.p2, g.p3, g.p4].filter(Boolean).forEach(n => { if (bc[n] !== undefined) bc[n]++; });
+        }
+      });
+      return scorePairings(p, history, bc, weights).total;
+    }
+
+    // Helper: get all game entries grouped by round
+    function gamesByRound(p) {
+      const map = {};
+      p.forEach(g => {
+        if (g.type !== 'game') return;
+        if (!map[g.round]) map[g.round] = [];
+        map[g.round].push(g);
+      });
+      return map;
+    }
+
+    // Helper: replace two games in the pairings array with updated versions
+    function applySwap(p, oldA, newA, oldB, newB) {
+      return p.map(g => {
+        if (g === oldA) return newA;
+        if (g === oldB) return newB;
+        return g;
+      });
+    }
+
+    // Helper: verify no player appears more than once across all games in a round
+    function roundIsValid(roundGames) {
+      const seen = new Set();
+      for (const g of roundGames) {
+        for (const p of [g.p1, g.p2, g.p3, g.p4].filter(Boolean)) {
+          if (seen.has(p)) return false;
+          seen.add(p);
+        }
+      }
+      return true;
+    }
+
+    let currentScore = score(current);
+    let improved = true;
+    let pass = 0;
+
+    while (improved && pass < maxPasses) {
+      improved = false;
+      pass++;
+
+      // ── 1. Within-round player swaps ─────────────────────
+      // For each round, try swapping one player slot between two games.
+      // In doubles: slots are p1, p2, p3, p4.
+      // In singles: slots are p1, p3 (p2/p4 are null).
+      const slots = singles ? ['p1', 'p3'] : ['p1', 'p2', 'p3', 'p4'];
+      const rounds = gamesByRound(current);
+
+      for (const roundGames of Object.values(rounds)) {
+        if (roundGames.length < 2) continue;
+
+        for (let gi = 0; gi < roundGames.length - 1; gi++) {
+          for (let gj = gi + 1; gj < roundGames.length; gj++) {
+            const ga = roundGames[gi];
+            const gb = roundGames[gj];
+
+            for (const sa of slots) {
+              for (const sb of slots) {
+                // Don't swap null slots (singles p2/p4)
+                if (!ga[sa] || !gb[sb]) continue;
+                // Don't swap a player with themselves
+                if (ga[sa] === gb[sb]) continue;
+
+                const newA = { ...ga, [sa]: gb[sb] };
+                const newB = { ...gb, [sb]: ga[sa] };
+
+                // Reject if either game would have duplicate players
+                const playersA = [newA.p1,newA.p2,newA.p3,newA.p4].filter(Boolean);
+                const playersB = [newB.p1,newB.p2,newB.p3,newB.p4].filter(Boolean);
+                if (new Set(playersA).size < playersA.length) continue;
+                if (new Set(playersB).size < playersB.length) continue;
+
+                // Verify the full round has no duplicate players after swap
+                const testRound = roundGames.map((g, idx) =>
+                  idx === gi ? newA : idx === gj ? newB : g
+                );
+                if (!roundIsValid(testRound)) continue;
+
+                const candidate = applySwap(current, ga, newA, gb, newB);
+                const s = score(candidate);
+                if (s < currentScore - 1e-9) {
+                  current = candidate;
+                  currentScore = s;
+                  // Update roundGames references for remainder of this round's loops
+                  roundGames[gi] = newA;
+                  roundGames[gj] = newB;
+                  improved = true;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // ── 2. Cross-round partner swaps (doubles only) ───────
+      // For each pair of rounds, for each player who appears in both,
+      // try swapping their partner between the two rounds.
+      // i.e. if Alice+Bob vs ... in r1 and Alice+Carol vs ... in r2,
+      // try Alice+Carol vs ... in r1 and Alice+Bob vs ... in r2.
+      if (!singles) {
+        const roundKeys = Object.keys(rounds).map(Number).sort((a, b) => a - b);
+
+        for (let ri = 0; ri < roundKeys.length - 1; ri++) {
+          for (let rj = ri + 1; rj < roundKeys.length; rj++) {
+            const gamesA = gamesByRound(current)[roundKeys[ri]] || [];
+            const gamesB = gamesByRound(current)[roundKeys[rj]] || [];
+
+            for (const ga of gamesA) {
+              for (const gb of gamesB) {
+                // Find a player who appears in both games
+                const playersA = [ga.p1, ga.p2, ga.p3, ga.p4].filter(Boolean);
+                const playersB = [gb.p1, gb.p2, gb.p3, gb.p4].filter(Boolean);
+                const shared = playersA.filter(p => playersB.includes(p));
+
+                for (const pivot of shared) {
+                  // Partner of pivot in each game
+                  const partnerA = ga.p1 === pivot ? ga.p2
+                                 : ga.p2 === pivot ? ga.p1
+                                 : ga.p3 === pivot ? ga.p4
+                                 : ga.p4 === pivot ? ga.p3 : null;
+                  const partnerB = gb.p1 === pivot ? gb.p2
+                                 : gb.p2 === pivot ? gb.p1
+                                 : gb.p3 === pivot ? gb.p4
+                                 : gb.p4 === pivot ? gb.p3 : null;
+
+                  if (!partnerA || !partnerB || partnerA === partnerB) continue;
+
+                  // Swap: pivot gets partnerB in round ri and partnerA in round rj
+                  // Build new game objects with partners swapped
+                  const newA = { ...ga };
+                  const newB = { ...gb };
+
+                  // Substitute partnerA→partnerB in ga
+                  if (newA.p1 === partnerA) newA.p1 = partnerB;
+                  else if (newA.p2 === partnerA) newA.p2 = partnerB;
+                  else if (newA.p3 === partnerA) newA.p3 = partnerB;
+                  else if (newA.p4 === partnerA) newA.p4 = partnerB;
+
+                  // Substitute partnerB→partnerA in gb
+                  if (newB.p1 === partnerB) newB.p1 = partnerA;
+                  else if (newB.p2 === partnerB) newB.p2 = partnerA;
+                  else if (newB.p3 === partnerB) newB.p3 = partnerA;
+                  else if (newB.p4 === partnerB) newB.p4 = partnerA;
+
+                  // Reject if either game has internal duplicates
+                  const newPlayersA = [newA.p1,newA.p2,newA.p3,newA.p4].filter(Boolean);
+                  const newPlayersB = [newB.p1,newB.p2,newB.p3,newB.p4].filter(Boolean);
+                  if (new Set(newPlayersA).size < newPlayersA.length) continue;
+                  if (new Set(newPlayersB).size < newPlayersB.length) continue;
+
+                  // Reject if the swapped player now appears twice in either round
+                  const roundAGames = (gamesByRound(current)[roundKeys[ri]] || []).map(g => g === ga ? newA : g);
+                  const roundBGames = (gamesByRound(current)[roundKeys[rj]] || []).map(g => g === gb ? newB : g);
+                  if (!roundIsValid(roundAGames) || !roundIsValid(roundBGames)) continue;
+
+                  const candidate = applySwap(current, ga, newA, gb, newB);
+                  const s = score(candidate);
+                  if (s < currentScore - 1e-9) {
+                    current = candidate;
+                    currentScore = s;
+                    improved = true;
+                    // Break out to re-fetch fresh round maps on next pass
+                    break;
+                  }
+                }
+                if (improved) break;
+              }
+              if (improved) break;
+            }
+            if (improved) break;
+          }
+          if (improved) break;
+        }
+      }
+    }
+
+    return current;
+  }
+
   // ── Main optimizer ──────────────────────────────────────────
   //
   // Runs the constructive algorithm `tries` times — each attempt
@@ -469,7 +691,7 @@ const Pairings = (() => {
   // Weights are normalized via calibration so user weights reflect
   // true relative importance regardless of criterion magnitude.
 
-  function optimize({ presentPlayers, courts, rounds, pastPairings, tries = 100, weights = {}, standings = [], gameMode = 'doubles', playerGroups = {}, startRound = 1, sessionHistory = [], players = [] }) {
+  function optimize({ presentPlayers, courts, rounds, pastPairings, tries = 100, weights = {}, standings = [], gameMode = 'doubles', playerGroups = {}, startRound = 1, sessionHistory = [], players = [], useLocalImprove = true, swapPasses = 5, onProgress = null }) {
     const singles      = gameMode === 'singles';
     const mixedDoubles = gameMode === 'mixed-doubles';
     const playersPerCourt = singles ? 2 : 4;
@@ -537,12 +759,40 @@ const Pairings = (() => {
       });
     });
 
+    // Compute noise level as a fraction of the average noiseless score.
+    // Noise is added to game scores during construction only (not final scoring)
+    // so different iterations explore genuinely different solutions while the
+    // best-of-N comparison remains fair.
+    let baselineScore = 0;
+    const BASELINE_RUNS = 3;
+    for (let i = 0; i < BASELINE_RUNS; i++) {
+      const c = constructWeek(presentPlayers, courts, rounds, history, byeCounts, normalizedWeights,
+        priorSessionPartners, priorSessionOpponents, 0);
+      const bc = { ...byeCounts };
+      c.forEach(g => { if (g.type === 'bye') [g.p1,g.p2,g.p3,g.p4].filter(Boolean).forEach(p => { if (bc[p] !== undefined) bc[p]++; }); });
+      baselineScore += scorePairings(c, history, bc, normalizedWeights).total;
+    }
+    baselineScore /= BASELINE_RUNS;
+    // Noise = 25% of per-game average score — enough to diversify greedy choices
+    // without making the search completely random
+    const totalGames = rounds * courts;
+    const noise = totalGames > 0 ? (baselineScore / totalGames) * 0.25 : 0;
+
     for (let i = 0; i < tries; i++) {
+      if (onProgress) onProgress({ phase: 'construct', iteration: i + 1, tries });
+
       // Construct using normalized weights so greedy choices reflect true priorities
-      const candidate = constructWeek(
+      let candidate = constructWeek(
         presentPlayers, courts, rounds, history, byeCounts, normalizedWeights,
-        priorSessionPartners, priorSessionOpponents
+        priorSessionPartners, priorSessionOpponents, noise
       );
+
+      // Polish with local swap search — hill-climb to nearest local optimum
+      // Only when explicitly enabled (can cause duplicate player assignments in same round)
+      if (useLocalImprove) {
+        if (onProgress) onProgress({ phase: 'swap', iteration: i + 1, tries });
+        candidate = localImprove(candidate, history, byeCounts, normalizedWeights, swapPasses);
+      }
 
       const candidateByeCounts = { ...byeCounts };
       candidate.forEach(g => {

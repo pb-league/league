@@ -125,7 +125,7 @@ const Tournament = (() => {
   // ── Advance round ──────────────────────────────────────────
   // Given completed scores for current round, determine next round pairings.
   // Returns { pairings, seeds, done, champion }
-  function advanceRound(seeds, weekScores, currentRound, courts, week, mode) {
+  function advanceRound(seeds, weekScores, currentRound, courts, week, mode, weekPairings = []) {
     const nextRound = currentRound + 1;
 
     // Determine winners/losers from this round's scores
@@ -134,10 +134,7 @@ const Tournament = (() => {
     // Update seeds based on results
     const updatedSeeds = seeds.map(s => ({ ...s }));
 
-    // Process byes — bye players advance automatically
-    const byePairings = weekScores
-      .filter(s => parseInt(s.round) === currentRound);
-    // Actually byes don't have scores — find them from pairings marked tourn-bye
+    // Process byes — teams with a tourn-bye advance automatically with a win
 
     roundScores.forEach(score => {
       if (score.score1 === '' || score.score2 === '' ||
@@ -174,6 +171,19 @@ const Tournament = (() => {
           lSeed.eliminated = true;
         }
       }
+    });
+
+    // Process tourn-bye pairings — bye teams advance with a win, no score needed
+    const byePairingsRound = weekPairings.filter(p =>
+      parseInt(p.round) === currentRound && (p.type === 'tourn-bye' || p.type === 'bye')
+    );
+    byePairingsRound.forEach(byePairing => {
+      [byePairing.p1, byePairing.p2].filter(Boolean).forEach(name => {
+        const seed = updatedSeeds.find(s => s.name === name);
+        if (seed && !seed.eliminated) {
+          seed.wBracketWins++;  // advance the bye team
+        }
+      });
     });
 
     // Who is still playing?
@@ -413,8 +423,8 @@ const Tournament = (() => {
     return { pairings, seeds, round: 1, mode, week, doubles };
   }
 
-  function advanceTournament(seeds, weekScores, currentRound, courts, week, mode) {
-    return advanceRound(seeds, weekScores, currentRound, courts, week, mode);
+  function advanceTournament(seeds, weekScores, currentRound, courts, week, mode, weekPairings = []) {
+    return advanceRound(seeds, weekScores, currentRound, courts, week, mode, weekPairings);
   }
 
   return { generateTournament, advanceTournament, advanceRoundRR };

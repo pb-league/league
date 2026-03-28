@@ -53,8 +53,8 @@ const API = (() => {
     getLeaguesAll:          ()           => get('getLeagues', { includeHidden: true }),
     getLeagueAndPlayers:    (leagueId, customerId) => get('getLeagueAndPlayers', customerId ? { leagueId, customerId } : { leagueId }),
     addLeague:        (leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues, hidden, customerId) => post({ action: 'addLeague', leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues, hidden, customerId }),
-    updateLeague:          (leagueId, name, sheetId, active, canCreateLeagues, hidden) => post({ action: 'updateLeague', leagueId, name, sheetId, active, canCreateLeagues, hidden }),
-    updateLeagueWithCaller: (leagueId, name, sheetId, active, canCreateLeagues, callerLeagueId) => post({ action: 'updateLeague', leagueId, name, sheetId, active, canCreateLeagues, callerLeagueId }),
+    updateLeague:          (leagueId, name, sheetId, active, canCreateLeagues, hidden, adminEmail, limits) => post({ action: 'updateLeague', leagueId, name, sheetId, active, canCreateLeagues, hidden, adminEmail, limits }),
+    updateLeagueWithCaller: (leagueId, name, sheetId, active, canCreateLeagues, callerLeagueId, adminEmail) => post({ action: 'updateLeague', leagueId, name, sheetId, active, canCreateLeagues, callerLeagueId, adminEmail }),
 
     // League-scoped (leagueId auto-injected from session)
     getAllData:        (sinceWeek)      => get('getAllData', sinceWeek ? { sinceWeek } : {}),
@@ -73,6 +73,7 @@ const API = (() => {
     registerPlayer:   (payload)        => post({ action: 'registerPlayer', ...payload }),
     submitApplication:(payload)        => post({ action: 'submitApplication', ...payload }),
     approvePlayer:    (playerName)     => post({ action: 'approvePlayer', playerName }),
+    sendFeedback:     (payload)        => post({ action: 'sendFeedback', ...payload }),
     saveConfig:       (config)         => post({ action: 'saveConfig', config }),
     savePlayers:      (players)        => post({ action: 'savePlayers', players }),
     setAttendance:    (player, week, status) => post({ action: 'setAttendance', player, week, status }),

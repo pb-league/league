@@ -29,6 +29,9 @@ const Auth = (() => {
 
   function requireAuth(adminOnly = false) {
     const session = getSession();
+    // On file:// each page is its own origin — sessionStorage doesn't cross pages.
+    // Skip redirects entirely so local testing doesn't loop.
+    if (location.protocol === 'file:') return session;
     if (!session || !session.leagueId) {
       const slug = sessionStorage.getItem('pb_league_slug');
       window.location.href = slug ? 'index.html?league=' + encodeURIComponent(slug) : 'index.html';

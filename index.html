@@ -7,9 +7,9 @@
   <meta name="theme-color" content="#0d1b2a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="PB League">
+  <meta name="apple-mobile-web-app-title" content="League Manager">
   <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
-  <title>Pickleball League — Login</title>
+  <title>League Manager — Login</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="court-bg">
@@ -20,8 +20,7 @@
 
     <div class="login-logo">
       <img src="img/pb_rot.gif" style="width:72px; height:72px; object-fit:contain; display:block; margin:0 auto 8px;" alt="">
-      <h1>PICKLE<span>BALL</span></h1>
-      <div class="league-name">League Manager</div>
+      <h1>LEAGUE<span> MANAGER</span></h1>
     </div>
 
     <!-- Step 1: Select League -->
@@ -31,6 +30,10 @@
         <select class="form-control" id="league-select">
           <option value="">— Loading leagues… —</option>
         </select>
+        <div id="league-search-banner" style="display:none; margin-top:6px; font-size:0.75rem; color:var(--muted);">
+          <span id="league-search-banner-text"></span>
+          <a href="#" id="btn-clear-search" style="color:var(--green); text-decoration:none; margin-left:10px;">✕ Show all leagues</a>
+        </div>
       </div>
       <button class="btn btn-primary w-full" id="btn-league-next" disabled>Continue →</button>
 
@@ -40,7 +43,7 @@
         </div>
         <div class="form-group" style="margin-bottom:8px;">
           <label class="form-label" style="font-size:0.78rem;">Organization ID <span style="color:var(--muted); font-weight:400;">(provided by your league admin)</span></label>
-          <input class="form-control" id="lookup-org-id" placeholder="e.g. springfield-pickleball" autocomplete="off" style="font-size:0.88rem;">
+          <input class="form-control" id="lookup-org-id" placeholder="e.g. springfield-league" autocomplete="off" style="font-size:0.88rem;">
         </div>
         <div style="display:flex; align-items:center; gap:10px; margin:6px 0;">
           <div style="flex:1; height:1px; background:rgba(255,255,255,0.08);"></div>
@@ -210,9 +213,9 @@
   </div>
   <div style="text-align:center; margin-top:24px; font-size:0.72rem; color:rgba(255,255,255,0.3); line-height:1.8;">
     <a href="marketing.html" style="color:rgba(94,194,106,0.7); font-size:0.78rem; font-weight:500; text-decoration:none; letter-spacing:0.03em;" onmouseover="this.style.color='rgba(94,194,106,1)'" onmouseout="this.style.color='rgba(94,194,106,0.7)'">
-      &#9656; Learn about Pickleball League Manager
+      &#9656; Learn about League Manager
     </a><br>
-    Created by Doug Tucker for non-commercial use<br>by the Pickleball community<br>
+    Created by Doug Tucker for non-commercial use<br>by the sports community<br>
     Contact Doug at <a href="/cdn-cgi/l/email-protection#adc9c2d8cac7d9edd4ccc5c2c283cec2c0" style="color:rgba(255,255,255,0.4);"><span class="__cf_email__" data-cfemail="492d263c2e233d093028212626672a2624">[email&#160;protected]</span></a> if you are interested in using it,
     or <a href="#" id="btn-apply" style="color:rgba(94,194,106,0.7); text-decoration:none; font-weight:500;"
        onmouseover="this.style.color='rgba(94,194,106,1)'" onmouseout="this.style.color='rgba(94,194,106,0.7)'">apply here</a>.
@@ -230,7 +233,7 @@
     <button id="btn-apply-close" style="position:absolute; top:14px; right:16px;
       background:none; border:none; color:rgba(255,255,255,0.35); font-size:1.3rem; cursor:pointer; line-height:1;">✕</button>
     <div style="font-family:'DM Sans',sans-serif;">
-      <div style="font-size:1.1rem; font-weight:700; color:#f0f4f0; margin-bottom:4px;">Apply to Use Pickleball League Manager</div>
+      <div style="font-size:1.1rem; font-weight:700; color:#f0f4f0; margin-bottom:4px;">Apply to Use League Manager</div>
       <div style="font-size:0.78rem; color:rgba(255,255,255,0.4); margin-bottom:18px; line-height:1.6;">
         Due to limited hosting bandwidth, the number of organizations that can be
         supported is restricted. Fill in the form below and the developer will let
@@ -274,7 +277,7 @@
           <select id="apply-location" class="form-control">
             <option value="">— Select —</option>
             <option value="Town / Public Courts">Town / Public Courts</option>
-            <option value="Pickleball Club">Pickleball Club</option>
+            <option value="Pickleball Club">Sports Club</option>
             <option value="Recreation Centre">Recreation Centre</option>
             <option value="Other">Other</option>
           </select>
@@ -340,8 +343,9 @@
 <script>
 (async function init() {
   // If already logged in with a valid league, redirect
+  // Skip on file:// to avoid redirect loops when testing locally
   const session = Auth.getSession();
-  if (session && session.leagueId && session.name) {
+  if (session && session.leagueId && session.name && location.protocol !== 'file:') {
     // Only redirect if this is a real completed login (has a player name)
     window.location.href = (session.isAdmin || ['admin','manager','assistant'].includes(session.role)) ? 'admin.html' : 'player.html';
     return;
@@ -361,11 +365,30 @@
   const leagueSel = document.getElementById('league-select');
   const btnLeagueNext = document.getElementById('btn-league-next');
 
+  // Prefetch map: leagueId -> players promise (starts fetching when user selects)
+  const playerPrefetch = {};
+
+  // Disable the dropdown while loading so the user can't interact prematurely.
+  // Wire the change handler immediately — before the async load — so selecting
+  // a league always works regardless of timing.
+  leagueSel.disabled = true;
+  leagueSel.innerHTML = '<option value="">⏳ Loading leagues…</option>';
+
+  leagueSel.addEventListener('change', () => {
+    btnLeagueNext.disabled = !leagueSel.value;
+    // Start fetching players eagerly as soon as a league is selected
+    const lid = leagueSel.value;
+    if (lid && !playerPrefetch[lid]) {
+      Auth.setSession('', false, lid, ''); // set leagueId so getPlayers works
+      playerPrefetch[lid] = API.getPlayers().catch(() => null);
+    }
+  });
+
   try {
     const data = await API.getLeagues(urlCustomerId);
     leagues = data.leagues || [];
 
-    leagueSel.innerHTML = '<option value="">— Choose League —</option>';
+    leagueSel.disabled = false;
     // Hide lookup section if org ID was in URL (user already scoped)
     if (urlCustomerId) {
       document.getElementById('league-lookup-section').style.display = 'none';
@@ -382,30 +405,13 @@
       });
       document.getElementById('step-league').appendChild(setupBtn);
     } else {
-      leagues.forEach(l => {
-        const opt = document.createElement('option');
-        opt.value = l.leagueId;
-        opt.textContent = l.name;
-        leagueSel.appendChild(opt);
-      });
+      populateLeagueSelect(leagues);
     }
   } catch (e) {
     leagueSel.innerHTML = '<option value="">Could not load leagues</option>';
+    leagueSel.disabled = false;
     showToast('Could not connect. Check GAS_URL in settings.js.', 'error');
   }
-
-  // Prefetch map: leagueId -> players promise (starts fetching when user selects)
-  const playerPrefetch = {};
-
-  leagueSel.addEventListener('change', () => {
-    btnLeagueNext.disabled = !leagueSel.value;
-    // Start fetching players eagerly as soon as a league is selected
-    const lid = leagueSel.value;
-    if (lid && !playerPrefetch[lid]) {
-      Auth.setSession('', false, lid, ''); // set leagueId so getPlayers works
-      playerPrefetch[lid] = API.getPlayers().catch(() => null);
-    }
-  });
 
   // ── Application modal ──────────────────────────────────────
   document.getElementById('btn-apply')?.addEventListener('click', e => {
@@ -459,6 +465,41 @@
   });
 
   // ── League lookup ───────────────────────────────────────────
+  // ── League search / lookup ─────────────────────────────────
+  // Replaces the dropdown with only matching results, with a banner
+  // to restore the full list.
+  function populateLeagueSelect(list) {
+    leagueSel.innerHTML = '<option value="">— Choose League —</option>';
+    list.forEach(l => {
+      const opt = document.createElement('option');
+      opt.value = l.leagueId;
+      opt.textContent = l.name;
+      leagueSel.appendChild(opt);
+    });
+    leagueSel.disabled = false;
+    btnLeagueNext.disabled = !leagueSel.value;
+  }
+
+  function showSearchBanner(text) {
+    const banner = document.getElementById('league-search-banner');
+    document.getElementById('league-search-banner-text').textContent = text;
+    banner.style.display = 'block';
+  }
+
+  function hideSearchBanner() {
+    document.getElementById('league-search-banner').style.display = 'none';
+  }
+
+  document.getElementById('btn-clear-search')?.addEventListener('click', e => {
+    e.preventDefault();
+    populateLeagueSelect(leagues);
+    hideSearchBanner();
+    document.getElementById('league-lookup-section').style.display = '';
+    document.getElementById('lookup-org-id').value = '';
+    document.getElementById('lookup-league-name').value = '';
+    document.getElementById('lookup-error').style.display = 'none';
+  });
+
   document.getElementById('btn-lookup-league').addEventListener('click', async () => {
     const orgId      = document.getElementById('lookup-org-id').value.trim();
     const leagueName = document.getElementById('lookup-league-name').value.trim().toLowerCase();
@@ -485,34 +526,27 @@
       }
 
       if (!found.length) {
-        errEl.textContent = 'No leagues found. Check your Organization ID and league name.';
+        errEl.textContent = 'No leagues found. Check your Organization ID or league name and try again.';
         errEl.style.display = 'block';
         return;
       }
 
-      // Merge found leagues into dropdown
-      found.forEach(l => {
-        if (!leagueSel.querySelector(`option[value="${l.leagueId}"]`)) {
-          const opt = document.createElement('option');
-          opt.value = l.leagueId;
-          opt.textContent = l.name;
-          leagueSel.appendChild(opt);
-        }
-      });
-
-      // Merge into leagues array
+      // Merge found leagues into the main leagues array
       found.forEach(l => { if (!leagues.find(x => x.leagueId === l.leagueId)) leagues.push(l); });
 
-      // Auto-select if only one result
+      // Replace dropdown with only the matching results
+      populateLeagueSelect(found);
+
       if (found.length === 1) {
+        // Single match — auto-select and show banner
         leagueSel.value = found[0].leagueId;
         btnLeagueNext.disabled = false;
-        showToast(`Found: ${found[0].name}`, 'success');
+        showSearchBanner(`Showing: "${found[0].name}"`);
       } else {
-        showToast(`Found ${found.length} leagues — select yours from the dropdown.`);
+        showSearchBanner(`Showing ${found.length} matching leagues — select yours below.`);
       }
 
-      // Hide lookup section now that leagues are populated
+      // Hide lookup form (user can restore it via banner link)
       document.getElementById('league-lookup-section').style.display = 'none';
 
     } catch (e) {
@@ -539,12 +573,13 @@
       // Use prefetched data if available, otherwise fetch now
       const prefetch = playerPrefetch[league.leagueId];
       const data = prefetch ? await prefetch : await API.getPlayers();
-      const players = (data ? data.players || [] : []).filter(p => p.active !== false);
+      const players = (data ? data.players || [] : []).filter(p => p.active === true); // exclude inactive and pending
 
       // Show register button if league allows it — fetch config
       document.getElementById('btn-show-register').classList.add('hidden');
       API.getConfig().then(cfg => {
-        registrationEnabled = !!(cfg && cfg.config && cfg.config.allowRegistration);
+        const rawReg = cfg && cfg.config && cfg.config.allowRegistration;
+        registrationEnabled = rawReg === true || rawReg === 'true';
         document.getElementById('btn-show-register').classList.toggle('hidden', !registrationEnabled);
       }).catch(() => {});
       playerSel.innerHTML = '<option value="">— Choose Player —</option>';
@@ -803,9 +838,25 @@
     btnPlayerNext.disabled = !playerSel.value;
   });
 
-  btnPlayerNext.addEventListener('click', () => {
+  btnPlayerNext.addEventListener('click', async () => {
     if (!playerSel.value) return;
     selectedPlayer = playerSel.value;
+
+    // Try a no-PIN login — skip the PIN step if player has no PIN set
+    const btn = btnPlayerNext;
+    btn.disabled = true;
+    try {
+      const result = await Auth.login(selectedPlayer, '', selectedLeague.leagueId, selectedLeague.name);
+      if (result && result.valid && result.noPin) {
+        // No PIN required — route straight to the right dashboard
+        if (result.role === 'assistant') { window.location.href = 'admin.html'; }
+        else if (result.isAdmin) { window.location.href = 'admin.html'; }
+        else { window.location.href = 'player.html'; }
+        return;
+      }
+    } catch (e) { /* fall through to PIN step */ }
+    finally { btn.disabled = false; }
+
     showPinStep(selectedPlayer);
   });
 
@@ -830,7 +881,7 @@
 
   document.getElementById('btn-login').addEventListener('click', async () => {
     const pin = document.getElementById('pin-input').value.trim();
-    if (!pin) return;
+    // Note: empty PIN is allowed — server decides if player has no PIN configured
 
     const btn = document.getElementById('btn-login');
     btn.disabled = true;

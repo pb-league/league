@@ -67,6 +67,7 @@
       <section id="page-dashboard" class="tab-panel active">
         <div class="page-header">
           <h2 id="dash-league-name">League Dashboard</h2>
+          <button class="btn btn-secondary" id="btn-refresh-dashboard" style="padding:5px 12px; font-size:0.78rem;">🔄 Refresh</button>
         </div>
         <div id="dash-info"></div>
         <div class="card-grid" id="dash-stats"></div>
@@ -90,6 +91,15 @@
             <div id="dash-progress"></div>
           </div>
         </details>
+        <details id="dash-limits-details" style="margin-top:8px; display:none;">
+          <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; background:var(--surface); border-radius:var(--radius); padding:10px 16px;">
+            <div class="card-title" style="margin:0;">League Restrictions</div>
+            <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">▼</span>
+          </summary>
+          <div class="card" style="border-top-left-radius:0; border-top-right-radius:0; margin-top:0;">
+            <div id="dash-limits"></div>
+          </div>
+        </details>
         <div id="dash-version"></div>
       </section>
 
@@ -100,22 +110,36 @@
           <div class="card-header"><div class="card-title">Configuration</div></div>
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">League Name</label>
-              <input class="form-control" id="cfg-name" placeholder="My Pickleball League">
+              <label class="form-label">League Name <span style="color:var(--muted);font-weight:400;">(also updates registry)</span></label>
+              <input class="form-control" id="cfg-name" placeholder="My League">
             </div>
             <div class="form-group">
               <label class="form-label">Admin PIN</label>
               <input class="form-control" id="cfg-admin-pin" type="password" placeholder="••••">
             </div>
             <div class="form-group">
-              <label class="form-label">Reply-To Email</label>
+              <label class="form-label">Reply-To Email <span style="color:var(--muted);font-weight:400;">(also updates registry)</span></label>
               <input class="form-control" id="cfg-reply-to" type="email" placeholder="league@example.com">
             </div>
           </div>
           <div class="form-row">
             <div class="form-group" style="flex:2;">
-              <label class="form-label">League URL <span style="color:var(--muted);font-weight:400;">(link shared with players)</span></label>
-              <input class="form-control" id="cfg-league-url" placeholder="https://pb-league.github.io/league/index.html?league=">
+              <label class="form-label" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                <input type="checkbox" id="cfg-admin-only-email" style="width:16px; height:16px; cursor:pointer;">
+                <span>Admin-only emails <span style="color:var(--muted); font-weight:400;">(send session &amp; tournament reports only to Reply-To address — admin can then forward)</span></span>
+              </label>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="flex:1;">
+              <label class="form-label">League ID <span style="color:var(--muted);font-weight:400;">(cannot be changed)</span></label>
+              <input class="form-control" id="cfg-league-id-display" readonly
+                style="opacity:0.55; cursor:default; background:rgba(255,255,255,0.03);">
+            </div>
+            <div class="form-group" style="flex:2;">
+              <label class="form-label">League URL <span style="color:var(--muted);font-weight:400;">(auto-generated — share with players)</span></label>
+              <input class="form-control" id="cfg-league-url" readonly
+                style="opacity:0.55; cursor:default; background:rgba(255,255,255,0.03);">
             </div>
           </div>
           <div class="form-row">
@@ -154,6 +178,11 @@
             <div class="form-group">
               <label class="form-label">Optimizer Tries</label>
               <input class="form-control" id="cfg-tries" type="number" min="10" max="500" value="100">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Min Participation % <span style="color:var(--muted); font-weight:400; font-size:0.78rem;">(for prize eligibility)</span></label>
+              <input class="form-control" id="cfg-min-participation" type="number" min="0" max="100"
+                placeholder="50" style="width:90px;">
             </div>
             <div class="form-group">
               <label class="form-label">Secondary Ranking</label>
@@ -237,6 +266,22 @@
               <div class="form-group">
                 <label class="form-label">Rank Std Dev (spread of all 4 ranks)</label>
                 <input class="form-control" id="cfg-w-rank-std-dev" type="number" min="0" max="500" step="1">
+              </div>
+              <div class="form-group" id="cfg-mixed-violation-group" style="display:none;">
+                <label class="form-label">Mixed Violation Penalty <span style="color:var(--muted); font-weight:400; font-size:0.75rem;">(same-gender partnership)</span></label>
+                <input class="form-control" id="cfg-w-mixed-violation" type="number" min="0" max="5000" step="10">
+              </div>
+            </div>
+            <div class="form-row" style="margin-top:10px;">
+              <div class="form-group" style="flex:2;">
+                <label class="form-label" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                  <input type="checkbox" id="cfg-local-improve" style="width:16px; height:16px; cursor:pointer;">
+                  <span>Post-generation swap optimisation <span style="color:var(--muted); font-weight:400;">(hill-climb player swaps after each attempt to improve pairing quality)</span></span>
+                </label>
+              </div>
+              <div class="form-group" style="flex:0 0 130px;">
+                <label class="form-label">Swap Passes <span style="color:var(--muted); font-weight:400; font-size:0.75rem;">(per attempt)</span></label>
+                <input class="form-control" id="cfg-swap-passes" type="number" min="1" max="20" value="5">
               </div>
             </div>
           </div>
@@ -376,7 +421,7 @@
         <div class="page-header"><h2>Attendance</h2></div>
         <div class="card">
           <div id="attendance-grid"></div>
-          <div class="mt-2 text-muted" style="font-size:0.8rem;">Click to cycle: <span style="color:var(--green);">In</span> → <span style="color:var(--danger);">Out</span> → TBD → <span style="color:var(--gold);">Sit Out</span>. Sit Out players stay in standings but are excluded from pairing generation. Spectator-role members never appear in pairings. Changes save automatically.</div>
+          <div class="mt-2 text-muted" style="font-size:0.8rem;">Click to cycle: TBD → <span style="color:var(--green);">In</span> → <span style="color:var(--danger);">Out</span> → <span style="color:var(--gold);">Sit Out</span>. Sit Out players stay in standings but are excluded from pairing generation. Spectator-role members never appear in pairings. Changes save automatically.</div>
         </div>
       </section>
 
@@ -408,12 +453,14 @@
           </div>
           <div class="btn-group">
             <button class="btn btn-gold" id="btn-generate">🎲 Generate Pairings for Session 1</button>
+            <button class="btn btn-secondary hidden" id="btn-generate-fresh" title="Discard current best and start a new search from scratch">↺ Start Fresh</button>
             <button class="btn btn-primary" id="btn-lock-pairings" disabled>🔒 Lock &amp; Save</button>
             <button class="btn btn-danger" id="btn-clear-pairings">🗑 Clear Rounds</button>
           </div>
           <div class="optimizer-status mt-1 hidden" id="optimizer-status">
             <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:8px;">
               <span>Total Score: <span class="score" id="optimizer-score">—</span></span>
+              <span id="optimizer-improved" style="font-size:0.78rem;"></span>
               <span id="optimizer-msg" style="font-size:0.78rem; color:var(--muted);"></span>
             </div>
             <div id="optimizer-breakdown"></div>
@@ -533,6 +580,12 @@
           </div>
           </details>
         </div>
+        <div id="pairings-unsaved-warning" style="display:none; margin:8px 0; padding:10px 14px;
+          background:rgba(255,180,0,0.1); border:1px solid rgba(255,180,0,0.35);
+          border-radius:8px; font-size:0.83rem; color:var(--gold);
+          display:none; align-items:center; gap:10px;">
+          ⚠️ Pairings have been generated but <strong>not yet saved</strong> — press 🔒 Lock &amp; Save to commit them.
+        </div>
         <div id="pairings-preview"></div>
       </section>
 
@@ -541,6 +594,7 @@
         <div class="page-header">
           <h2>Score Entry</h2>
           <div style="display:flex; align-items:center; gap:8px;">
+            <button class="btn btn-secondary" id="btn-print-scoresheet" style="padding:5px 12px; font-size:0.78rem;">🖨️ Print / PDF</button>
             <button class="btn btn-secondary" id="btn-refresh-scoresheet" style="padding:5px 12px; font-size:0.78rem;">🔄 Refresh</button>
             <select id="score-week-select" class="form-control" style="width:auto; min-width:130px; font-size:0.82rem; padding:4px 8px;">
             </select>
@@ -579,7 +633,7 @@
       <!-- ═══ STANDINGS ═══ -->
       <section id="page-standings" class="tab-panel">
         <div class="page-header">
-          <h2>Standings</h2>
+          <h2 id="standings-page-title">Standings</h2>
         </div>
         <div class="tabs" id="standings-tabs">
           <button class="tab-btn active" data-tab="season">Season Overall</button>
@@ -725,7 +779,7 @@
     <button onclick="document.getElementById('qr-modal').style.display='none'"
       style="position:absolute; top:12px; right:14px; background:none; border:none;
              color:rgba(255,255,255,0.35); font-size:1.3rem; cursor:pointer; line-height:1;">✕</button>
-    <div style="font-weight:600; font-size:0.95rem; color:var(--white); margin-bottom:4px;">League QR Code</div>
+    <div id="qr-modal-title" style="font-weight:600; font-size:0.95rem; color:var(--white); margin-bottom:4px;">League QR Code</div>
     <div id="qr-url-label" style="font-size:0.72rem; color:var(--muted); margin-bottom:16px;
       word-break:break-all; max-height:40px; overflow:hidden;"></div>
     <div id="qr-canvas-wrap" style="background:#fff; border-radius:10px; padding:14px;
@@ -741,6 +795,55 @@
 </div>
 
 <div id="toast-container"></div>
+
+<!-- Limits edit modal -->
+<div id="limits-modal" style="display:none; position:fixed; inset:0; z-index:200;
+  background:rgba(0,0,0,0.7); backdrop-filter:blur(4px);
+  align-items:center; justify-content:center;">
+  <div style="background:#152232; border:1px solid rgba(255,255,255,0.12); border-radius:14px;
+    padding:28px 28px 22px; max-width:420px; width:92%; position:relative;">
+    <button onclick="document.getElementById('limits-modal').style.display='none'"
+      style="position:absolute; top:12px; right:14px; background:none; border:none;
+             color:rgba(255,255,255,0.35); font-size:1.3rem; cursor:pointer; line-height:1;">✕</button>
+    <div style="font-weight:600; font-size:0.95rem; color:var(--white); margin-bottom:4px;">Edit Limits</div>
+    <div id="limits-modal-league" style="font-size:0.78rem; color:var(--muted); margin-bottom:18px;"></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Expiry Days <span style="color:var(--muted);font-weight:400;">(blank = no expiry)</span></label>
+        <input class="form-control" id="lim-expiry" type="number" min="0" placeholder="e.g. 365">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Max Players <span style="color:var(--muted);font-weight:400;">(blank = no limit)</span></label>
+        <input class="form-control" id="lim-players" type="number" min="1" placeholder="e.g. 20">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Max Courts <span style="color:var(--muted);font-weight:400;">(blank = no limit)</span></label>
+        <input class="form-control" id="lim-courts" type="number" min="1" placeholder="e.g. 4">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Max Rounds/Session <span style="color:var(--muted);font-weight:400;">(blank = no limit)</span></label>
+        <input class="form-control" id="lim-rounds" type="number" min="1" placeholder="e.g. 7">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Max Sessions <span style="color:var(--muted);font-weight:400;">(blank = no limit)</span></label>
+        <input class="form-control" id="lim-sessions" type="number" min="1" placeholder="e.g. 12">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Customer ID <span style="color:var(--muted);font-weight:400;">(blank to clear)</span></label>
+        <input class="form-control" id="lim-customer" type="text" placeholder="optional">
+      </div>
+    </div>
+    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:16px;">
+      <button class="btn btn-secondary" onclick="document.getElementById('limits-modal').style.display='none'"
+        style="padding:7px 18px;">Cancel</button>
+      <button class="btn btn-primary" id="lim-save-btn" style="padding:7px 18px;">Save Limits</button>
+    </div>
+  </div>
+</div>
 
 <!-- Changelog modal -->
 <div id="changelog-modal" style="display:none; position:fixed; inset:0; z-index:200;
@@ -776,6 +879,8 @@
   /* Collapsible round headers */
   details summary.round-summary::-webkit-details-marker { display:none; }
   details summary.round-summary::marker { display:none; }
+  /* Hide round score badge when the round is expanded — reduces tab-focus noise */
+  details[open] summary .round-badge { display:none; }
   details summary.round-summary:hover { background:rgba(255,255,255,0.06) !important; }
   /* Collapsible card headers */
   summary.collapsible-header::-webkit-details-marker { display:none; }

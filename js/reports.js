@@ -4,7 +4,7 @@
 
 const Reports = (() => {
 
-  function computeStandings(scores, players, pairings, upToWeek = null, rankingMethod = 'avgptdiff') {
+  function computeStandings(scores, players, pairings, upToWeek = null, rankingMethod = 'avgptdiff', attendance = []) {
     const stats = {};
 
     players.forEach(p => {
@@ -14,8 +14,8 @@ const Reports = (() => {
         name: p.name,
         wins: 0, losses: 0,
         points: 0, pointsAgainst: 0,
-        games: 0, byes: 0,
-        winPct: 0, ptDiff: 0, rank: 0
+        games: 0, byes: 0, eligibleRounds: 0,
+        winPct: 0, ptDiff: 0, rank: 0, participationPct: null
       };
     });
 
@@ -52,24 +52,58 @@ const Reports = (() => {
       });
     });
 
-    // Count byes
+    // Count byes — deduplicate by (player, week, round) since pairings stores
+    // one bye entry per player, so a doubles bye creates two entries per round.
+    const byeSeen = new Set();
     pairings.forEach(p => {
-      if (p.type === 'bye') {
-        if (upToWeek !== null && parseInt(p.week) > upToWeek) return;
-        [p.p1, p.p2, p.p3, p.p4].filter(Boolean).forEach(name => {
-          if (stats[name]) stats[name].byes++;
-        });
+      if (p.type !== 'bye') return;
+      if (upToWeek !== null && parseInt(p.week) > upToWeek) return;
+      [p.p1, p.p2, p.p3, p.p4].filter(Boolean).forEach(name => {
+        const key = `${name}|${p.week}|${p.round}`;
+        if (stats[name] && !byeSeen.has(key)) {
+          byeSeen.add(key);
+          stats[name].byes++;
+        }
+      });
+    });
+
+    // Participation %: rounds a player was present (played or had bye) / total scored rounds.
+    // Denominator = distinct (week, round) combos with at least one entered score.
+    // Byes count as full participation — a player with a bye was present, just sat out.
+    // We do NOT add bye-only rounds to the denominator because a round with no scored
+    // games hasn't "happened" from a league perspective.
+    const scoredRounds = new Set();
+    scores.forEach(s => {
+      if (upToWeek !== null && parseInt(s.week) > upToWeek) return;
+      if (s.score1 === '' || s.score1 === null || s.score2 === '' || s.score2 === null) return;
+      scoredRounds.add(`${s.week}|${s.round}`);
+    });
+    const totalLeagueRounds = scoredRounds.size;
+
+    // Each player's eligible rounds = total scored rounds PLUS any bye rounds they
+    // had that aren't already in scoredRounds (rare edge case: bye in an unscored round).
+    // This ensures a bye never reduces a player's participation below what they earned.
+    Object.keys(stats).forEach(name => {
+      stats[name].eligibleRounds = totalLeagueRounds;
+    });
+    // Add any bye rounds not in scoredRounds to the individual player's eligible count
+    byeSeen.forEach(key => {
+      const [name, week, round] = key.split('|');
+      if (stats[name] && !scoredRounds.has(`${week}|${round}`)) {
+        stats[name].eligibleRounds++;
       }
     });
 
     const list = Object.values(stats).map(s => {
       const total = s.wins + s.losses;
+      const participated = s.games + s.byes;
       return {
         ...s,
         winPct: total > 0 ? s.wins / total : 0,
         ptDiff:    s.points - s.pointsAgainst,
         avgPtDiff: s.games > 0 ? (s.points - s.pointsAgainst) / s.games : 0,
-        ptsPct:    (s.points + s.pointsAgainst) > 0 ? s.points / (s.points + s.pointsAgainst) : 0
+        ptsPct:    (s.points + s.pointsAgainst) > 0 ? s.points / (s.points + s.pointsAgainst) : 0,
+        participationPct: s.eligibleRounds > 0 ? participated / s.eligibleRounds : null,
       };
     });
 

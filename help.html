@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pickleball League Manager — Help</title>
+<title>League Manager — Help</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -217,7 +217,7 @@ tr:hover td { background:rgba(255,255,255,0.02); }
   <section class="section" id="architecture">
     <span class="section-num">01</span>
     <h1>Architecture Overview</h1>
-    <p>Pickleball League Manager uses a two-tier architecture with no dedicated server infrastructure.</p>
+    <p>League Manager uses a two-tier architecture with no dedicated server infrastructure.</p>
     <div class="table-wrap"><table>
       <tr><th>Component</th><th>Description</th></tr>
       <tr><td><strong>Frontend</strong></td><td>Static HTML/CSS/JS hosted on GitHub Pages. Three pages: <code>index.html</code> (login), <code>player.html</code> (player dashboard), <code>admin.html</code> (admin dashboard).</td></tr>
@@ -239,7 +239,10 @@ tr:hover td { background:rgba(255,255,255,0.02); }
       <tr><td><code>?id=</code></td><td>Filters the league dropdown to leagues belonging to that organisation (plus unassigned leagues)</td><td><code>?id=springfield</code></td></tr>
       <tr><td><code>?league=</code></td><td>Pre-selects a specific league by its ID slug or display name, skipping step 1</td><td><code>?league=tuesday-doubles</code></td></tr>
       <tr><td><code>?player=</code></td><td>Pre-selects a player by name, skipping step 2 and jumping straight to PIN entry</td><td><code>?player=Doug</code></td></tr>
-    </table></div>
+    <tr><td><code>?player=</code></td><td>Pre-selects a player by name, skipping step 2 and jumping straight to PIN entry</td><td><code>?player=Doug</code></td></tr>
+ <tr><td><code>?player=</code></td><td>Pre-selects a player by name, skipping step 2 and jumping straight to PIN entry</td><td><code>?player=Doug</code></td></tr>
+ 
+	</table></div>
     <p>All three can be combined in one URL. For example:</p>
     <pre style="background:rgba(255,255,255,0.05); border-radius:8px; padding:12px 16px; font-size:0.82rem; overflow-x:auto; color:var(--gold);">index.html?id=springfield&amp;league=tuesday-doubles&amp;player=Doug</pre>
     <p>This filters to Springfield leagues, selects Tuesday Doubles, pre-fills Doug's name, and drops straight to the PIN screen — one tap from a bookmark or home-screen shortcut.</p>
@@ -249,7 +252,7 @@ tr:hover td { background:rgba(255,255,255,0.02); }
     <p>Clicking <strong>🔐 Admin Login</strong> opens a dedicated password screen — completely separate from the player PIN system. Two tabs:</p>
     <div class="table-wrap"><table>
       <tr><th>Path</th><th>Password location</th><th>Access</th></tr>
-      <tr><td>League Admin</td><td>Config sheet — <code>adminPin</code> field</td><td>Full league control</td></tr>
+      <tr><td>League Admin</td><td>Config sheet — <code>adminPassword</code> field</td><td>Full league control</td></tr>
       <tr><td>App Manager</td><td>GAS Script Properties — <code>APP_MANAGER_PASSWORD</code></td><td>All leagues, limits, customer IDs</td></tr>
     </table></div>
     <div class="note"><div class="note-label">Security</div>No player can accidentally gain admin access by choosing the same PIN as the admin password — the two systems are completely separate.</div>
@@ -290,15 +293,8 @@ tr:hover td { background:rgba(255,255,255,0.02); }
     <span class="section-num">04</span>
     <h1>Deployment &amp; Setup</h1>
     <ol>
-      <li>Paste <code>Code.gs</code> into a new Google Apps Script project.</li>
-      <li>Update <code>REGISTRY_SHEET_ID</code> in <code>Code.gs</code> to your master registry Google Sheet ID.</li>
-      <li>Add columns 7–13 to the registry sheet: <code>createdDate</code>, <code>expiryDays</code>, <code>maxPlayers</code>, <code>maxCourts</code>, <code>maxRounds</code>, <code>maxSessions</code>, <code>customerId</code>.</li>
-      <li>Deploy as Web App: <em>Execute as Me</em>, <em>Anyone can access</em>.</li>
-      <li>Copy the Web App URL into <code>js/settings.js</code> as <code>GAS_URL</code>.</li>
-      <li>In Script Properties, add <code>APP_MANAGER_PASSWORD</code> = your chosen App Manager password.</li>
-      <li>Set up a time-based trigger: function <code>warmup()</code>, every 5 minutes.</li>
-      <li>Push all files to GitHub Pages (or any static hosting).</li>
-      <li>Open <code>index.html</code> and use <code>admin.html?setup=1</code> to create your first league.</li>
+      <li>Ask app developer if you need to do this.</li>
+     
     </ol>
     <div class="warn"><div class="note-label">Important</div>Set the Google Sheets to private — only the script owner needs access. Players never interact with the sheet directly.</div>
   </section>
@@ -317,12 +313,24 @@ tr:hover td { background:rgba(255,255,255,0.02); }
       <tr><td>Optimizer Tries</td><td>Number of random solutions evaluated (default 100). Higher = better quality but slower.</td></tr>
       <tr><td>Game Mode</td><td>Doubles, Mixed Doubles, Singles, or Fixed-Pair Doubles.</td></tr>
       <tr><td>Allow Self-Registration</td><td>Enables the Register button on the login page.</td></tr>
+		<tr>
+			<td>Admin Only Emails</td>
+			<td>When email button pressed to send standings or other league message, only goes to admin's email for review, editing, and forwarding instead of all players who provided email and checked box asking to receive messages.</td>
+		</tr>
       <tr><td>Invite Code</td><td>Required code for self-registration. Share with new players via text or email.</td></tr>
-      <tr><td>Max Pending Approvals</td><td>Cap on inactive (pending) registrations. Default 10.</td></tr>
+      <tr><td>Max Pending Approvals</td><td>Cap on inactive (pending) registrations. Default 10. Stops hackers from flooding registration requests.</td></tr>
       <tr><td>Session Dates / Times</td><td>Per-session date and time shown in pairings and emails.</td></tr>
       <tr><td>Court Names</td><td>Custom names per court (e.g. Court A, Back Court).</td></tr>
       <tr><td>Optimizer Weights</td><td>Relative importance of each pairing quality factor. See <a href="#pairing-algorithm">Pairing Algorithm</a>.</td></tr>
-    </table></div>
+		<tr>
+			<td>Message to Players</td>
+			<td>form to compose message to send to all players providing email.  Checkboxes to include various info about the league easily. (standings, dates,URL,...)</td>
+		</tr>
+		<tr>
+			<td>Feedback to Developer</td>
+			<td>form to report bugs, ask for help, or suggest new features.</td>
+		</tr>
+	</table></div>
   </section>
 
   <!-- ── Players ── -->
@@ -333,7 +341,7 @@ tr:hover td { background:rgba(255,255,255,0.02); }
     <div class="table-wrap"><table>
       <tr><th>Field</th><th>Description</th></tr>
       <tr><td>Player Handle</td><td>Unique identifier used throughout the app. Doesn't have to be a full name.</td></tr>
-      <tr><td>PIN</td><td>Numeric login code. Stored in the sheet.</td></tr>
+      <tr><td>PIN</td><td>Alpha-Numeric login code. Up to 8 characters.  Stored in the sheet.</td></tr>
       <tr><td>Group</td><td>M / F / Either — used for Mixed Doubles pairing gender balance.</td></tr>
       <tr><td>Email</td><td>For PIN recovery and email reports.</td></tr>
       <tr><td>Notify</td><td>If checked, player receives session result emails.</td></tr>
@@ -408,6 +416,10 @@ tr:hover td { background:rgba(255,255,255,0.02); }
       <tr><td>Max Courts</td><td>Blocks saving config if courts exceed limit.</td></tr>
       <tr><td>Max Rounds</td><td>Blocks pairing generation if rounds exceed limit.</td></tr>
       <tr><td>Max Sessions</td><td>Blocks saving config if sessions exceed limit.</td></tr>
+		<tr>
+			<td>Reason:</td>
+			<td>Limits are necessary because this is hosted on a free hosting site with bandwith limitations. Donations will allow for higher bandwith hosting!</td>
+		</tr>
     </table></div>
     <h2>Expiry Warning States</h2>
     <ul>
@@ -444,13 +456,19 @@ tr:hover td { background:rgba(255,255,255,0.02); }
       <li>Select scope: All rounds, All remaining rounds, or a specific round number.</li>
       <li>Click <strong>🎲 Generate Best Pairings</strong>. A spinner shows while the optimizer runs.</li>
       <li>Review the proposed pairings in the preview below.</li>
+		<li>
+			Click <strong>🎲 Generate Best Pairings</strong> as many times as you want to search for better pairings. Will only replace if find a better set..
+		</li>
+		<li>
+			Click <strong>Start Fresh</strong> if you want to discard the best pairings and start over. Use this if weights changed or if the available players changed.
+		</li>
       <li>Click <strong>🔒 Lock &amp; Save</strong> to commit them to the sheet.</li>
     </ol>
     <div class="warn"><div class="note-label">Warning</div>Pairings are not saved until you click Lock &amp; Save. Navigating away will lose unsaved pairings.</div>
     <h2>Partial Round Generation</h2>
     <p>You can generate individual rounds independently. The optimizer pre-warms from already-locked rounds, so it's aware of partners and opponents from earlier rounds when generating later ones.</p>
     <h2>Editing Pairings</h2>
-    <p>Use <strong>Edit / Add Pairing</strong> to manually create or modify individual games. Select session, round, and court, then click Load to edit an existing pairing or fill in new values to add one.</p>
+    <p>Use <strong>Edit / Add Pairing</strong> to manually create or modify individual games. Select session, round, and court, then click Load to edit an existing pairing or fill in new values to add one. Corresponding score entries are updated to match.</p>
     <h2>Clearing Pairings</h2>
     <p>Use <strong>🗑 Clear Rounds</strong> to remove generated pairings. Scope selector controls which rounds are cleared. Existing scores for cleared rounds are also removed.</p>
   </section>
@@ -460,7 +478,10 @@ tr:hover td { background:rgba(255,255,255,0.02); }
     <span class="section-num">12</span>
     <h1>Pairing Algorithm</h1>
     <p>The optimizer evaluates up to 500 random candidate solutions and keeps the best one. Each candidate is scored by a weighted sum of penalty factors — lower score = better pairing.</p>
-    <div class="table-wrap"><table>
+	  <p>Within each evaluation it swaps players within the court to see if that improves the score. </p>
+	  <p>After checking all the solutions for the best one, it then does player swapping within the round and between rounds to determine if any swaps would improve the score.</p>
+
+	  <div class="table-wrap"><table>
       <tr><th>Factor</th><th>Default Weight</th><th>Description</th></tr>
       <tr><td>Session Partners</td><td>50</td><td>Penalty for pairing players who've already partnered this session.</td></tr>
       <tr><td>Session Bye</td><td>30</td><td>Penalty if a player already had a bye this session gets another.</td></tr>
@@ -503,7 +524,10 @@ tr:hover td { background:rgba(255,255,255,0.02); }
       <li>Each round is collapsible — a ▲/▼ triangle on the left of the round header toggles it. Rounds auto-collapse when all scores are entered, with a ✓ badge showing the count.</li>
       <li>The <strong>Generate Pairings</strong> button always shows the current session number (e.g. <em>Generate Pairings for Session 3</em>) so it's clear which session will be affected.</li>
       <li>A <strong>🔄 Refresh</strong> button fetches the latest scores from the sheet in case players have entered scores since the page loaded.</li>
-      <li>When switching sessions, a loading indicator appears immediately so you know the change is registered while the data fetches.</li>
+		<li>A refresh is automatically done every minute while on the score entry page.</li>
+		<li> when a full score for a game is entered, it is automatically saved to the league spreadsheet to prevent possible loss.</li>
+
+		<li>When switching sessions, a loading indicator appears immediately so you know the change is registered while the data fetches.</li>
       <li>If existing scores would be overwritten, a warning dialog shows the difference before saving.</li>
       <li>Tied scores trigger a confirmation before saving.</li>
     </ul>
@@ -523,6 +547,7 @@ tr:hover td { background:rgba(255,255,255,0.02); }
       <li>Select format and click <strong>🏆 Generate Bracket</strong>.</li>
       <li>Click <strong>🔒 Lock &amp; Save Round</strong> to save the round.</li>
       <li>Enter scores, then click <strong>▶ Advance Round</strong> to generate the next round.</li>
+		<li> Buttons are disabled and enabled to help user know what steps to take next.</li>
       <li>Repeat until the tournament is complete.</li>
     </ol>
     <p>Tournament results are available in the <strong>Tournament</strong> item under Reports in the nav.</p>
@@ -613,7 +638,7 @@ tr:hover td { background:rgba(255,255,255,0.02); }
   <!-- ── Head-to-Head ── -->
   <section class="section" id="head-to-head-report">
     <span class="section-num">19</span>
-    <h1>Head-to-Head Analysis</h1>
+    <h1>Head-to-Head Analysis (only available for Admin)</h1>
     <p>Found under Reports → Head-to-Head. Shows how often every pair of players has faced each other, across two tabs.</p>
     <h2>Partners Tab</h2>
     <p>A heat-map matrix showing how many times each pair of players has been partners. Darker green = more games together. Below the matrix, an <strong>Average Partner Rank</strong> table ranks every player by the average rank of their partners (weighted by games played). A player near the top has consistently been paired with higher-ranked partners.</p>

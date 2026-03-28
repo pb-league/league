@@ -6,6 +6,25 @@
 
 const CHANGELOG = [
   {
+    version: '1.3.1',
+    date: '2026-03-28',
+    changes: [
+      'Admin can now change league name in registry',
+      'Admin configure to only send report emails to admin.',
+      'added player participation calculation and shown in results',
+      'clean up formatting',
+      'improve on pairing algorithm',
+      'show URL for logging directly in on player dashboard',
+      'for mixed doubles show number of M,F.E at bottom of attendance',
+      'show players their upcoming games on dashboard',
+      'allow admin to save or print the pairings',
+      'make swapping optimization step optional and with an interaction count',
+      'show generation progress',
+      'warn if pairings have not yet been saved',
+      'improve score entry to not lose focus and to prevent overwriting scores if entered too fast',
+      'put generation in background task so webpage does not timeout if takes too long'
+    ]
+  },{
     version: '1.1.0',
     date: '2026-03-24',
     changes: [

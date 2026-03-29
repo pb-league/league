@@ -15,6 +15,16 @@ const API = (() => {
     } catch { return null; }
   }
 
+  // Wrap fetch with a timeout using Promise.race — AbortController can silently
+  // fail to cancel on file:// or when the browser blocks before the network layer.
+  function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+    const fetchPromise = fetch(url, options);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Request timed out — check your internet connection.')), timeoutMs)
+    );
+    return Promise.race([fetchPromise, timeoutPromise]);
+  }
+
   async function get(action, params = {}) {
     const url = new URL(GAS_URL);
     url.searchParams.set('action', action);
@@ -24,7 +34,7 @@ const API = (() => {
       if (lid) url.searchParams.set('leagueId', lid);
     }
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-    const res = await fetch(url.toString());
+    const res = await fetchWithTimeout(url.toString());
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     return data;
@@ -37,7 +47,7 @@ const API = (() => {
       const lid = leagueId();
       if (lid) body.leagueId = lid;
     }
-    const res = await fetch(GAS_URL, {
+    const res = await fetchWithTimeout(GAS_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' }, // GAS requires text/plain for CORS
       body: JSON.stringify(body)
@@ -81,8 +91,9 @@ const API = (() => {
     saveScores:       (week, scores)   => post({ action: 'saveScores', week, scores }),
     sendWeeklyReport:   (payload)      => post({ action: 'sendWeeklyReport', ...payload }),
     sendLeagueMessage:     (payload)   => post({ action: 'sendLeagueMessage', ...payload }),
-    sendTournamentReport:  (payload)   => post({ action: 'sendTournamentReport', ...payload }),
-    sendPlayerReport:   (payload)      => post({ action: 'sendPlayerReport', ...payload }),
+    sendTournamentReport:       (payload) => post({ action: 'sendTournamentReport', ...payload }),
+    sendAvailabilityRequest:    (payload) => post({ action: 'sendAvailabilityRequest', ...payload }),
+    sendPlayerReport:           (payload) => post({ action: 'sendPlayerReport', ...payload }),
     changePin:        (name, currentPin, newPin) => post({ action: 'changePin', name, currentPin, newPin }),
     emailPin:         (name)             => post({ action: 'emailPin', name }),
   };

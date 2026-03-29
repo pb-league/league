@@ -5,6 +5,17 @@
 // ============================================================
 
 const CHANGELOG = [
+{
+    version: '1.3.4',
+    date: '2026-03-29',
+    changes: [
+'improve clearing of cached files',
+'support email attendance recording',
+'remove SIT-OUT as option since redundant with OUT',
+'rearrange admin config to put generate weights with pairing',
+'put messaging tasks on own menu tab'
+]},
+
   {
     version: '1.3.1',
     date: '2026-03-28',

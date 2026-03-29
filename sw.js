@@ -3,7 +3,7 @@
 // Strategy: Cache-first for static assets, network-first for API calls.
 // ============================================================
 
-const CACHE_NAME = 'pb-league-v1.1.0';
+const CACHE_NAME = 'pb-league-v1.3.1';
 
 // Static assets to pre-cache on install
 const PRECACHE = [

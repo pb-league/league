@@ -167,32 +167,40 @@ const ROLE_COLORS = {
     } catch (e) { /* ignore */ }
   }
 
-  // ── Boot ───────────────────────────────────────────────────
+  // ── Boot — two-phase load ──────────────────────────────────
+  // Phase 1: fast fetch (config + players + attendance).
+  // Renders the UI shell immediately; phase 2 fills pairings/scores/standings.
   showLoading(true);
   try {
-    const data = await API.getAllData();
-    state.config     = data.config || {};
-    state.players    = data.players || [];
-    state.attendance = data.attendance || [];
-    state.pairings   = data.pairings || [];
-    state.scores     = data.scores || [];
-    state.standings  = data.standings || [];
-    if (data.limits) state.limits = data.limits;
+    const early = await API.getEarlyData();
+    state.config     = early.config     || {};
+    state.players    = early.players    || [];
+    state.attendance = early.attendance || [];
   } catch (e) {
-    toast('Failed to load data: ' + e.message, 'error');
+    // Phase 1 failed — fall back to full load so we don't leave user stuck
+    try {
+      const data = await API.getAllData();
+      state.config     = data.config     || {};
+      state.players    = data.players    || [];
+      state.attendance = data.attendance || [];
+      state.pairings   = data.pairings   || [];
+      state.scores     = data.scores     || [];
+      state.standings  = data.standings  || [];
+      if (data.limits) state.limits = data.limits;
+    } catch (e2) {
+      toast('Failed to load data: ' + e2.message, 'error');
+    }
   } finally {
     showLoading(false);
   }
 
-  loadWeekPrefs(); // restore last-used session selections
+  loadWeekPrefs();
   gaPage('Admin Dashboard');
   gaEvent('login', { role: userRole });
   renderAll();
   applyLimitRestrictions();
   setupNav();
   setupEvents();
-  // Reconcile pair and score week selectors — they should always show the same session.
-  // If saved prefs diverged, use the higher value (most recent session).
   {
     const reconciled = Math.max(state.currentPairWeek || 1, state.currentScoreWeek || 1);
     state.currentPairWeek  = reconciled;
@@ -204,7 +212,37 @@ const ROLE_COLORS = {
   populateWeekSelect('tourn-week-select', 'currentTournWeek');
   populateWeekSelect('stand-week-select', 'currentStandWeek');
 
-  applyNavVisibility(); // Re-apply after setup in case anything changed it
+  applyNavVisibility();
+
+  // ── Phase 2: load pairings, scores, standings in background ──
+  // Show spinners in dashboard sections that depend on this data.
+  const spinnerHtml = '<div style="padding:16px; text-align:center; color:var(--muted); font-size:0.82rem;">⏳ Loading…</div>';
+  const standEl = document.getElementById('dash-standings');
+  const progEl  = document.getElementById('dash-progress');
+  if (standEl) standEl.innerHTML = spinnerHtml;
+  if (progEl)  progEl.innerHTML  = spinnerHtml;
+
+  API.getAllData().then(data => {
+    state.pairings  = data.pairings  || [];
+    state.scores    = data.scores    || [];
+    state.standings = data.standings || [];
+    if (data.limits) state.limits = data.limits;
+    renderDashboard();
+    renderPairingsPreview();
+    renderScoresheet();
+    renderStandings();
+    applyLimitRestrictions();
+    // Reconcile week selectors now that pairings are loaded
+    const reconciled = Math.max(state.currentPairWeek || 1, state.currentScoreWeek || 1);
+    state.currentPairWeek  = reconciled;
+    state.currentScoreWeek = reconciled;
+    populateWeekSelect('pair-week-select',  'currentPairWeek');
+    populateWeekSelect('score-week-select', 'currentScoreWeek');
+  }).catch(e => {
+    const errHtml = `<p style="padding:12px; color:var(--danger); font-size:0.82rem;">⚠ Could not load scores/pairings: ${e.message}</p>`;
+    if (standEl) standEl.innerHTML = errHtml;
+    if (progEl)  progEl.innerHTML  = errHtml;
+  });
 
   // ── Nav ────────────────────────────────────────────────────
   function setupNav() {
@@ -221,6 +259,7 @@ const ROLE_COLORS = {
         if (page === 'tourn-results') renderAdminTournamentResults();
         if (page === 'player-report') renderPlayerReportSelect();
         if (page === 'dashboard') refreshDashboard();
+        if (page === 'messaging') initAvailUI();
         if (page === 'scores') {
           // Show loading indicator immediately before fetching
           const scoreEl = document.getElementById('scoresheet');
@@ -273,6 +312,8 @@ const ROLE_COLORS = {
     renderStandings();
     renderPlayerReportSelect();
     renderLeagues();
+    initAvailUI();
+    renderMessaging();
   }
 
   // ── Head-to-Head ───────────────────────────────────────────
@@ -486,6 +527,53 @@ const ROLE_COLORS = {
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '🔄 Refresh'; }
     }
+  }
+
+  // ── Availability UI helpers (outer scope so renderAll can call initAvailUI) ──
+
+  function initAvailUI() {
+    const weekSel   = document.getElementById('avail-week-select');
+    const filterSel = document.getElementById('avail-filter');
+    const preview   = document.getElementById('avail-preview');
+    if (!weekSel) return;
+    const curWeek = parseInt(weekSel.value) || state.currentPairWeek || 1;
+    const weeks = parseInt(state.config.weeks || 8);
+    weekSel.innerHTML = '';
+    for (let w = 1; w <= weeks; w++) {
+      const opt = document.createElement('option');
+      opt.value = w;
+      const d = formatDateTime(w, state.config);
+      opt.textContent = d ? `Session ${w} — ${d}` : `Session ${w}`;
+      if (w === curWeek) opt.selected = true;
+      weekSel.appendChild(opt);
+    }
+    updateAvailPreview();
+  }
+
+  function getAvailRecipients(week, filter) {
+    return state.players.filter(p => {
+      if (p.active !== true || p.active === 'pend') return false;
+      if (p.role === 'spectator') return false;
+      if (!p.email) return false;
+      if (filter === 'unmarked') {
+        const rec = state.attendance.find(a => a.player === p.name && String(a.week) === String(week));
+        return !rec || rec.status === 'tbd';
+      }
+      return true;
+    });
+  }
+
+  function updateAvailPreview() {
+    const weekSel   = document.getElementById('avail-week-select');
+    const filterSel = document.getElementById('avail-filter');
+    const preview   = document.getElementById('avail-preview');
+    if (!weekSel || !preview) return;
+    const week   = parseInt(weekSel.value) || 1;
+    const filter = filterSel ? filterSel.value : 'unmarked';
+    const recips = getAvailRecipients(week, filter);
+    preview.textContent = recips.length
+      ? `Will send to ${recips.length} player${recips.length !== 1 ? 's' : ''}: ${recips.map(p => p.name).join(', ')}`
+      : 'No eligible recipients (check players have email addresses, spectators excluded).';
   }
 
   // ── Dashboard ──────────────────────────────────────────────
@@ -747,8 +835,6 @@ const ROLE_COLORS = {
     const idDisplay = document.getElementById('cfg-league-id-display');
     if (idDisplay) idDisplay.value = leagueId;
     document.getElementById('cfg-allow-registration').checked = c.allowRegistration === true || c.allowRegistration === 'true';
-    const adminOnlyEl = document.getElementById('cfg-admin-only-email');
-    if (adminOnlyEl) adminOnlyEl.checked = c.adminOnlyEmail === true || c.adminOnlyEmail === 'true';
     document.getElementById('cfg-reg-code').value         = c.registrationCode   || '';
     document.getElementById('cfg-reg-max-pending').value  = c.maxPendingReg      || 10;
     // Show/hide registration options based on checkbox
@@ -760,7 +846,6 @@ const ROLE_COLORS = {
 
     document.getElementById('cfg-rules').value    = c.rules       || '';
     document.getElementById('cfg-admin-pin').value = '';
-    document.getElementById('cfg-reply-to').value    = c.replyTo || '';
     document.getElementById('cfg-weeks').value   = c.weeks || 8;
     document.getElementById('cfg-courts').value  = c.courts || 3;
     document.getElementById('cfg-games').value   = c.gamesPerSession || 7;
@@ -786,21 +871,24 @@ const ROLE_COLORS = {
     const swapPassesEl = document.getElementById('cfg-swap-passes');
     if (swapPassesEl) swapPassesEl.value = c.swapPasses !== undefined ? c.swapPasses : 5;
 
-    // Session dates
+    // Session dates — each session on its own row, date+time side by side
     const weeks = parseInt(c.weeks || 8);
-    let datesHtml = '<div class="form-row" style="margin-top:12px;">';
+    let datesHtml = '';
     for (let w = 1; w <= weeks; w++) {
       datesHtml += `
-        <div class="form-group">
-          <label class="form-label">Session ${w} Date</label>
-          <input class="form-control" id="cfg-date-${w}" type="date" value="${normalizeDate(c['date_' + w])}">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Session ${w} Time</label>
-          <input class="form-control" id="cfg-time-${w}" type="time" value="${c['time_' + w] || ''}">
+        <div class="form-row" style="margin-top:6px; align-items:flex-end;">
+          <div class="form-group" style="flex:0 0 auto;">
+            <label class="form-label">Session ${w}</label>
+            <input class="form-control" id="cfg-date-${w}" type="date" value="${normalizeDate(c['date_' + w])}" style="width:160px;">
+          </div>
+          <div class="form-group" style="flex:0 0 auto;">
+            <label class="form-label" title="Optional — leave blank if time varies">
+              Time <span style="color:var(--muted); font-size:0.75rem; cursor:help;" title="Optional — leave blank if time varies">ℹ</span>
+            </label>
+            <input class="form-control" id="cfg-time-${w}" type="time" value="${c['time_' + w] || ''}" style="width:130px;">
+          </div>
         </div>`;
     }
-    datesHtml += '</div>';
     document.getElementById('cfg-dates-area').innerHTML = datesHtml;
 
     // Court names
@@ -928,6 +1016,14 @@ const ROLE_COLORS = {
   }
 
   // ── Attendance ─────────────────────────────────────────────
+  function renderMessaging() {
+    const c = state.config;
+    const replyEl = document.getElementById('cfg-reply-to');
+    if (replyEl) replyEl.value = c.replyTo || '';
+    const adminOnlyEl = document.getElementById('cfg-admin-only-email');
+    if (adminOnlyEl) adminOnlyEl.checked = c.adminOnlyEmail === true || c.adminOnlyEmail === 'true';
+  }
+
   function renderAttendance() {
     const weeks = parseInt(state.config.weeks || 8);
     // Exclude pending players — not yet authorized
@@ -996,7 +1092,7 @@ const ROLE_COLORS = {
     document.querySelectorAll('.att-cell.editable').forEach(cell => {
       cell.addEventListener('click', async () => {
         const isSpectatorRole = (() => { const p = state.players.find(pl => pl.name === cell.dataset.player); return p && p.role === 'spectator'; })();
-        const states = isSpectatorRole ? ['absent', 'tbd'] : ['tbd', 'present', 'absent', 'sit-out'];
+        const states = isSpectatorRole ? ['absent', 'tbd'] : ['tbd', 'present', 'absent'];
         const cur = states.indexOf(cell.className.split(' ').find(c => states.includes(c)));
         const next = states[(cur + 1) % states.length];
         const player = cell.dataset.player;
@@ -2456,6 +2552,59 @@ const ROLE_COLORS = {
     setupTournament();
     // Dashboard refresh button
     document.getElementById('btn-refresh-dashboard')?.addEventListener('click', () => refreshDashboard());
+
+    // ── Auto-save: admin email (blur) and admin-only-email (change) ──────────
+    async function saveMessagingSettings() {
+      const replyTo      = document.getElementById('cfg-reply-to')?.value.trim() || '';
+      const adminOnly    = document.getElementById('cfg-admin-only-email')?.checked === true;
+      const newConfig    = { ...state.config, replyTo, adminOnlyEmail: adminOnly };
+      try {
+        await API.saveConfig(newConfig);
+        state.config = newConfig;
+        // Also update registry so app manager sees current admin email
+        const sess = Auth.getSession();
+        if (sess?.leagueId && replyTo) {
+          API.updateLeague(sess.leagueId, undefined, undefined, undefined, undefined, undefined, replyTo)
+            .catch(() => {});
+        }
+      } catch (e) { toast('Auto-save failed: ' + e.message, 'error'); }
+    }
+    document.getElementById('cfg-reply-to')?.addEventListener('blur', saveMessagingSettings);
+    document.getElementById('cfg-admin-only-email')?.addEventListener('change', saveMessagingSettings);
+
+    // ── Auto-save: optimizer weight fields (blur/change) ────────────────────
+    async function saveOptimizerSettings() {
+      const D = Pairings.DEFAULTS;
+      const newConfig = {
+        ...state.config,
+        optimizerTries:   parseInt(document.getElementById('cfg-tries')?.value) || 100,
+        localImprove:     document.getElementById('cfg-local-improve')?.checked === true,
+        swapPasses:       parseInt(document.getElementById('cfg-swap-passes')?.value) || 5,
+        wSessionPartner:  parseFloat(document.getElementById('cfg-w-session-partner')?.value) ?? D.sessionPartnerWeight,
+        wSessionOpponent: parseFloat(document.getElementById('cfg-w-session-opponent')?.value) ?? D.sessionOpponentWeight,
+        wHistoryPartner:  parseFloat(document.getElementById('cfg-w-history-partner')?.value) ?? D.historyPartnerWeight,
+        wHistoryOpponent: parseFloat(document.getElementById('cfg-w-history-opponent')?.value) ?? D.historyOpponentWeight,
+        wByeVariance:     parseFloat(document.getElementById('cfg-w-bye-variance')?.value) ?? D.byeVarianceWeight,
+        wSessionBye:      parseFloat(document.getElementById('cfg-w-session-bye')?.value) ?? D.sessionByeWeight,
+        wRankBalance:     parseFloat(document.getElementById('cfg-w-rank-balance')?.value) ?? D.rankBalanceWeight,
+        wRankStdDev:      parseFloat(document.getElementById('cfg-w-rank-std-dev')?.value) ?? D.rankStdDevWeight,
+        wMixedViolation:  parseFloat(document.getElementById('cfg-w-mixed-violation')?.value) || D.mixedViolationWeight,
+      };
+      try {
+        await API.saveConfig(newConfig);
+        state.config = newConfig;
+      } catch (e) { toast('Auto-save failed: ' + e.message, 'error'); }
+    }
+    ['cfg-tries','cfg-local-improve','cfg-swap-passes',
+     'cfg-w-session-partner','cfg-w-session-opponent','cfg-w-history-partner',
+     'cfg-w-history-opponent','cfg-w-bye-variance','cfg-w-session-bye',
+     'cfg-w-rank-balance','cfg-w-rank-std-dev','cfg-w-mixed-violation'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const evt = el.type === 'checkbox' ? 'change' : 'blur';
+      el.addEventListener(evt, saveOptimizerSettings);
+    });
+
     // Save config
     document.getElementById('btn-save-config').addEventListener('click', async () => {
       if (isAssistant) { toast('Admin assistants cannot change league settings.', 'warn'); return; }
@@ -2538,6 +2687,60 @@ const ROLE_COLORS = {
         renderAttendance();
       } catch (e) { toast('Save failed: ' + e.message, 'error'); }
       finally { showLoading(false); }
+    });
+
+    // ── Availability Request — event wiring only (functions at outer scope) ───
+    document.getElementById('avail-week-select')?.addEventListener('change', updateAvailPreview);
+    document.getElementById('avail-filter')?.addEventListener('change', updateAvailPreview);
+    document.querySelector('.card:has(#avail-week-select) details')?.addEventListener('toggle', function() {
+      if (this.open) initAvailUI();
+    });
+
+    document.getElementById('btn-send-avail')?.addEventListener('click', async () => {
+      if (isAssistant) { toast('Admin assistants cannot send emails.', 'warn'); return; }
+      const week   = parseInt(document.getElementById('avail-week-select').value) || 1;
+      const filter = document.getElementById('avail-filter').value;
+      const statusEl = document.getElementById('avail-status');
+
+      const recipients = getAvailRecipients(week, filter);
+
+      if (!recipients.length) {
+        statusEl.textContent = 'No eligible recipients.';
+        statusEl.style.color = 'var(--gold)';
+        return;
+      }
+
+      const sess = Auth.getSession();
+      const leagueId = sess?.leagueId || '';
+      const gasUrl = typeof GAS_URL !== 'undefined' ? GAS_URL : '';
+      if (!gasUrl) {
+        statusEl.textContent = 'GAS_URL not configured in settings.js.';
+        statusEl.style.color = 'var(--danger)';
+        return;
+      }
+
+      statusEl.textContent = `⏳ Sending to ${recipients.length} player(s)…`;
+      statusEl.style.color = 'var(--muted)';
+      showLoading(true);
+      try {
+        const result = await API.sendAvailabilityRequest({
+          week,
+          leagueId,
+          leagueName: sess?.leagueName || state.config.leagueName || 'League',
+          replyTo:    state.config.replyTo || '',
+          gasUrl,
+          note:       document.getElementById('avail-note')?.value.trim() || '',
+          recipients: recipients.map(p => ({ name: p.name, email: p.email })),
+        });
+        statusEl.textContent = `✓ Sent to ${result.sent} player(s).`;
+        statusEl.style.color = 'var(--green)';
+        if (result.errors?.length) {
+          statusEl.textContent += ' Errors: ' + result.errors.join(', ');
+        }
+      } catch (e) {
+        statusEl.textContent = 'Send failed: ' + e.message;
+        statusEl.style.color = 'var(--danger)';
+      } finally { showLoading(false); }
     });
 
     // Send league message

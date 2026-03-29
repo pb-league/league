@@ -571,7 +571,7 @@ function gaPage(pageName) {
       cell.addEventListener('click', async () => {
         const myPlayer = state.players.find(pl => pl.name === playerName);
         const isSpectatorRole = myPlayer && myPlayer.role === 'spectator';
-        const states = isSpectatorRole ? ['absent', 'tbd'] : ['tbd', 'present', 'absent', 'sit-out'];
+        const states = isSpectatorRole ? ['absent', 'tbd'] : ['tbd', 'present', 'absent'];
         const curStatus = states.find(s => cell.classList.contains(s)) || 'tbd';
         const next = states[(states.indexOf(curStatus) + 1) % states.length];
         const week = cell.dataset.week;

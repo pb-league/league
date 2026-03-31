@@ -23,4 +23,4 @@ const APP_BUILD_DATE = '2026-03-29';
 // Google Analytics 4 Measurement ID
 // Set to your GA4 property ID (format: G-XXXXXXXXXX) to enable analytics.
 // Leave as empty string '' to disable — no tracking code will load.
-const GA_MEASUREMENT_ID = '';
+const GA_MEASUREMENT_ID = 'G-N7VXLGFSHX';

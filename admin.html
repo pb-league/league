@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0d1b2a">
@@ -182,6 +183,7 @@
                 <option value="doubles">Doubles</option>
                 <option value="mixed-doubles">Mixed Doubles</option>
                 <option value="singles">Singles</option>
+                <option value="fixed-pairs">Fixed Pairs (team name = both player names)</option>
               </select>
             </div>
           </div>
@@ -388,6 +390,9 @@
         <div class="page-header">
           <h2>Players</h2>
           <button class="btn btn-primary" id="btn-add-player">+ Add Player</button>
+        </div>
+        <div id="fixed-pairs-hint" style="display:none; margin-bottom:10px; padding:10px 14px; background:rgba(45,122,58,0.1); border:1px solid rgba(45,122,58,0.3); border-radius:8px; font-size:0.82rem; color:var(--white); line-height:1.6;">
+          <strong>Fixed Pairs mode:</strong> Each "player" entry represents a permanent doubles team. Enter the team name as both player names joined together (e.g. <em>Doug&amp;Kim</em>). The team competes as a single unit — pairings, standings, and scores all track the team name.
         </div>
         <div class="card">
           <div style="overflow-x:auto;">
@@ -1006,7 +1011,7 @@
   }, true);
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="js/settings.js?v=1.3.1"></script>
+<script src="js/settings.js?v=1.3.8"></script>
   <!-- Google Analytics — loads only if GA_MEASUREMENT_ID is set in settings.js -->
   <script>
     window.__gaReady = false;
@@ -1028,13 +1033,13 @@
       window.__gaReady = true;
     });
   </script>
-<script src="js/api.js?v=1.3.1"></script>
-<script src="js/auth.js?v=1.3.1"></script>
-<script src="js/pairings.js?v=1.3.1"></script>
-<script src="js/reports.js?v=1.3.1"></script>
-<script src="js/tournament.js?v=1.3.1"></script>
-<script src="js/changelog.js?v=1.3.1"></script>
-<script src="js/admin.js?v=1.3.1"></script>
+<script src="js/api.js?v=1.3.8"></script>
+<script src="js/auth.js?v=1.3.8"></script>
+<script src="js/pairings.js?v=1.3.8"></script>
+<script src="js/reports.js?v=1.3.8"></script>
+<script src="js/tournament.js?v=1.3.8"></script>
+<script src="js/changelog.js?v=1.3.8"></script>
+<script src="js/admin.js?v=1.3.8"></script>
 <script>
 (function() {
   const toggle   = document.getElementById('nav-toggle');

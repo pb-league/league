@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0d1b2a">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -232,8 +233,11 @@
 
 <div id="toast-container"></div>
 <div class="loading-overlay hidden" id="loading"><div class="spinner"></div></div>
+<div style="text-align:center; padding:8px 0 4px; font-size:0.68rem; color:rgba(255,255,255,0.18);">
+  <span id="player-version"></span>
+</div>
 
-<script src="js/settings.js?v=1.3.1"></script>
+<script src="js/settings.js?v=1.3.8"></script>
   <!-- Google Analytics — loads only if GA_MEASUREMENT_ID is set in settings.js -->
   <script>
     window.__gaReady = false;
@@ -255,10 +259,10 @@
       window.__gaReady = true;
     });
   </script>
-<script src="js/api.js?v=1.3.1"></script>
-<script src="js/auth.js?v=1.3.1"></script>
-<script src="js/reports.js?v=1.3.1"></script>
-<script src="js/player.js?v=1.3.1"></script>
+<script src="js/api.js?v=1.3.8"></script>
+<script src="js/auth.js?v=1.3.8"></script>
+<script src="js/reports.js?v=1.3.8"></script>
+<script src="js/player.js?v=1.3.8"></script>
 <script>
 (function() {
   const toggle   = document.getElementById('nav-toggle');
@@ -296,6 +300,13 @@
         .catch(err => console.warn('SW registration failed:', err));
     });
   }
+  // Version footer
+  window.addEventListener('DOMContentLoaded', () => {
+    const verEl = document.getElementById('player-version');
+    if (verEl && typeof APP_VERSION !== 'undefined') {
+      verEl.textContent = `v${APP_VERSION}  ·  Built ${APP_BUILD_DATE}`;
+    }
+  });
 </script>
 </body>
 </html>

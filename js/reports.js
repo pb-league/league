@@ -186,5 +186,157 @@ const Reports = (() => {
     return `${wins}/${losses}`;
   }
 
-  return { computeStandings, computePlayerReport, computeWeeklyStandings, pct, wl };
+  // ── Final round scenario analysis ──────────────────────────
+  // Called when on the last round of the last session.
+  // Returns an array of { name, currentRank, bestRank, scenarios }
+  // where scenarios describes what outcomes allow top-3 finishes.
+  function computeFinishScenarios(scores, players, pairings, finalWeek, finalRound, rankingMethod = 'avgptdiff', attendance = []) {
+    // All scores except the final round (those are the "fixed" results)
+    const priorScores = scores.filter(s =>
+      !(parseInt(s.week) === finalWeek && parseInt(s.round) === finalRound)
+    );
+
+    // Already-entered scores in the final round
+    const finalScores = scores.filter(s =>
+      parseInt(s.week) === finalWeek && parseInt(s.round) === finalRound &&
+      s.score1 !== '' && s.score1 !== null && s.score2 !== '' && s.score2 !== null
+    );
+
+    // Unscored games in the final round
+    const finalPairings = pairings.filter(p =>
+      parseInt(p.week) === finalWeek && parseInt(p.round) === finalRound &&
+      (p.type === 'game' || p.type === 'tourn-game')
+    ).filter(p => !finalScores.find(s => String(s.court) === String(p.court)));
+
+    if (!finalPairings.length) {
+      // All final round scores entered — just show final standings
+      return null;
+    }
+
+    // Base stats with all prior scores + already-entered final scores
+    const baseScores = [...priorScores, ...finalScores];
+    const baseStandings = computeStandings(baseScores, players, pairings, null, rankingMethod, attendance);
+    const baseMap = {};
+    baseStandings.forEach(s => { baseMap[s.name] = s; });
+
+    // Enumerate all 2^n win/loss outcomes for unscored games
+    const n = finalPairings.length;
+    const numCombos = 1 << n; // 2^n
+
+    // Track best rank achievable per player across all scenarios
+    const bestRank = {};
+    // Track which scenarios lead to each player's best rank
+    const winningScenarios = {}; // name -> array of combo indices that give best rank
+
+    baseStandings.forEach(s => {
+      bestRank[s.name] = s.rank;
+      winningScenarios[s.name] = [];
+    });
+
+    for (let combo = 0; combo < numCombos; combo++) {
+      // Build synthetic scores for this combo
+      const syntheticScores = finalPairings.map((p, i) => {
+        const t1wins = !!(combo & (1 << i));
+        return {
+          week: finalWeek, round: finalRound, court: p.court,
+          p1: p.p1, p2: p.p2, p3: p.p3, p4: p.p4,
+          score1: t1wins ? 11 : 0,
+          score2: t1wins ? 0 : 11,
+        };
+      });
+
+      const comboScores = [...baseScores, ...syntheticScores];
+      const comboStandings = computeStandings(comboScores, players, pairings, null, rankingMethod, attendance);
+
+      comboStandings.forEach(s => {
+        if (s.rank < bestRank[s.name]) {
+          bestRank[s.name] = s.rank;
+          winningScenarios[s.name] = [combo];
+        } else if (s.rank === bestRank[s.name]) {
+          winningScenarios[s.name].push(combo);
+        }
+      });
+    }
+
+    // Build human-readable scenario descriptions for players who can finish top 3
+    const results = [];
+    baseStandings.forEach(s => {
+      if (bestRank[s.name] > 3) return; // can't reach top 3
+
+      const scenarios = [];
+      const seenDescriptions = new Set();
+
+      winningScenarios[s.name].forEach(combo => {
+        if (bestRank[s.name] > 3) return;
+        // Only include combos that achieve the best rank
+        const syntheticScores = finalPairings.map((p, i) => {
+          const t1wins = !!(combo & (1 << i));
+          return {
+            week: finalWeek, round: finalRound, court: p.court,
+            p1: p.p1, p2: p.p2, p3: p.p3, p4: p.p4,
+            score1: t1wins ? 11 : 0,
+            score2: t1wins ? 0 : 11,
+          };
+        });
+        const comboScores = [...baseScores, ...syntheticScores];
+        const comboStandings = computeStandings(comboScores, players, pairings, null, rankingMethod, attendance);
+        const achieved = comboStandings.find(x => x.name === s.name);
+        if (!achieved || achieved.rank !== bestRank[s.name]) return;
+
+        // Describe each game outcome for this combo
+        const parts = finalPairings.map((p, i) => {
+          const t1wins = !!(combo & (1 << i));
+          const team1 = [p.p1, p.p2].filter(Boolean).join(' & ');
+          const team2 = [p.p3, p.p4].filter(Boolean).join(' & ');
+          return t1wins ? `${team1} beat ${team2}` : `${team2} beat ${team1}`;
+        });
+
+        // Check if tiebreaker (avgPtDiff) matters for this outcome
+        const tieDesc = checkTiebreakerNeeded(s.name, combo, finalPairings, baseScores, pairings, players, rankingMethod, attendance, bestRank[s.name]);
+
+        const desc = parts.join(', ') + (tieDesc ? ` (${tieDesc})` : '');
+        if (!seenDescriptions.has(desc)) {
+          seenDescriptions.add(desc);
+          scenarios.push(desc);
+        }
+      });
+
+      // Simplify: if ALL scenarios give this rank, just say "guaranteed" or describe remaining games
+      const guaranteed = winningScenarios[s.name].length === numCombos;
+
+      results.push({
+        name: s.name,
+        currentRank: s.rank,
+        bestRank: bestRank[s.name],
+        guaranteed,
+        scenarios: guaranteed ? [] : scenarios,
+      });
+    });
+
+    results.sort((a, b) => a.bestRank - b.bestRank || a.currentRank - b.currentRank);
+    return { results, games: finalPairings, enteredCount: finalScores.length };
+  }
+
+  function checkTiebreakerNeeded(playerName, combo, finalPairings, baseScores, pairings, players, rankingMethod, attendance, targetRank) {
+    // Check if the win/loss outcome alone secures the rank, or if avgPtDiff matters
+    // Run with a worse margin (0-11 for wins) and see if rank changes
+    const syntheticWorse = finalPairings.map((p, i) => {
+      const t1wins = !!(combo & (1 << i));
+      return {
+        week: parseInt(pairings[0]?.week || 1), round: parseInt(pairings[0]?.round || 1),
+        court: p.court, p1: p.p1, p2: p.p2, p3: p.p3, p4: p.p4,
+        score1: t1wins ? 1 : 0,
+        score2: t1wins ? 0 : 11,
+      };
+    });
+    const worseScores = [...baseScores, ...syntheticWorse];
+    const worseStandings = computeStandings(worseScores, players, pairings, null, rankingMethod, attendance);
+    const worsePlayer = worseStandings.find(s => s.name === playerName);
+    if (worsePlayer && worsePlayer.rank !== targetRank) {
+      return 'margin matters for tiebreaker';
+    }
+    return null;
+  }
+
+  return { computeStandings, computePlayerReport, computeWeeklyStandings, computeFinishScenarios, pct, wl };
 })();

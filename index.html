@@ -364,6 +364,7 @@
   let leagues = [];
   let selectedLeague = null;
   let selectedPlayer = null;
+  let leaguePlayers  = []; // full player objects including email, for PIN recovery check
 
   // Read URL params early — needed before API.getLeagues call
   const urlParams = new URLSearchParams(window.location.search);
@@ -602,6 +603,7 @@
       const prefetch = playerPrefetch[league.leagueId];
       const data = prefetch ? await prefetch : await API.getPlayers();
       const players = (data ? data.players || [] : []).filter(p => p.active === true); // exclude inactive and pending
+      leaguePlayers = players; // store for PIN recovery email check
 
       // Show register button if league allows it — fetch config
       document.getElementById('btn-show-register').classList.add('hidden');
@@ -780,15 +782,13 @@
       errEl.textContent = 'Error: ' + e.message;
       errEl.style.display = 'block';
     } finally {
-      btn.disabled = false; btn.textContent = 'Login →';
+      btn.disabled = false; btn.textContent = '🔑 Login';
     }
   });
 
   btnLeagueNext.addEventListener('click', () => {
-    const leagueId = leagueSel.value;
-    if (!leagueId) return;
-    const league = leagues.find(l => l.leagueId === leagueId);
-    selectLeague(league, null);
+    const league = leagues.find(l => l.leagueId === leagueSel.value);
+    if (league) selectLeague(league, null);
   });
 
   // ── URL parameter pre-selection ─────────────────────────────
@@ -929,37 +929,41 @@
         document.getElementById('pin-error').classList.remove('hidden');
         document.getElementById('pin-input').value = '';
 
-        // Offer to email PIN or advise to contact manager
+        // Offer PIN recovery or advise to contact organizer
         const offerEl = document.getElementById('pin-email-offer');
         if (selectedPlayer && selectedPlayer !== 'Admin') {
           try {
-            // Check if player has an email on file by attempting emailPin dry-run
-            // We show the offer optimistically — GAS will tell us if no email
-            offerEl.innerHTML = `<span style="color:var(--muted);">Forgot your PIN?
-              <button id="btn-send-pin" class="btn btn-secondary"
-                style="padding:3px 10px; font-size:0.75rem; margin-left:6px;">
-                Email my PIN
-              </button>
-            </span>`;
-            offerEl.classList.remove('hidden');
+            const playerObj = leaguePlayers.find(p => p.name === selectedPlayer);
+            const hasEmail = playerObj && playerObj.email && playerObj.email.trim() !== '';
 
-            document.getElementById('btn-send-pin').addEventListener('click', async () => {
-              const sendBtn = document.getElementById('btn-send-pin');
-              sendBtn.disabled = true;
-              sendBtn.textContent = '…';
-              try {
-                const r = await API.emailPin(selectedPlayer);
-                if (r.success) {
-                  offerEl.innerHTML = `<span style="color:var(--green);">✓ PIN sent to your email address.</span>`;
-                } else if (r.noEmail) {
-                  offerEl.innerHTML = `<span style="color:var(--muted);">No email address on file — please contact your league manager to obtain your PIN.</span>`;
-                } else {
-                  offerEl.innerHTML = `<span style="color:var(--danger);">Could not send: ${r.reason || 'unknown error'}</span>`;
+            if (hasEmail) {
+              offerEl.innerHTML = `<span style="color:var(--muted);">Forgot your PIN?
+                <button id="btn-send-pin" class="btn btn-secondary"
+                  style="padding:3px 10px; font-size:0.75rem; margin-left:6px;">
+                  Email my PIN
+                </button>
+              </span>`;
+              offerEl.classList.remove('hidden');
+
+              document.getElementById('btn-send-pin').addEventListener('click', async () => {
+                const sendBtn = document.getElementById('btn-send-pin');
+                sendBtn.disabled = true;
+                sendBtn.textContent = '…';
+                try {
+                  const r = await API.emailPin(selectedPlayer);
+                  if (r.success) {
+                    offerEl.innerHTML = `<span style="color:var(--green);">✓ PIN sent to your email address.</span>`;
+                  } else {
+                    offerEl.innerHTML = `<span style="color:var(--danger);">Could not send: ${r.reason || 'unknown error'}</span>`;
+                  }
+                } catch (e) {
+                  offerEl.innerHTML = `<span style="color:var(--danger);">Send failed: ${e.message}</span>`;
                 }
-              } catch (e) {
-                offerEl.innerHTML = `<span style="color:var(--danger);">Send failed: ${e.message}</span>`;
-              }
-            });
+              });
+            } else {
+              offerEl.innerHTML = `<span style="color:var(--muted);">No email address on file for PIN recovery — please contact your league organizer to obtain your PIN.</span>`;
+              offerEl.classList.remove('hidden');
+            }
           } catch (e) { /* silently skip offer if something goes wrong */ }
         }
       }
@@ -1007,5 +1011,5 @@
 })();
 </script>
 
-<script>
-  
+</body>
+</html>

@@ -289,8 +289,13 @@
               <input type="checkbox" id="msg-inc-players" style="width:15px;height:15px;">
               <span>Player list</span>
             </label>
+            <label style="display:flex; align-items:center; gap:7px; cursor:pointer;">
+              <input type="checkbox" id="msg-inc-standings" style="width:15px;height:15px;">
+              <span>Season standings</span>
+            </label>
           </div>
           <div id="msg-status" style="font-size:0.8rem; margin-top:8px;"></div>
+          <div id="msg-recipient-preview" style="font-size:0.78rem; color:var(--muted); margin-top:6px;"></div>
           <button class="btn btn-primary mt-1" id="btn-send-message">📧 Send Message</button>
           </div>
           </details>
@@ -409,7 +414,7 @@
         <div class="page-header"><h2>Attendance</h2></div>
         <div class="card">
           <div id="attendance-grid"></div>
-          <div class="mt-2 text-muted" style="font-size:0.8rem;">Click to cycle: TBD → <span style="color:var(--green);">In</span> → <span style="color:var(--danger);">Out</span> → <span style="color:var(--gold);">Sit Out</span>. Sit Out players stay in standings but are excluded from pairing generation. Spectator-role members never appear in pairings. Changes save automatically.</div>
+          <div class="mt-2 text-muted" style="font-size:0.8rem;">Click to cycle: TBD → <span style="color:var(--green);">In</span> → <span style="color:var(--danger);">Out</span>. Spectator-role members never appear in pairings. Changes save automatically.</div>
         </div>
       </section>
 
@@ -450,8 +455,10 @@
               <span>Total Score: <span class="score" id="optimizer-score">—</span></span>
               <span id="optimizer-improved" style="font-size:0.78rem;"></span>
               <span id="optimizer-msg" style="font-size:0.78rem; color:var(--muted);"></span>
+              <button class="btn btn-secondary hidden" id="btn-show-second" style="padding:3px 10px; font-size:0.75rem;">Show 2nd Best</button>
             </div>
             <div id="optimizer-breakdown"></div>
+            <div id="optimizer-distribution" style="display:none; margin-top:10px;"></div>
           </div>
           <!-- Optimizer Weights (nested inside Generate Pairings) -->
           <div style="margin-top:14px; padding:10px 12px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.07); border-radius:8px;">
@@ -492,11 +499,11 @@
                 <input class="form-control" id="cfg-w-session-bye" type="number" min="0" max="500" step="1">
               </div>
               <div class="form-group">
-                <label class="form-label">Rank Balance (team avg rank diff)</label>
+                <label class="form-label">Rank Balance <span style="color:var(--muted); font-weight:400; font-size:0.72rem;">(penalty for unequal team avg ranks)</span></label>
                 <input class="form-control" id="cfg-w-rank-balance" type="number" min="0" max="500" step="1">
               </div>
               <div class="form-group">
-                <label class="form-label">Rank Std Dev (spread of all 4 ranks)</label>
+                <label class="form-label">Rank Std Dev <span style="color:var(--muted); font-weight:400; font-size:0.72rem;">(penalty for mixed-rank players on same court)</span></label>
                 <input class="form-control" id="cfg-w-rank-std-dev" type="number" min="0" max="500" step="1">
               </div>
               <div class="form-group" id="cfg-mixed-violation-group" style="display:none;">
@@ -517,8 +524,24 @@
               </div>
               <div class="form-group" style="flex:0 0 130px;">
                 <label class="form-label">Swap Passes <span style="color:var(--muted); font-weight:400; font-size:0.75rem;">(per attempt)</span></label>
-                <input class="form-control" id="cfg-swap-passes" type="number" min="1" max="20" value="5">
+                <input class="form-control" id="cfg-swap-passes" type="number" min="0" max="20" value="5">
               </div>
+            </div>
+            <div style="margin-top:10px;">
+              <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:0.82rem;">
+                <input type="checkbox" id="cfg-use-initial-rank" style="width:15px;height:15px;margin-top:2px;">
+                <span>Use initial rankings instead of season standings for rank-based pairing factors
+                  <span style="color:var(--muted); font-weight:400;"> — useful when standings don't yet reflect true skill level</span>
+                </span>
+              </label>
+            </div>
+            <div style="margin-top:10px;">
+              <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:0.82rem;">
+                <input type="checkbox" id="cfg-verbose-optimizer" style="width:15px;height:15px;margin-top:2px;">
+                <span>Verbose mode — record score of every attempt and show distribution after generating
+                  <span style="color:var(--muted); font-weight:400;"> (adds no time; only affects what is displayed)</span>
+                </span>
+              </label>
             </div>
             </div>
             </details>
@@ -669,6 +692,17 @@
             </div>
           </div>
           <div id="scoresheet"></div>
+        </div>
+        <div id="finish-scenarios-card" style="display:none;" class="card mt-2">
+          <details open>
+          <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;">
+            <div class="card-title">🏆 Final Round — Possible Finishes</div>
+            <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">▲</span>
+          </summary>
+          <div class="collapsible-body">
+            <div id="finish-scenarios-content"></div>
+          </div>
+          </details>
         </div>
       </section>
 

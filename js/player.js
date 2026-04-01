@@ -54,7 +54,7 @@ function gaPage(pageName) {
   showLoading(true);
   try {
     const early = await API.getEarlyData();
-    state.config     = early.config     || {};
+    state.config = sanitizeConfig(early.config     || {});
     state.players    = early.players    || [];
     state.attendance = early.attendance || [];
   } catch (e) {
@@ -166,6 +166,16 @@ function gaPage(pageName) {
   function setupNav() {
     document.querySelectorAll('.nav-item').forEach(item => {
       item.addEventListener('click', () => {
+        // Pre-emptively show spinner on score-entry BEFORE making panel visible
+        if (item.dataset.page === 'score-entry') {
+          const entryEl = document.getElementById('player-scoresheet-entry');
+          if (entryEl) entryEl.innerHTML = `
+            <div style="text-align:center; padding:32px; color:var(--muted); font-size:0.85rem;">
+              <div style="font-size:1.8rem; margin-bottom:8px; animation:spin 0.8s linear infinite; display:inline-block;">⏳</div>
+              <div>Loading scores…</div>
+            </div>`;
+        }
+
         document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
         item.classList.add('active');
@@ -173,8 +183,32 @@ function gaPage(pageName) {
         document.getElementById('page-' + page)?.classList.add('active');
         gaPage('Player: ' + page);
         if (page === 'player-report') renderPlayerReportSelect();
-        if (page === 'score-entry') renderScoreEntry();
-        if (page === 'standings') renderPlayerStandings();
+        if (page === 'score-entry') {
+          const wk = state.currentScoreEntryWeek || state.currentSheetWeek || 1;
+          const fetchId = Date.now();
+          state._scoreEntryFetchId = fetchId;
+          API.getScores(wk).then(data => {
+            if (state._scoreEntryFetchId !== fetchId) return;
+            if (data && data.scores) {
+              state.scores = state.scores.filter(s => parseInt(s.week) !== parseInt(wk));
+              state.scores.push(...data.scores.filter(s => parseInt(s.week) === parseInt(wk)));
+            }
+            renderScoreEntry();
+          }).catch(() => {
+            if (state._scoreEntryFetchId !== fetchId) return;
+            renderScoreEntry();
+          });
+        }
+        if (page === 'standings') {
+          // Fetch fresh scores and standings from server before rendering
+          API.getScores().then(data => {
+            if (data && data.scores) {
+              state.scores = data.scores;
+              state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance);
+            }
+            renderPlayerStandings();
+          }).catch(() => renderPlayerStandings());
+        }
         if (page === 'tournament') renderTournamentBracket();
         if (page === 'attendance') {
           // Re-fetch attendance so player sees latest state from server
@@ -182,7 +216,7 @@ function gaPage(pageName) {
             if (data && data.attendance) state.attendance = data.attendance;
             // If config.weeks still missing, attempt a config re-fetch
             if (!state.config.weeks) {
-              API.getConfig().then(cfg => { if (cfg && cfg.config) state.config = cfg.config; }).catch(() => {});
+              API.getConfig().then(cfg => { if (cfg && cfg.config) state.config = sanitizeConfig(cfg.config); }).catch(() => {});
             }
             renderMyAttendance();
           }).catch(() => renderMyAttendance());
@@ -720,6 +754,84 @@ function gaPage(pageName) {
   }
 
   // ── Scoresheet (read-only) ─────────────────────────────────
+  function renderPlayerFinishScenarios() {
+    const card    = document.getElementById('player-finish-scenarios-card');
+    const content = document.getElementById('player-finish-scenarios-content');
+    if (!card || !content) return;
+
+    const totalWeeks  = parseInt(state.config.weeks || 0);
+    const totalRounds = parseInt(state.config.gamesPerSession || 0);
+    const week        = state.currentSheetWeek;
+
+    if (!totalWeeks || !totalRounds || week !== totalWeeks) {
+      card.style.display = 'none';
+      return;
+    }
+
+    const finalPairings = state.pairings.filter(p =>
+      parseInt(p.week) === week && parseInt(p.round) === totalRounds &&
+      (p.type === 'game' || p.type === 'tourn-game')
+    );
+    if (!finalPairings.length) {
+      card.style.display = 'none';
+      return;
+    }
+
+    card.style.display = '';
+
+    const result = Reports.computeFinishScenarios(
+      state.scores, state.players, state.pairings,
+      week, totalRounds,
+      state.config.rankingMethod || 'avgptdiff',
+      state.attendance
+    );
+
+    if (!result) {
+      content.innerHTML = '<p class="text-muted" style="font-size:0.85rem; padding:8px 0;">All final round scores entered — standings are final.</p>';
+      return;
+    }
+
+    const { results, games, enteredCount } = result;
+
+    if (!results.length) {
+      content.innerHTML = '<p class="text-muted" style="font-size:0.85rem; padding:8px 0;">No players can reach the top 3.</p>';
+      return;
+    }
+
+    const remaining = games.length;
+    let html = `<p style="font-size:0.82rem; color:var(--muted); margin-bottom:12px;">
+      ${enteredCount} of ${enteredCount + remaining} final round game${enteredCount + remaining !== 1 ? 's' : ''} scored.
+      ${remaining} game${remaining !== 1 ? 's' : ''} remaining.
+    </p>`;
+
+    results.forEach(r => {
+      const medal = r.bestRank === 1 ? '🥇' : r.bestRank === 2 ? '🥈' : '🥉';
+      const rankLabel = r.bestRank === 1 ? '1st' : r.bestRank === 2 ? '2nd' : '3rd';
+      const currentLabel = r.currentRank === 1 ? '1st' : r.currentRank === 2 ? '2nd' : r.currentRank === 3 ? '3rd' : `${r.currentRank}th`;
+      const isMe = r.name === session.name;
+
+      html += `<div style="margin-bottom:14px; padding:10px 14px; background:var(--card-bg); border-radius:8px;
+        border-left:3px solid ${r.bestRank === 1 ? '#ffd700' : r.bestRank === 2 ? '#c0c0c0' : '#cd7f32'};
+        ${isMe ? 'outline:1px solid var(--green);' : ''}">`;
+      html += `<div style="font-weight:700; font-size:0.95rem; margin-bottom:6px;">
+        ${medal} ${esc(r.name)}${isMe ? ' <span style="color:var(--green); font-size:0.75rem;">(you)</span>' : ''}
+        <span style="color:var(--muted); font-weight:400; font-size:0.82rem;">currently ${currentLabel}</span>
+      </div>`;
+
+      if (r.guaranteed) {
+        html += `<div style="color:var(--green); font-size:0.85rem;">Guaranteed to finish ${rankLabel} regardless of remaining results.</div>`;
+      } else if (r.scenarios.length) {
+        html += `<div style="font-size:0.82rem; color:var(--muted); margin-bottom:4px;">Can finish ${rankLabel} if:</div>`;
+        html += `<ul style="margin:0; padding-left:18px; font-size:0.82rem; line-height:1.8;">`;
+        r.scenarios.forEach(s => { html += `<li>${esc(s)}</li>`; });
+        html += `</ul>`;
+      }
+      html += `</div>`;
+    });
+
+    content.innerHTML = html;
+  }
+
   function renderScoresheet() {
     const week = state.currentSheetWeek;
     const dateStr = formatDateTime(week, state.config);
@@ -727,6 +839,7 @@ function gaPage(pageName) {
     const title = lName
       ? (dateStr ? `${lName}  ·  Session ${week} — ${dateStr}` : `${lName}  ·  Session ${week}`)
       : (dateStr ? `Session ${week} — ${dateStr}` : `Session ${week}`);
+    renderPlayerFinishScenarios();
     const weekLabelEl = document.getElementById('sheet-week-label');
     if (weekLabelEl) weekLabelEl.textContent = title;
     const sheetWkSel = document.getElementById('sheet-week-select');
@@ -939,6 +1052,14 @@ function gaPage(pageName) {
 
     document.getElementById('player-scoresheet-entry').innerHTML = html;
 
+    // Assign sequential tabindex to all score inputs so Tab skips round headings.
+    // Also remove summary elements from tab order — they are natively focusable
+    // (tabIndex=0) and would intercept Tab between rounds without this.
+    document.querySelectorAll('#player-scoresheet-entry summary').forEach(s => { s.tabIndex = -1; });
+    document.querySelectorAll('#player-scoresheet-entry .score-input').forEach((input, i) => {
+      input.tabIndex = i + 1;
+    });
+
     // Restore collapsed state
     if (collapsedRounds.size) {
       document.querySelectorAll('#player-scoresheet-entry details').forEach(d => {
@@ -1009,12 +1130,12 @@ function gaPage(pageName) {
           card.appendChild(indicator);
 
           try {
-            const weekScores = state.scores.filter(s => parseInt(s.week) === wk);
-
             // Queue saves per week — prevents concurrent writes causing duplicate rows.
-            // If a save is already in flight for this week, chain onto it.
+            // weekScores captured INSIDE the lock so it uses latest state at send time,
+            // not a stale snapshot that could be overwritten by a concurrent refresh.
             const prevLock = state.saveLocks[wk] || Promise.resolve();
             const thisLock = prevLock.then(async () => {
+              const weekScores = state.scores.filter(s => parseInt(s.week) === wk);
               await API.saveScores(wk, weekScores);
             });
             state.saveLocks[wk] = thisLock.catch(() => {}); // keep chain alive on error
@@ -1183,8 +1304,26 @@ function gaPage(pageName) {
         state.currentSheetWeek = state.currentScoreEntryWeek;
         const sheetSel = document.getElementById('sheet-week-select');
         if (sheetSel && sheetSel.value != state.currentScoreEntryWeek) sheetSel.value = state.currentScoreEntryWeek;
-        renderScoreEntry();
-        renderScoresheet();
+        // Show spinner and fetch before rendering — prevents stale scores overwriting new entries
+        const entryEl = document.getElementById('player-scoresheet-entry');
+        if (entryEl) entryEl.innerHTML = `
+          <div style="text-align:center; padding:32px; color:var(--muted); font-size:0.85rem;">
+            <div style="font-size:1.8rem; margin-bottom:8px; animation:spin 0.8s linear infinite; display:inline-block;">⏳</div>
+            <div>Loading scores…</div>
+          </div>`;
+        const wk = state.currentScoreEntryWeek;
+        const sel = document.getElementById('player-score-week-select');
+        if (sel) sel.disabled = true;
+        API.getScores(wk).then(data => {
+          if (data && data.scores) {
+            state.scores = state.scores.filter(s => parseInt(s.week) !== wk);
+            state.scores.push(...data.scores.filter(s => parseInt(s.week) === wk));
+          }
+        }).catch(() => {}).finally(() => {
+          if (sel) sel.disabled = false;
+          renderScoreEntry();
+          renderScoresheet();
+        });
       });
 
       document.getElementById('player-btn-save-scores').addEventListener('click', async () => {
@@ -1313,6 +1452,20 @@ function gaPage(pageName) {
     });
 
     // Refresh tournament bracket
+    document.getElementById('btn-refresh-standings')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-refresh-standings');
+      btn.disabled = true; btn.textContent = '⏳';
+      try {
+        const data = await API.getScores();
+        if (data && data.scores) {
+          state.scores = data.scores;
+          state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance);
+        }
+        renderPlayerStandings();
+      } catch (e) { /* silent — stale data still shown */ }
+      finally { btn.disabled = false; btn.textContent = '🔄 Refresh'; }
+    });
+
     document.getElementById('btn-refresh-bracket')?.addEventListener('click', async () => {
       const btn = document.getElementById('btn-refresh-bracket');
       btn.disabled = true;

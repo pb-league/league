@@ -109,10 +109,8 @@ const Pairings = (() => {
       }
     }
 
-    return s;
+    return isFinite(s) ? s : 1e9;
   }
-
-  // ── Constructive round builder ──────────────────────────────
   //
   // For each court in turn, try all C(pool,4) * 3 team-split
   // combinations. A small random noise is added to each score
@@ -147,28 +145,76 @@ const Pairings = (() => {
           }
         }
       } else {
-        // Doubles: pick best 4-player group with best team split
-        for (let i = 0; i < pool.length - 3; i++) {
-          for (let j = i + 1; j < pool.length - 2; j++) {
-            for (let k = j + 1; k < pool.length - 1; k++) {
-              for (let l = k + 1; l < pool.length; l++) {
-                const four = [pool[i], pool[j], pool[k], pool[l]];
-                [
-                  [four[0], four[1], four[2], four[3]],
-                  [four[0], four[2], four[1], four[3]],
-                  [four[0], four[3], four[1], four[2]],
-                ].forEach(([a, b, c2, d]) => {
-                  const sc = gameScore(a, b, c2, d, sessionPartners, sessionOpponents, history, w)
-                           + Math.random() * noise;
-                  if (sc < bestScore - 1e-9) {
-                    bestScore = sc;
-                    bestCombos = [{ p1: a, p2: b, p3: c2, p4: d }];
-                  } else if (sc < bestScore + 1e-9) {
-                    bestCombos.push({ p1: a, p2: b, p3: c2, p4: d });
-                  }
-                });
+        // Doubles: pick best 4-player group with best team split.
+        // For large pools, exhaustive C(n,4) search becomes prohibitively slow.
+        // Use a capped random-sample approach: try up to MAX_COMBOS random groups
+        // so generation stays fast even with 20+ players.
+        const MAX_COMBOS = 300;
+        const poolLen = pool.length;
+        const totalCombos = (poolLen * (poolLen-1) * (poolLen-2) * (poolLen-3)) / 24;
+
+        if (totalCombos <= MAX_COMBOS) {
+          // Small pool — exhaustive search
+          for (let i = 0; i < poolLen - 3; i++) {
+            for (let j = i + 1; j < poolLen - 2; j++) {
+              for (let k = j + 1; k < poolLen - 1; k++) {
+                for (let l = k + 1; l < poolLen; l++) {
+                  const four = [pool[i], pool[j], pool[k], pool[l]];
+                  [
+                    [four[0], four[1], four[2], four[3]],
+                    [four[0], four[2], four[1], four[3]],
+                    [four[0], four[3], four[1], four[2]],
+                  ].forEach(([a, b, c2, d]) => {
+                    const sc = gameScore(a, b, c2, d, sessionPartners, sessionOpponents, history, w)
+                             + Math.random() * noise;
+                    if (sc < bestScore - 1e-9) {
+                      bestScore = sc;
+                      bestCombos = [{ p1: a, p2: b, p3: c2, p4: d }];
+                    } else if (sc < bestScore + 1e-9) {
+                      bestCombos.push({ p1: a, p2: b, p3: c2, p4: d });
+                    }
+                  });
+                }
               }
             }
+          }
+        } else {
+          // Large pool — random sampling to stay within budget.
+          // Pick MAX_COMBOS random 4-player groups by shuffling and taking first 4.
+          const seen = new Set();
+          let sampled = 0;
+          let attempts = 0;
+          const maxAttempts = MAX_COMBOS * 8;
+          while (sampled < MAX_COMBOS && attempts < maxAttempts) {
+            attempts++;
+            // Pick 4 distinct random indices via partial Fisher-Yates
+            const idxs = [];
+            const avail = Array.from({ length: poolLen }, (_, i) => i);
+            for (let s = 0; s < 4; s++) {
+              const r = s + Math.floor(Math.random() * (poolLen - s));
+              [avail[s], avail[r]] = [avail[r], avail[s]];
+              idxs.push(avail[s]);
+            }
+            const key = idxs.slice().sort((a,b)=>a-b).join(',');
+            if (seen.has(key)) continue;
+            seen.add(key);
+            sampled++;
+
+            const four = idxs.map(i => pool[i]);
+            [
+              [four[0], four[1], four[2], four[3]],
+              [four[0], four[2], four[1], four[3]],
+              [four[0], four[3], four[1], four[2]],
+            ].forEach(([p1, p2, p3, p4]) => {
+              const sc = gameScore(p1, p2, p3, p4, sessionPartners, sessionOpponents, history, w)
+                       + Math.random() * noise;
+              if (sc < bestScore - 1e-9) {
+                bestScore = sc;
+                bestCombos = [{ p1, p2, p3, p4 }];
+              } else if (sc < bestScore + 1e-9) {
+                bestCombos.push({ p1, p2, p3, p4 });
+              }
+            });
           }
         }
       }
@@ -606,6 +652,15 @@ const Pairings = (() => {
       if (!singles) {
         const roundKeys = Object.keys(rounds).map(Number).sort((a, b) => a - b);
 
+        // Build a set of players on bye per round — swaps must not move a
+        // player into a round where they are already sitting out.
+        const byesByRound = {};
+        current.forEach(g => {
+          if (g.type !== 'bye') return;
+          if (!byesByRound[g.round]) byesByRound[g.round] = new Set();
+          [g.p1, g.p2, g.p3, g.p4].filter(Boolean).forEach(p => byesByRound[g.round].add(p));
+        });
+
         for (let ri = 0; ri < roundKeys.length - 1; ri++) {
           for (let rj = ri + 1; rj < roundKeys.length; rj++) {
             const gamesA = gamesByRound(current)[roundKeys[ri]] || [];
@@ -630,6 +685,12 @@ const Pairings = (() => {
                                  : gb.p4 === pivot ? gb.p3 : null;
 
                   if (!partnerA || !partnerB || partnerA === partnerB) continue;
+
+                  // Reject if either partner has a bye in the round they'd be moved into
+                  const byesRi = byesByRound[roundKeys[ri]] || new Set();
+                  const byesRj = byesByRound[roundKeys[rj]] || new Set();
+                  if (byesRi.has(partnerB)) continue; // partnerB would move to round ri but has a bye there
+                  if (byesRj.has(partnerA)) continue; // partnerA would move to round rj but has a bye there
 
                   // Swap: pivot gets partnerB in round ri and partnerA in round rj
                   // Build new game objects with partners swapped
@@ -691,8 +752,8 @@ const Pairings = (() => {
   // Weights are normalized via calibration so user weights reflect
   // true relative importance regardless of criterion magnitude.
 
-  function optimize({ presentPlayers, courts, rounds, pastPairings, tries = 100, weights = {}, standings = [], gameMode = 'doubles', playerGroups = {}, startRound = 1, sessionHistory = [], players = [], useLocalImprove = true, swapPasses = 5, onProgress = null }) {
-    const singles      = gameMode === 'singles';
+  function optimize({ presentPlayers, courts, rounds, pastPairings, tries = 100, weights = {}, standings = [], gameMode = 'doubles', playerGroups = {}, startRound = 1, sessionHistory = [], players = [], useLocalImprove = true, swapPasses = 5, onProgress = null, useInitialRank = false, verbose = false }) {
+    const singles      = gameMode === 'singles' || gameMode === 'fixed-pairs';
     const mixedDoubles = gameMode === 'mixed-doubles';
     const playersPerCourt = singles ? 2 : 4;
     if (presentPlayers.length < playersPerCourt) {
@@ -703,32 +764,77 @@ const Pairings = (() => {
     const byeCounts = buildByeCounts(presentPlayers, pastPairings);
 
     const rankMap = {};
-    standings.forEach(s => { if (s.name && s.rank) rankMap[s.name] = s.rank; });
 
-    // Build an effective rank for players not yet in standings.
-    // Use initialRank if set, converting it to a position relative to standings.
-    // Duplicate initialRanks: sort those players alphabetically as tiebreak.
-    const unranked = presentPlayers.filter(n => !rankMap[n]);
-    if (unranked.length) {
-      // Collect initialRank for each unranked player
-      const withInit = unranked.map(name => {
-        const pl = players.find(pl => pl.name === name);
-        return { name, initialRank: (pl && pl.initialRank) ? pl.initialRank : null };
+    if (useInitialRank) {
+      // Use initialRank for ALL players — ignore season standings entirely.
+      // Preserve the actual initialRank values so the full gap between ranks
+      // (e.g. rank 1 vs rank 9) is reflected in the scoring.
+      // Players with no initialRank are placed after all ranked players alphabetically.
+      // Players with the same initialRank are ordered alphabetically (small fractional offset).
+      const allWithInit = presentPlayers.map(name => {
+        const pl = players.find(p => p.name === name);
+        return { name, initialRank: (pl && pl.initialRank) ? parseFloat(pl.initialRank) : null };
       });
-      // Sort: those with initialRank first (ascending), then null (alphabetical tiebreak)
-      withInit.sort((a, b) => {
-        if (a.initialRank !== null && b.initialRank !== null) {
-          return a.initialRank !== b.initialRank
-            ? a.initialRank - b.initialRank
-            : a.name.localeCompare(b.name);
+
+      // Group by initialRank to resolve ties alphabetically
+      const rankGroups = {};
+      allWithInit.forEach(p => {
+        const key = p.initialRank !== null ? p.initialRank : Infinity;
+        if (!rankGroups[key]) rankGroups[key] = [];
+        rankGroups[key].push(p.name);
+      });
+      Object.keys(rankGroups).forEach(key => {
+        rankGroups[key].sort((a, b) => a.localeCompare(b));
+      });
+
+      // Assign rankMap: use actual initialRank value, with tiny alphabetical offset for ties
+      const noRankBase = Math.max(...allWithInit.map(p => p.initialRank || 0)) + 1;
+      let noRankIdx = 0;
+      allWithInit.forEach(({ name, initialRank }) => {
+        if (initialRank !== null) {
+          const group = rankGroups[initialRank];
+          const posInGroup = group.indexOf(name);
+          rankMap[name] = initialRank + posInGroup * 0.001; // tiny offset preserves gap
+        } else {
+          rankMap[name] = noRankBase + noRankIdx++ * 0.001;
         }
-        if (a.initialRank !== null) return -1;
-        if (b.initialRank !== null) return  1;
-        return a.name.localeCompare(b.name);
       });
-      // Assign sequential ranks starting after the last standing rank
-      const baseRank = standings.length > 0 ? standings.length : 0;
-      withInit.forEach((p, i) => { rankMap[p.name] = baseRank + i + 1; });
+    } else {
+      standings.forEach(s => { if (s.name && s.rank) rankMap[s.name] = s.rank; });
+
+      // Build an effective rank for players not yet in standings.
+      // Preserve actual initialRank values but offset them to sit after standings.
+      // Alphabetical tiebreak for same initialRank.
+      const unranked = presentPlayers.filter(n => !rankMap[n]);
+      if (unranked.length) {
+        const baseRank = standings.length > 0 ? standings.length : 0;
+        const withInit = unranked.map(name => {
+          const pl = players.find(pl => pl.name === name);
+          return { name, initialRank: (pl && pl.initialRank) ? parseFloat(pl.initialRank) : null };
+        });
+        // Find the max initialRank to normalize the range into the space after standings
+        const maxInit = Math.max(...withInit.map(p => p.initialRank || 0), 1);
+        // Group by initialRank for alphabetical tiebreak
+        const rankGroups = {};
+        withInit.forEach(p => {
+          const key = p.initialRank !== null ? p.initialRank : Infinity;
+          if (!rankGroups[key]) rankGroups[key] = [];
+          rankGroups[key].push(p.name);
+        });
+        Object.keys(rankGroups).forEach(key => rankGroups[key].sort((a, b) => a.localeCompare(b)));
+
+        const noRankStart = baseRank + maxInit + 1;
+        let noRankIdx = 0;
+        withInit.forEach(({ name, initialRank }) => {
+          if (initialRank !== null) {
+            const group = rankGroups[initialRank];
+            const pos = group.indexOf(name);
+            rankMap[name] = baseRank + initialRank + pos * 0.001;
+          } else {
+            rankMap[name] = noRankStart + noRankIdx++ * 0.001;
+          }
+        });
+      }
     }
     const weightsWithRank = Object.assign({}, DEFAULTS, weights, { rankMap, mixedDoubles, playerGroups, singles, playersPerCourt });
 
@@ -737,9 +843,13 @@ const Pairings = (() => {
       presentPlayers, courts, rounds, history, byeCounts, weightsWithRank
     );
 
-    let bestPairings  = null;
-    let bestBreakdown = null;
-    let bestScore     = Infinity;
+    let bestPairings   = null;
+    let bestBreakdown  = null;
+    let bestScore      = Infinity;
+    let secondPairings = null;
+    let secondBreakdown= null;
+    let secondScore    = Infinity;
+    const allScores    = verbose ? [] : null;
 
     // Pre-warm session state from already-locked rounds (e.g. when generating remaining/specific rounds)
     const priorSessionPartners  = {};
@@ -776,7 +886,7 @@ const Pairings = (() => {
     // Noise = 25% of per-game average score — enough to diversify greedy choices
     // without making the search completely random
     const totalGames = rounds * courts;
-    const noise = totalGames > 0 ? (baselineScore / totalGames) * 0.25 : 0;
+    const noise = (totalGames > 0 && isFinite(baselineScore)) ? (baselineScore / totalGames) * 0.25 : 0;
 
     for (let i = 0; i < tries; i++) {
       if (onProgress) onProgress({ phase: 'construct', iteration: i + 1, tries });
@@ -788,8 +898,8 @@ const Pairings = (() => {
       );
 
       // Polish with local swap search — hill-climb to nearest local optimum
-      // Only when explicitly enabled (can cause duplicate player assignments in same round)
-      if (useLocalImprove) {
+      // Skipped when useLocalImprove is false or swapPasses is 0
+      if (useLocalImprove && swapPasses > 0) {
         if (onProgress) onProgress({ phase: 'swap', iteration: i + 1, tries });
         candidate = localImprove(candidate, history, byeCounts, normalizedWeights, swapPasses);
       }
@@ -808,7 +918,14 @@ const Pairings = (() => {
         candidate, history, candidateByeCounts, normalizedWeights
       );
 
+      if (verbose) allScores.push(total);
+
       if (total < bestScore) {
+        // Demote current best to second best
+        secondScore    = bestScore;
+        secondPairings = bestPairings;
+        secondBreakdown= bestBreakdown;
+
         bestScore     = total;
         bestPairings  = candidate;
         // Score with normalized weights so breakdown shows post-normalization contribution
@@ -816,10 +933,21 @@ const Pairings = (() => {
           candidate, history, candidateByeCounts, normalizedWeights
         );
         bestBreakdown = normBreakdown;
+      } else if (total < secondScore) {
+        secondScore    = total;
+        secondPairings = candidate;
+        const { breakdown: normBreakdown2 } = scorePairings(
+          candidate, history, candidateByeCounts, normalizedWeights
+        );
+        secondBreakdown = normBreakdown2;
       }
     }
 
-    return { pairings: bestPairings, score: bestScore, breakdown: bestBreakdown, normalizedWeights };
+    return {
+      pairings: bestPairings, score: bestScore, breakdown: bestBreakdown, normalizedWeights,
+      secondPairings, secondScore, secondBreakdown,
+      allScores,
+    };
   }
 
   return { optimize, buildHistory, buildByeCounts, DEFAULTS };

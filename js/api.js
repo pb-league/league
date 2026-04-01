@@ -17,7 +17,7 @@ const API = (() => {
 
   // Wrap fetch with a timeout using Promise.race — AbortController can silently
   // fail to cancel on file:// or when the browser blocks before the network layer.
-  function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+  function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
     const fetchPromise = fetch(url, options);
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Request timed out — check your internet connection.')), timeoutMs)
@@ -72,10 +72,10 @@ const API = (() => {
     getConfig:        ()               => get('getConfig'),
     getPlayers:       ()               => get('getPlayers'),
     getAttendance:    ()               => get('getAttendance'),
-    getPairings:      (week)           => get('getPairings', { week }),
-    getScores:        (week)           => get('getScores', { week }),
-    getStandings:     (week)           => get('getStandings', { week }),
-    getPlayerReport:  (player)         => get('getPlayerReport', { player }),
+    getPairings:      (week)           => get('getPairings',     week   !== undefined ? { week }   : {}),
+    getScores:        (week)           => get('getScores',       week   !== undefined ? { week }   : {}),
+    getStandings:     (week)           => get('getStandings',    week   !== undefined ? { week }   : {}),
+    getPlayerReport:  (player)         => get('getPlayerReport', player !== undefined ? { player } : {}),
 
     validatePIN:             (name, pin)  => post({ action: 'validatePIN', name, pin }),
     validateAdminPassword:   (password)   => post({ action: 'validateAdminPassword', password }),

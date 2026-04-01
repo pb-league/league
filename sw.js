@@ -11,7 +11,7 @@
 //   GAS API     → Network-only (never cache)
 // ============================================================
 
-const FALLBACK_VERSION = 'pb-league-v1.3.8';
+const FALLBACK_VERSION = 'pb-league-v1.3.2';
 
 const HTML_FILES = [
   './index.html',
@@ -74,6 +74,14 @@ self.addEventListener('activate', event => {
         )
       );
     }).then(() => self.clients.claim())
+      .then(() => {
+        // Tell all open clients (including installed PWA windows) to reload
+        // so they pick up the new version immediately rather than waiting
+        // for the user to manually close and reopen the app.
+        return self.clients.matchAll({ type: 'window' }).then(clients => {
+          clients.forEach(client => client.navigate(client.url));
+        });
+      })
   );
 });
 

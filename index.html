@@ -327,7 +327,7 @@
 
 <div id="toast-container"></div>
 
-<script src="js/settings.js?v=1.3.1"></script>
+<script src="js/settings.js?v=1.3.9"></script>
   <!-- Google Analytics — loads only if GA_MEASUREMENT_ID is set in settings.js -->
   <script>
     window.__gaReady = false;
@@ -349,8 +349,8 @@
       window.__gaReady = true;
     });
   </script>
-<script src="js/api.js?v=1.3.1"></script>
-<script src="js/auth.js?v=1.3.1"></script>
+<script src="js/api.js?v=1.3.9"></script>
+<script src="js/auth.js?v=1.3.9"></script>
 <script>
 (async function init() {
   // If already logged in with a valid league, redirect
@@ -1010,6 +1010,20 @@
   }
 
 })();
+</script>
+
+<script>
+  // Service worker registration + auto-reload when new version activates
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').then(reg => {
+        // When a new SW takes over, reload to get fresh assets
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          window.location.reload();
+        });
+      }).catch(err => console.warn('SW registration failed:', err));
+    });
+  }
 </script>
 
 </body>

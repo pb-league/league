@@ -162,12 +162,12 @@
       <div class="form-group">
         <label class="form-label">Choose a PIN <span style="color:var(--danger);">*</span></label>
         <input class="form-control" id="reg-pin" type="password" maxlength="8"
-               inputmode="numeric" placeholder="4–8 digits" autocomplete="new-password">
+               inputmode="text" placeholder="4–8 digits" autocomplete="new-password">
       </div>
       <div class="form-group">
         <label class="form-label">Confirm PIN</label>
         <input class="form-control" id="reg-pin2" type="password" maxlength="8"
-               inputmode="numeric" placeholder="Re-enter PIN" autocomplete="new-password">
+               inputmode="text" placeholder="Re-enter PIN" autocomplete="new-password">
       </div>
       <div id="reg-error" style="color:var(--danger); font-size:0.82rem; margin-bottom:10px; display:none;"></div>
       <div class="btn-group">
@@ -189,7 +189,7 @@
       <div class="form-group">
         <label class="form-label" id="admin-pw-label">Admin Password</label>
         <input class="form-control" id="admin-password" type="password"
-               placeholder="Enter password" autocomplete="current-password">
+             inputmode="text"  placeholder="Enter password" autocomplete="current-password">
       </div>
       <div id="admin-error" style="color:var(--danger); font-size:0.82rem; margin-bottom:10px; display:none;"></div>
       <div class="btn-group">
@@ -209,7 +209,7 @@
       <div class="form-group">
         <label class="form-label">Enter PIN</label>
         <input type="password" class="form-control pin-input" id="pin-input"
-               maxlength="8" inputmode="numeric" placeholder="••••" autocomplete="off">
+               maxlength="8" inputmode="text" placeholder="••••" autocomplete="off">
       </div>
       <div id="pin-error" class="hidden" style="margin-bottom:12px;">
         <div id="pin-error-msg" style="color:var(--danger); font-size:0.8rem; margin-bottom:8px;"></div>

@@ -160,14 +160,14 @@
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Choose a PIN <span style="color:var(--danger);">*</span></label>
-        <input class="form-control" id="reg-pin" type="password" maxlength="8"
-               inputmode="text" placeholder="4–8 digits" autocomplete="new-password">
+        <label class="form-label">Choose a Password <span style="color:var(--danger);">*</span></label>
+        <input class="form-control" id="reg-pin" type="password" maxlength="20"
+               inputmode="text" placeholder="Letters and numbers" autocomplete="new-password">
       </div>
       <div class="form-group">
-        <label class="form-label">Confirm PIN</label>
-        <input class="form-control" id="reg-pin2" type="password" maxlength="8"
-               inputmode="text" placeholder="Re-enter PIN" autocomplete="new-password">
+        <label class="form-label">Confirm Password</label>
+        <input class="form-control" id="reg-pin2" type="password" maxlength="20"
+               inputmode="text" placeholder="Re-enter password" autocomplete="new-password">
       </div>
       <div id="reg-error" style="color:var(--danger); font-size:0.82rem; margin-bottom:10px; display:none;"></div>
       <div class="btn-group">
@@ -189,7 +189,7 @@
       <div class="form-group">
         <label class="form-label" id="admin-pw-label">Admin Password</label>
         <input class="form-control" id="admin-password" type="password"
-             inputmode="text"  placeholder="Enter password" autocomplete="current-password">
+               inputmode="text" placeholder="Enter password" autocomplete="current-password">
       </div>
       <div id="admin-error" style="color:var(--danger); font-size:0.82rem; margin-bottom:10px; display:none;"></div>
       <div class="btn-group">
@@ -207,9 +207,9 @@
         <div id="pin-player-name" style="font-weight:600; color:var(--white); font-size:1rem;"></div>
       </div>
       <div class="form-group">
-        <label class="form-label">Enter PIN</label>
+        <label class="form-label">Enter Password</label>
         <input type="password" class="form-control pin-input" id="pin-input"
-               maxlength="8" inputmode="text" placeholder="••••" autocomplete="off">
+               maxlength="20" inputmode="text" placeholder="••••••" autocomplete="off">
       </div>
       <div id="pin-error" class="hidden" style="margin-bottom:12px;">
         <div id="pin-error-msg" style="color:var(--danger); font-size:0.8rem; margin-bottom:8px;"></div>
@@ -231,6 +231,14 @@
     or <a href="#" id="btn-apply" style="color:rgba(94,194,106,0.7); text-decoration:none; font-weight:500;"
        onmouseover="this.style.color='rgba(94,194,106,1)'" onmouseout="this.style.color='rgba(94,194,106,0.7)'">apply here</a>.
     <br><span id="index-version" style="font-size:0.68rem; color:rgba(255,255,255,0.18);"></span>
+    <span id="pwa-refresh-wrap" style="display:none; margin-left:8px;">
+      <button id="btn-pwa-refresh" onclick="window.location.reload(true)"
+        style="font-size:0.68rem; padding:2px 8px; border-radius:4px; cursor:pointer;
+               background:rgba(94,194,106,0.15); border:1px solid rgba(94,194,106,0.4);
+               color:rgba(94,194,106,0.9);">
+        🔄 Refresh App
+      </button>
+    </span>
   </div>
   </div>
 </div>
@@ -327,7 +335,7 @@
 
 <div id="toast-container"></div>
 
-<script src="js/settings.js?v=1.3.9"></script>
+<script src="js/settings.js?v=1.4.4"></script>
   <!-- Google Analytics — loads only if GA_MEASUREMENT_ID is set in settings.js -->
   <script>
     window.__gaReady = false;
@@ -349,8 +357,8 @@
       window.__gaReady = true;
     });
   </script>
-<script src="js/api.js?v=1.3.9"></script>
-<script src="js/auth.js?v=1.3.9"></script>
+<script src="js/api.js?v=1.4.4"></script>
+<script src="js/auth.js?v=1.4.4"></script>
 <script>
 (async function init() {
   // If already logged in with a valid league, redirect
@@ -670,9 +678,9 @@
 
     if (!code) { errEl.textContent = 'Invite code is required.'; errEl.style.display = 'block'; return; }
     if (!name) { errEl.textContent = 'Player name is required.'; errEl.style.display = 'block'; return; }
-    if (!pin)  { errEl.textContent = 'PIN is required.'; errEl.style.display = 'block'; return; }
-    if (pin !== pin2) { errEl.textContent = 'PINs do not match.'; errEl.style.display = 'block'; return; }
-    if (pin.length < 4) { errEl.textContent = 'PIN must be at least 4 digits.'; errEl.style.display = 'block'; return; }
+    if (!pin)  { errEl.textContent = 'Password is required.'; errEl.style.display = 'block'; return; }
+    if (pin !== pin2) { errEl.textContent = 'Passwords do not match.'; errEl.style.display = 'block'; return; }
+    if (pin.length < 4) { errEl.textContent = 'Password must be at least 4 characters.'; errEl.style.display = 'block'; return; }
 
     const btn = document.getElementById('btn-reg-submit');
     btn.disabled = true; btn.textContent = 'Registering…';
@@ -926,7 +934,7 @@
       if (result.valid) {
         window.location.href = (result.role === 'assistant') ? 'admin.html' : 'player.html';
       } else {
-        document.getElementById('pin-error-msg').textContent = result.reason || 'Incorrect PIN';
+        document.getElementById('pin-error-msg').textContent = result.reason || 'Incorrect password';
         document.getElementById('pin-error').classList.remove('hidden');
         document.getElementById('pin-input').value = '';
 
@@ -938,10 +946,10 @@
             const hasEmail = playerObj && playerObj.email && playerObj.email.trim() !== '';
 
             if (hasEmail) {
-              offerEl.innerHTML = `<span style="color:var(--muted);">Forgot your PIN?
+              offerEl.innerHTML = `<span style="color:var(--muted);">Forgot your password?
                 <button id="btn-send-pin" class="btn btn-secondary"
                   style="padding:3px 10px; font-size:0.75rem; margin-left:6px;">
-                  Email my PIN
+                  Email my password
                 </button>
               </span>`;
               offerEl.classList.remove('hidden');
@@ -953,7 +961,7 @@
                 try {
                   const r = await API.emailPin(selectedPlayer);
                   if (r.success) {
-                    offerEl.innerHTML = `<span style="color:var(--green);">✓ PIN sent to your email address.</span>`;
+                    offerEl.innerHTML = `<span style="color:var(--green);">✓ Password sent to your email address.</span>`;
                   } else {
                     offerEl.innerHTML = `<span style="color:var(--danger);">Could not send: ${r.reason || 'unknown error'}</span>`;
                   }
@@ -962,7 +970,7 @@
                 }
               });
             } else {
-              offerEl.innerHTML = `<span style="color:var(--muted);">No email address on file for PIN recovery — please contact your league organizer to obtain your PIN.</span>`;
+              offerEl.innerHTML = `<span style="color:var(--muted);">No email address on file for password recovery — please contact your league organizer to obtain your password.</span>`;
               offerEl.classList.remove('hidden');
             }
           } catch (e) { /* silently skip offer if something goes wrong */ }
@@ -1013,18 +1021,51 @@
 </script>
 
 <script>
-  // Service worker registration + auto-reload when new version activates
+  // Show refresh button if running as installed PWA (standalone mode)
+  const isPWA = window.matchMedia('(display-mode: standalone)').matches
+             || window.navigator.standalone === true;
+  if (isPWA) {
+    const wrap = document.getElementById('pwa-refresh-wrap');
+    if (wrap) wrap.style.display = 'inline';
+  }
+
+  // Service worker registration + update handling
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('./sw.js').then(reg => {
-        // When a new SW takes over, reload to get fresh assets
+
+        // Poll for updates every 60 seconds when running as PWA
+        if (isPWA) setInterval(() => reg.update(), 60000);
+
+        // Already waiting on load (e.g. PWA was left open)
+        if (reg.waiting) showUpdateToast(reg.waiting);
+
+        // New SW found during session
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              showUpdateToast(newWorker);
+            }
+          });
+        });
+
+        // New SW took control — reload to use fresh assets
         navigator.serviceWorker.addEventListener('controllerchange', () => {
           window.location.reload();
         });
+
       }).catch(err => console.warn('SW registration failed:', err));
     });
   }
-</script>
 
-</body>
-</html>
+  function showUpdateToast(worker) {
+    if (document.getElementById('update-toast')) return;
+    const div = document.createElement('div');
+    div.id = 'update-toast';
+    div.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);' +
+      'background:rgba(45,122,58,0.95);color:#fff;padding:10px 18px;border-radius:8px;' +
+      'font-size:0.85rem;z-index:9999;display:flex;align-items:center;gap:12px;' +
+      'box-shadow:0 4px 16px rgba(0,0,0,0.4);';
+    div.innerHTML = '<span>\ud83c\udd95 New version available</span>' +
+      '<button onclick="skipAndReload()" style="padding:4p

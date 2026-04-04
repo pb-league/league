@@ -11,7 +11,7 @@
 //   GAS API     → Network-only (never cache)
 // ============================================================
 
-const FALLBACK_VERSION = 'pb-league-v1.3.9';
+const FALLBACK_VERSION = 'pb-league-v1.4.4';
 
 const HTML_FILES = [
   './index.html',
@@ -28,6 +28,7 @@ const STATIC_ASSETS = [
   './js/pairings.js',
   './js/reports.js',
   './js/tournament.js',
+  './js/push.js',
   './js/admin.js',
   './js/player.js',
   './js/changelog.js',
@@ -35,6 +36,51 @@ const STATIC_ASSETS = [
   './img/icon-512.png',
   './img/pb_rot.gif',
 ];
+
+// Listen for SKIP_WAITING message from the page's "Update Now" button
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
+// Push notification received — show it
+// Always show a notification even if payload is missing/undecodable so the
+// user isn't silently left without feedback (e.g. decryption key mismatch).
+self.addEventListener('push', event => {
+  let data = {};
+  if (event.data) {
+    try { data = event.data.json(); }
+    catch { try { data = { body: event.data.text() }; } catch { /* empty payload */ } }
+  }
+  const title   = data.title || 'Pickleball League';
+  const options = {
+    body:     data.body  || 'You have a new league notification.',
+    icon:    './img/icon-192.png',
+    badge:   './img/icon-192.png',
+    data:    { url: data.url || './player.html' },
+    tag:     data.tag   || 'pb-league',
+    renotify: !!data.tag,
+  };
+  event.waitUntil(
+    self.registration.showNotification(title, options)
+      .catch(err => console.error('[SW] showNotification failed:', err))
+  );
+});
+
+// Notification clicked — focus or open the linked page
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const url = event.notification.data?.url || './player.html';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (const client of list) {
+        if (client.url.includes(url) && 'focus' in client) return client.focus();
+      }
+      return clients.openWindow ? clients.openWindow(url) : undefined;
+    })
+  );
+});
 
 // Read APP_VERSION from settings.js — single source of truth
 async function getAppVersion() {
@@ -48,19 +94,21 @@ async function getAppVersion() {
   }
 }
 
-// Install — read version from settings.js then pre-cache static assets
+// Install — read version from settings.js then pre-cache static assets.
+// The SW waits in 'installed' state until the page sends SKIP_WAITING
+// (via the "Update Now" button), giving the user control over when to reload.
 self.addEventListener('install', event => {
   event.waitUntil(
     getAppVersion().then(version => {
       self.CACHE_VERSION = version;
       return caches.open(version)
-        .then(cache => cache.addAll(STATIC_ASSETS))
-        .then(() => self.skipWaiting());
+        .then(cache => cache.addAll(STATIC_ASSETS));
     })
   );
 });
 
-// Activate — delete all caches that don't match the current version
+// Activate — delete stale caches, then claim all clients.
+// Page reload is handled by the controllerchange listener in the page.
 self.addEventListener('activate', event => {
   event.waitUntil(
     getAppVersion().then(version => {
@@ -74,14 +122,6 @@ self.addEventListener('activate', event => {
         )
       );
     }).then(() => self.clients.claim())
-      .then(() => {
-        // Tell all open clients (including installed PWA windows) to reload
-        // so they pick up the new version immediately rather than waiting
-        // for the user to manually close and reopen the app.
-        return self.clients.matchAll({ type: 'window' }).then(clients => {
-          clients.forEach(client => client.navigate(client.url));
-        });
-      })
   );
 });
 

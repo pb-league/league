@@ -15,6 +15,21 @@
 </head>
 <body class="court-bg">
 
+<!-- SW Update Banner — appears when a new app version is waiting to activate -->
+<div id="sw-update-bar" style="display:none; position:fixed; top:0; left:0; right:0; z-index:10000;
+     background:var(--green,#2d7a3a); color:#fff; padding:10px 16px; font-size:0.84rem;
+     align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+     box-shadow:0 2px 10px rgba(0,0,0,0.4);">
+  <span>🆕 A new version of the app is ready</span>
+  <div style="display:flex; gap:8px; flex-shrink:0;">
+    <button id="btn-sw-update" style="background:#fff; color:var(--green,#2d7a3a); border:none;
+      border-radius:6px; padding:5px 16px; font-size:0.82rem; font-weight:600; cursor:pointer;
+      white-space:nowrap;">Update Now</button>
+    <button id="btn-sw-later" style="background:rgba(255,255,255,0.18); color:#fff; border:none;
+      border-radius:6px; padding:5px 12px; font-size:0.82rem; cursor:pointer;">Later</button>
+  </div>
+</div>
+
 <div class="app-shell">
 <div class="nav-backdrop" id="nav-backdrop"></div>
 
@@ -116,8 +131,8 @@
               <input class="form-control" id="cfg-name" placeholder="My League">
             </div>
             <div class="form-group">
-              <label class="form-label">Admin PIN</label>
-              <input class="form-control" id="cfg-admin-pin" type="password" placeholder="••••">
+              <label class="form-label">Admin Password</label>
+              <input class="form-control" id="cfg-admin-pin" type="password" inputmode="text" autocomplete="new-password" placeholder="Letters and numbers">
             </div>
             </div>
           <div class="form-row">
@@ -240,6 +255,74 @@
             </div>
           </div>
           <div style="font-size:0.75rem; color:var(--muted); margin-top:4px; font-style:italic;">Changes save automatically.</div>
+        </div>
+
+        <!-- Personal Email Script Setup -->
+        <div class="card mt-2">
+          <details>
+          <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;">
+            <div class="card-title">📨 Personal Email Script <span style="font-size:0.72rem; color:var(--muted); font-weight:400; margin-left:8px;">— send league emails from your own Google account</span></div>
+            <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">▼</span>
+          </summary>
+          <div class="collapsible-body">
+            <p style="font-size:0.82rem; color:var(--muted); margin-top:10px; margin-bottom:12px; line-height:1.6;">
+              By default league emails come from the app developer's Google account. Deploy this personal script to send emails from your own account instead — players see your email address as the sender.
+            </p>
+
+            <div style="background:rgba(255,255,255,0.04); border-radius:8px; padding:14px 16px; margin-bottom:14px;">
+              <div style="font-size:0.8rem; font-weight:700; color:var(--white); margin-bottom:10px;">Step 1 — Deploy your personal Apps Script</div>
+              <ol style="font-size:0.8rem; color:var(--muted); line-height:2; margin:0; padding-left:18px;">
+                <li>Go to <a href="https://script.google.com" target="_blank" style="color:var(--green);">script.google.com</a> and click <strong style="color:var(--white);">New project</strong></li>
+                <li>Delete any existing code and paste the script below</li>
+                <li>Choose a secret phrase and replace <code style="color:var(--gold);">YOUR_SECRET_HERE</code> with it</li>
+                <li>Click <strong style="color:var(--white);">Deploy → New deployment</strong></li>
+                <li>Set <strong style="color:var(--white);">Type: Web app</strong>, Execute as: <strong style="color:var(--white);">Me</strong>, Access: <strong style="color:var(--white);">Anyone</strong></li>
+                <li>Click <strong style="color:var(--white);">Deploy</strong> — an authorization window will appear</li>
+                <li style="color:var(--white); line-height:1.7; margin-top:4px;">
+                  <strong>Authorize access to your Gmail:</strong>
+                  <ol style="color:var(--muted); margin-top:4px; padding-left:18px; line-height:2;">
+                    <li>Click <strong style="color:var(--white);">Review permissions</strong> (or your Google account name)</li>
+                    <li>If you see "Google hasn't verified this app", click <strong style="color:var(--white);">Advanced</strong></li>
+                    <li>Click <strong style="color:var(--white);">"Go to [your project name] (unsafe)"</strong></li>
+                    <li>Review the permissions and click <strong style="color:var(--white);">Allow</strong></li>
+                  </ol>
+                  <span style="font-size:0.75rem; color:var(--muted); font-style:italic;">This warning appears because the script is not published in the Google Marketplace — it is safe since you wrote it yourself.</span>
+                </li>
+                <li>Copy the Web App URL from the deployment confirmation and paste it below</li>
+              </ol>
+            </div>
+
+            <div style="position:relative; margin-bottom:14px;">
+              <div style="font-size:0.75rem; color:var(--muted); margin-bottom:6px; font-weight:600;">Apps Script code to copy:</div>
+              <pre id="email-script-code" style="background:#0d1b2a; border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:12px 14px; font-size:0.72rem; color:#a8c7e8; overflow-x:auto; white-space:pre; line-height:1.6; margin:0;"></pre>
+              <button onclick="document.getElementById('email-script-code').style && navigator.clipboard.writeText(document.getElementById('email-script-code').textContent).then(() => this.textContent = '✓ Copied!').then(() => setTimeout(() => this.textContent = '📋 Copy', 2000))"
+                style="position:absolute; top:28px; right:8px; padding:3px 10px; font-size:0.72rem; border-radius:4px; cursor:pointer;
+                       background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:var(--white);">
+                📋 Copy
+              </button>
+            </div>
+
+            <div style="font-size:0.8rem; font-weight:700; color:var(--white); margin-bottom:8px;">Step 2 — Enter your deployment details</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Web App URL</label>
+                <input class="form-control" id="cfg-email-script-url" type="url"
+                  placeholder="https://script.google.com/macros/s/…/exec">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Secret phrase <span style="color:var(--muted); font-weight:400;">(must match what's in your script)</span></label>
+                <input class="form-control" id="cfg-email-script-secret" type="text"
+                  placeholder="your-secret-phrase">
+              </div>
+            </div>
+            <div style="display:flex; gap:10px; margin-top:6px; align-items:center;">
+              <button class="btn btn-primary" id="btn-save-email-script" style="padding:6px 16px; font-size:0.82rem;">Save</button>
+              <button class="btn btn-secondary" id="btn-test-email-script" style="padding:6px 16px; font-size:0.82rem;">Send Test Email</button>
+              <span id="email-script-status" style="font-size:0.8rem; color:var(--muted);"></span>
+            </div>
+            <div style="font-size:0.75rem; color:var(--muted); margin-top:8px; font-style:italic;" id="email-script-active-label"></div>
+          </div>
+          </details>
         </div>
         <!-- League Message Composer -->
         <div class="card mt-2">
@@ -383,6 +466,96 @@
           </details>
         </div>
 
+        <!-- Push Notifications — App Manager only -->
+        <div class="card mt-2 hidden" id="push-notif-card">
+          <details>
+          <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;">
+            <div class="card-title">🔔 Push Notifications <span style="font-size:0.72rem; color:var(--gold); font-weight:400; margin-left:8px;">— App Manager only</span></div>
+            <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">▼</span>
+          </summary>
+          <div class="collapsible-body">
+            <p style="font-size:0.82rem; color:var(--muted); margin-top:10px; margin-bottom:14px; line-height:1.6;">
+              Send instant push notifications to players who have subscribed on their device. Players see a native notification even when the app is closed.
+            </p>
+
+            <!-- Step 1: Generate VAPID keys (shown when not yet set up) -->
+            <div id="push-setup-section" style="display:none;">
+              <div style="background:rgba(94,194,106,0.06); border:1px solid rgba(94,194,106,0.2); border-radius:8px; padding:14px 16px; margin-bottom:14px;">
+                <div style="font-size:0.8rem; font-weight:700; color:var(--white); margin-bottom:6px;">One-time setup required</div>
+                <p style="font-size:0.8rem; color:var(--muted); margin:0 0 12px; line-height:1.6;">
+                  Generate a VAPID key pair to authenticate push messages for this league. This only needs to be done once — keys are stored securely and persist across sessions.
+                </p>
+                <button class="btn btn-primary" id="btn-push-generate-keys" style="padding:6px 16px; font-size:0.82rem;">🔑 Generate Keys &amp; Enable Push</button>
+              </div>
+              <div id="push-setup-status" style="font-size:0.8rem; margin-top:6px;"></div>
+            </div>
+
+            <!-- Active: keys exist -->
+            <div id="push-active-section" style="display:none;">
+
+              <!-- Unlock: private key / password not yet loaded into session -->
+              <div id="push-unlock-section" style="display:none; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:14px 16px; margin-bottom:14px;">
+                <p style="font-size:0.8rem; color:var(--muted); margin:0 0 10px; line-height:1.6;">
+                  Re-enter your App Manager password to load subscribers and enable sending for this session.
+                </p>
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                  <input class="form-control" id="push-mgr-password" type="password"
+                    placeholder="App Manager password" style="max-width:240px; font-size:0.85rem;">
+                  <button class="btn btn-secondary" id="btn-push-unlock" style="padding:6px 14px; font-size:0.82rem;">Unlock</button>
+                </div>
+                <div id="push-unlock-status" style="font-size:0.8rem; margin-top:8px;"></div>
+              </div>
+
+              <!-- Send form: private key + password loaded -->
+              <div id="push-send-section" style="display:none;">
+
+                <!-- Recipients checklist -->
+                <div class="form-group">
+                  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+                    <label class="form-label" style="margin:0;">Recipients
+                      <span id="push-recipient-count" style="color:var(--muted); font-weight:400; font-size:0.78rem; margin-left:6px;"></span>
+                    </label>
+                    <div style="display:flex; gap:6px;">
+                      <button class="btn btn-secondary" id="btn-push-select-all"  style="padding:3px 10px; font-size:0.75rem;">All</button>
+                      <button class="btn btn-secondary" id="btn-push-select-none" style="padding:3px 10px; font-size:0.75rem;">None</button>
+                      <button class="btn btn-secondary" id="btn-push-refresh-subs" title="Refresh subscriber list" style="padding:3px 10px; font-size:0.75rem;">🔄</button>
+                    </div>
+                  </div>
+                  <div id="push-recipients-list" style="background:rgba(255,255,255,0.03);
+                       border:1px solid rgba(255,255,255,0.08); border-radius:8px;
+                       padding:10px 14px; max-height:180px; overflow-y:auto; font-size:0.84rem;">
+                    <span style="color:var(--muted); font-style:italic;">Loading subscribers…</span>
+                  </div>
+                </div>
+
+                <!-- Message fields -->
+                <div class="form-group" style="margin-top:14px;">
+                  <label class="form-label">Title</label>
+                  <input class="form-control" id="push-title" placeholder="e.g. Pairings are ready!" style="max-width:380px;">
+                </div>
+                <div class="form-group" style="margin-top:8px;">
+                  <label class="form-label">Message</label>
+                  <textarea class="form-control" id="push-body" rows="2"
+                    placeholder="e.g. Session 4 pairings have been posted — tap to view."
+                    style="resize:vertical; font-size:0.85rem; line-height:1.5;"></textarea>
+                </div>
+                <div class="form-group" style="margin-top:8px;">
+                  <label class="form-label">Link <span style="color:var(--muted); font-weight:400;">(optional — page to open on tap)</span></label>
+                  <input class="form-control" id="push-url" placeholder="./player.html" style="max-width:380px;">
+                </div>
+                <div id="push-send-status" style="font-size:0.8rem; margin-top:10px;"></div>
+                <div style="display:flex; gap:10px; margin-top:12px; align-items:center; flex-wrap:wrap;">
+                  <button class="btn btn-primary" id="btn-push-send" disabled>🔔 Send</button>
+                </div>
+                <div style="font-size:0.75rem; color:var(--muted); margin-top:10px; font-style:italic;">
+                  Expired subscriptions are cleaned up automatically after each send.
+                </div>
+              </div>
+            </div>
+          </div>
+          </details>
+        </div>
+
       </section>
 
             <!-- ═══ PLAYERS ═══ -->
@@ -398,7 +571,7 @@
           <div style="overflow-x:auto;">
           <div style="display:grid; grid-template-columns:minmax(120px,1fr) 68px 90px minmax(140px,180px) 44px 44px 54px 90px 72px 34px; gap:6px; padding:0 4px 8px; border-bottom:1px solid rgba(255,255,255,0.06); min-width:760px;">
             <span class="label">Name</span>
-            <span class="label">PIN</span>
+            <span class="label">Password</span>
             <span class="label" title="Gender group — only used for Mixed Doubles mode to balance partnerships. Has no effect in other game modes.">Group</span>
             <span class="label">Email</span>
             <span class="label" title="Email notifications">Ntfy</span>
@@ -418,6 +591,7 @@
       <section id="page-attendance" class="tab-panel">
         <div class="page-header"><h2>Attendance</h2></div>
         <div class="card">
+          <div id="att-pending-indicator" style="display:none; font-size:0.78rem; color:var(--muted); padding:2px 0 6px;"></div>
           <div id="attendance-grid"></div>
           <div class="mt-2 text-muted" style="font-size:0.8rem;">Click to cycle: TBD → <span style="color:var(--green);">In</span> → <span style="color:var(--danger);">Out</span>. Spectator-role members never appear in pairings. Changes save automatically.</div>
         </div>
@@ -795,7 +969,10 @@
             <a href="https://sheets.google.com" target="_blank" style="color:var(--green);">sheets.google.com</a>
             and paste its ID here. The Sheet ID is the text in the URL between
             <code style="color:var(--gold); background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:3px;">d/</code>
-            and <code style="color:var(--gold); background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:3px;">/edit</code>.
+            and <code style="color:var(--gold); background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:3px;">/edit</code>.<br>
+            <strong style="color:var(--gold);">⚠ If providing your own Sheet ID</strong>, you must first share it with
+            <code style="color:var(--white); background:rgba(255,255,255,0.06); padding:1px 6px; border-radius:3px; user-select:all;"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="d4a4b6b8b1b5b3a1b1b9b5bab5b3b1a694b3b9b5bdb8fab7bbb9">[email&#160;protected]</a></code>
+            as <strong style="color:var(--white);">Editor</strong> — otherwise the app cannot access it.
           </div>
           <div class="form-row">
             <div class="form-group">
@@ -807,7 +984,11 @@
               <input class="form-control" id="new-league-name" placeholder="e.g. Spring 2026">
             </div>
             <div class="form-group">
-              <label class="form-label">Customer ID <span style="color:var(--muted); font-weight:400;">(optional — filters leagues visible to this customer)</span></label>
+              <label class="form-label">Admin Email <span style="color:var(--muted); font-weight:400;">(optional — auto-shares sheet &amp; enables personal email scripts)</span></label>
+              <input class="form-control" id="new-league-admin-email" type="email" placeholder="admin@example.com">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Customer ID <span style="color:var(--muted); font-weight:400;\">(optional — filters leagues visible to this customer)</span></label>
               <input class="form-control" id="new-league-customer-id" placeholder="e.g. doug123">
             </div>
             <div class="form-group">
@@ -1001,7 +1182,7 @@
   }
 </style>
 
-<script>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
   // Flip collapse arrows on details toggle
   document.addEventListener('toggle', e => {
     if (e.target.tagName === 'DETAILS') {
@@ -1011,7 +1192,7 @@
   }, true);
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="js/settings.js?v=1.3.9"></script>
+<script src="js/settings.js?v=1.4.4"></script>
   <!-- Google Analytics — loads only if GA_MEASUREMENT_ID is set in settings.js -->
   <script>
     window.__gaReady = false;
@@ -1033,13 +1214,14 @@
       window.__gaReady = true;
     });
   </script>
-<script src="js/api.js?v=1.3.9"></script>
-<script src="js/auth.js?v=1.3.9"></script>
-<script src="js/pairings.js?v=1.3.9"></script>
-<script src="js/reports.js?v=1.3.9"></script>
-<script src="js/tournament.js?v=1.3.9"></script>
-<script src="js/changelog.js?v=1.3.9"></script>
-<script src="js/admin.js?v=1.3.9"></script>
+<script src="js/api.js?v=1.4.4"></script>
+<script src="js/push.js?v=1.4.4"></script>
+<script src="js/auth.js?v=1.4.4"></script>
+<script src="js/pairings.js?v=1.4.4"></script>
+<script src="js/reports.js?v=1.4.4"></script>
+<script src="js/tournament.js?v=1.4.4"></script>
+<script src="js/changelog.js?v=1.4.4"></script>
+<script src="js/admin.js?v=1.4.4"></script>
 <script>
 (function() {
   const toggle   = document.getElementById('nav-toggle');
@@ -1073,14 +1255,49 @@
 <script>
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     window.addEventListener('load', () => {
+      let swReg = null;
+
+      function showUpdateBar() {
+        const bar = document.getElementById('sw-update-bar');
+        if (bar) bar.style.display = 'flex';
+      }
+
+      function applyUpdate() {
+        if (swReg && swReg.waiting) swReg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      }
+
+      document.getElementById('btn-sw-update')?.addEventListener('click', applyUpdate);
+      document.getElementById('btn-sw-later')?.addEventListener('click', () => {
+        const bar = document.getElementById('sw-update-bar');
+        if (bar) bar.style.display = 'none';
+      });
+
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        window.location.reload();
+      });
+
       navigator.serviceWorker.register('./sw.js').then(reg => {
-        // When a new SW takes over, reload to get fresh assets
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-          window.location.reload();
+        swReg = reg;
+        if (reg.waiting) showUpdateBar();
+        reg.addEventListener('updatefound', () => {
+          const newSW = reg.installing;
+          if (!newSW) return;
+          newSW.addEventListener('statechange', () => {
+            if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+              showUpdateBar();
+            }
+          });
         });
       }).catch(err => console.warn('SW registration failed:', err));
     });
   }
+  // Version footer
+  window.addEventListener('DOMContentLoaded', () => {
+    const verEl = document.getElementById('dash-version');
+    if (verEl && typeof APP_VERSION !== 'undefined') {
+      verEl.textContent = `v${APP_VERSION}  ·  Built ${APP_BUILD_DATE}`;
+    }
+  });
 </script>
 </body>
 </html>

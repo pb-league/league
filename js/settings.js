@@ -11,15 +11,15 @@
 
 // Google Apps Script Web App URL
 // After deploying a new version in GAS, paste the URL here.
- // for BETA
-//const GAS_URL = 'https://script.google.com/macros/s/AKfycbyyOWnHgNGf7JOJqHteSLmu7h1fIc0ZJfmuKJ1-xIjWVuR4b07DXWgAu10LhIrnQTNTAQ/exec';
+// for beta
+ //const GAS_URL = 'https://script.google.com/macros/s/AKfycbyyOWnHgNGf7JOJqHteSLmu7h1fIc0ZJfmuKJ1-xIjWVuR4b07DXWgAu10LhIrnQTNTAQ/exec';
 
-// For release
+// for release
  const GAS_URL = 'https://script.google.com/macros/s/AKfycbzudYO4IDqCJt92kR4gu6dVJyGN5LoKtxpD3RYR1pNHepxU_liEdpogjCnE8mWTOXqU/exec';
 
 // App version — bump when deploying changes
-const APP_VERSION    = '1.3.9';
-const APP_BUILD_DATE = '2026-04-01';
+const APP_VERSION    = '1.4.4';
+const APP_BUILD_DATE = '2026-04-03';
 
 // Google Analytics 4 Measurement ID
 // Set to your GA4 property ID (format: G-XXXXXXXXXX) to enable analytics.
@@ -77,6 +77,9 @@ function sanitizeConfig(raw) {
   if (c.gameMode     !== undefined) c.gameMode     = str(c.gameMode,     'doubles');
   if (c.rankingMethod !== undefined) c.rankingMethod = str(c.rankingMethod, 'avgptdiff');
   if (c.adminPin     !== undefined) c.adminPin     = str(c.adminPin,     '');
+  if (c.emailScriptUrl    !== undefined) c.emailScriptUrl    = str(c.emailScriptUrl,    '');
+  if (c.emailScriptSecret !== undefined) c.emailScriptSecret = str(c.emailScriptSecret, '');
+
 
   return c;
 }

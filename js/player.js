@@ -66,6 +66,7 @@ function gaPage(pageName) {
   renderAll();
   setupNav();
   setupEvents();
+  initPushSubscribeUI();
   // Reconcile scoresheet and score-entry week — always start on the same session.
   if (canScore) {
     const reconciled = Math.max(state.currentSheetWeek || 1, state.currentScoreEntryWeek || 1);
@@ -211,6 +212,9 @@ function gaPage(pageName) {
         }
         if (page === 'tournament') renderTournamentBracket();
         if (page === 'attendance') {
+          // Show loading spinner immediately before async fetch
+          const attGrid = document.getElementById('my-attendance-grid');
+          if (attGrid) attGrid.innerHTML = '<div style="padding:24px; text-align:center; color:var(--muted); font-size:0.85rem;"><span style="animation:spin 0.8s linear infinite; display:inline-block; font-size:1.4rem;">⏳</span><div style="margin-top:8px;">Loading availability…</div></div>';
           // Re-fetch attendance so player sees latest state from server
           API.getAttendance().then(data => {
             if (data && data.attendance) state.attendance = data.attendance;
@@ -222,6 +226,9 @@ function gaPage(pageName) {
           }).catch(() => renderMyAttendance());
         }
         if (page === 'attendance-all') {
+          // Show loading spinner immediately before async fetch
+          const fullGrid = document.getElementById('full-attendance-grid');
+          if (fullGrid) fullGrid.innerHTML = '<div style="padding:24px; text-align:center; color:var(--muted); font-size:0.85rem;"><span style="animation:spin 0.8s linear infinite; display:inline-block; font-size:1.4rem;">⏳</span><div style="margin-top:8px;">Loading attendance…</div></div>';
           // Re-fetch attendance for the full grid view too
           API.getAttendance().then(data => {
             if (data && data.attendance) state.attendance = data.attendance;
@@ -398,7 +405,7 @@ function gaPage(pageName) {
                            cursor:pointer;">Copy</button>
           </div>
           <div style="font-size:0.7rem; color:var(--muted); margin-top:5px;">
-            Bookmark this link to go straight to your PIN entry next time.
+            Bookmark this link to go straight to your password entry next time.
           </div>
         </div>`;
       }
@@ -675,29 +682,29 @@ function gaPage(pageName) {
     });
   }
 
-  // ── Change PIN ────────────────────────────────────────────
+  // ── Change Password ────────────────────────────────────────
   function renderChangePin() {
     const el = document.getElementById('change-pin-section');
     if (!el) return;
 
     el.innerHTML = `
       <div class="card mt-2">
-        <div class="card-header"><div class="card-title">Change PIN</div></div>
+        <div class="card-header"><div class="card-title">Change Password</div></div>
         <div class="form-row" style="align-items:flex-end; gap:12px; flex-wrap:wrap;">
           <div class="form-group" style="min-width:120px;">
-            <label class="form-label">Current PIN</label>
-            <input class="form-control" id="pin-current" type="password" maxlength="8" placeholder="••••" autocomplete="off">
+            <label class="form-label">Current Password</label>
+            <input class="form-control" id="pin-current" type="password" maxlength="20" inputmode="text" placeholder="••••••" autocomplete="off">
           </div>
           <div class="form-group" style="min-width:120px;">
-            <label class="form-label">New PIN</label>
-            <input class="form-control" id="pin-new" type="password" maxlength="8" placeholder="••••" autocomplete="off">
+            <label class="form-label">New Password</label>
+            <input class="form-control" id="pin-new" type="password" maxlength="20" inputmode="text" placeholder="••••••" autocomplete="off">
           </div>
           <div class="form-group" style="min-width:120px;">
-            <label class="form-label">Confirm New PIN</label>
-            <input class="form-control" id="pin-confirm" type="password" maxlength="8" placeholder="••••" autocomplete="off">
+            <label class="form-label">Confirm New Password</label>
+            <input class="form-control" id="pin-confirm" type="password" maxlength="20" inputmode="text" placeholder="••••••" autocomplete="off">
           </div>
           <div class="form-group" style="flex:0;">
-            <button class="btn btn-primary" id="btn-change-pin">Update PIN</button>
+            <button class="btn btn-primary" id="btn-change-pin">Update Password</button>
           </div>
         </div>
         <div id="pin-change-status" style="font-size:0.82rem; margin-top:6px;"></div>
@@ -719,12 +726,12 @@ function gaPage(pageName) {
         return;
       }
       if (newPin !== confirm) {
-        status.textContent = 'New PIN and confirmation do not match.';
+        status.textContent = 'New password and confirmation do not match.';
         status.style.color = 'var(--danger)';
         return;
       }
       if (newPin.length < 1) {
-        status.textContent = 'New PIN cannot be empty.';
+        status.textContent = 'New password cannot be empty.';
         status.style.color = 'var(--danger)';
         return;
       }
@@ -734,13 +741,13 @@ function gaPage(pageName) {
       try {
         const result = await API.changePin(playerName, current, newPin);
         if (result.success) {
-          status.textContent = '✓ PIN updated successfully.';
+          status.textContent = '✓ Password updated successfully.';
           status.style.color = 'var(--green)';
           document.getElementById('pin-current').value = '';
           document.getElementById('pin-new').value = '';
           document.getElementById('pin-confirm').value = '';
         } else {
-          status.textContent = result.reason || 'Could not update PIN.';
+          status.textContent = result.reason || 'Could not update password.';
           status.style.color = 'var(--danger)';
         }
       } catch (e) {
@@ -748,7 +755,7 @@ function gaPage(pageName) {
         status.style.color = 'var(--danger)';
       } finally {
         btn.disabled = false;
-        btn.textContent = 'Update PIN';
+        btn.textContent = 'Update Password';
       }
     });
   }
@@ -1148,9 +1155,24 @@ function gaPage(pageName) {
             // nothing to update, and re-rendering would lose focus and clear
             // any scores currently being typed.
           } catch (e) {
-            indicator.textContent = '⚠ save failed';
-            indicator.style.color = 'var(--danger)';
-            setTimeout(() => indicator.remove(), 3000);
+            indicator.textContent = '⚠ save failed — tap to retry';
+            indicator.style.cssText = 'font-size:0.65rem; color:var(--danger); text-align:center; margin-top:2px; cursor:pointer; text-decoration:underline;';
+            indicator.addEventListener('click', async () => {
+              indicator.style.cssText = 'font-size:0.65rem; color:var(--muted); text-align:center; margin-top:2px;';
+              indicator.textContent = '⏳ retrying…';
+              try {
+                const weekScores = state.scores.filter(s => parseInt(s.week) === wk);
+                await API.saveScores(wk, weekScores);
+                indicator.textContent = '✓ saved';
+                indicator.style.color = 'var(--green)';
+                setTimeout(() => indicator.remove(), 1800);
+              } catch (e2) {
+                indicator.style.cssText = 'font-size:0.65rem; color:var(--danger); text-align:center; margin-top:2px;';
+                indicator.textContent = '⚠ still failing — contact organizer';
+                toast('Score save failed. Please notify the league organizer.', 'error');
+              }
+            });
+            toast('⚠ Score save failed — tap the card indicator to retry.', 'error');
           }
         });
       });
@@ -2095,6 +2117,91 @@ function gaPage(pageName) {
   function courtName(courtNum) {
     const name = state.config['courtName_' + courtNum];
     return name && name.trim() ? esc(name.trim()) : `Court ${courtNum}`;
+  }
+
+  // ── Push notification subscribe (player side) ─────────────────────────────
+  // Shown when: browser supports push AND App Manager has configured VAPID keys
+  // AND player hasn't already subscribed on this device.
+
+  async function initPushSubscribeUI() {
+    const PUSH_DISMISS_KEY = `pb_push_dismissed_${session?.leagueId || ''}`;
+    const bar        = document.getElementById('push-subscribe-bar');
+    const promptDiv  = document.getElementById('push-bar-prompt');
+    const subDiv     = document.getElementById('push-bar-subscribed');
+    if (!bar) return;
+
+    // Hide entirely if push not supported or VAPID key not configured
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    if (!state.config.vapidPublicKey) return;
+
+    // Helper: switch bar into the "subscribed" state
+    function showSubscribedState() {
+      if (promptDiv) promptDiv.style.display = 'none';
+      if (subDiv)    subDiv.style.display    = 'flex';
+      bar.style.display = '';
+    }
+
+    // Helper: switch bar into the "subscribe prompt" state
+    function showPromptState() {
+      if (subDiv)    subDiv.style.display    = 'none';
+      if (promptDiv) promptDiv.style.display = 'flex';
+      bar.style.display = '';
+    }
+
+    // Check if already subscribed on this device
+    const existing = await VapidPush.getExistingSubscription();
+    if (existing) {
+      // Ensure subscription is registered server-side (handles reinstalls / new devices)
+      API.savePushSubscription(existing, playerName).catch(() => {});
+      showSubscribedState();
+    } else if (!sessionStorage.getItem(PUSH_DISMISS_KEY)) {
+      showPromptState();
+    }
+
+    // Subscribe button
+    document.getElementById('btn-push-subscribe')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-push-subscribe');
+      btn.disabled    = true;
+      btn.textContent = '⏳ Subscribing…';
+      try {
+        const sub = await VapidPush.subscribeToPush(state.config.vapidPublicKey);
+        await API.savePushSubscription(sub, playerName);
+        showSubscribedState();
+        toast('✓ Push notifications enabled for this device.', 'success');
+      } catch (e) {
+        btn.disabled    = false;
+        btn.textContent = 'Subscribe';
+        if (e.name === 'NotAllowedError') {
+          toast('Notifications blocked — check your browser/OS settings.', 'error');
+        } else {
+          toast('Subscribe failed: ' + e.message, 'error');
+        }
+      }
+    });
+
+    // Unsubscribe button
+    document.getElementById('btn-push-unsubscribe')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-push-unsubscribe');
+      btn.disabled    = true;
+      btn.textContent = '⏳…';
+      try {
+        const sub = await VapidPush.getExistingSubscription();
+        await VapidPush.unsubscribeFromPush();
+        if (sub?.endpoint) API.deletePushSubscription(sub.endpoint).catch(() => {});
+        bar.style.display = 'none';
+        toast('Unsubscribed from push notifications.', 'success');
+      } catch (e) {
+        btn.disabled    = false;
+        btn.textContent = 'Unsubscribe';
+        toast('Unsubscribe failed: ' + e.message, 'error');
+      }
+    });
+
+    // Dismiss button (prompt state only — hides bar for this session)
+    document.getElementById('btn-push-dismiss')?.addEventListener('click', () => {
+      bar.style.display = 'none';
+      sessionStorage.setItem(PUSH_DISMISS_KEY, '1');
+    });
   }
 
   function toast(msg, type = '') {

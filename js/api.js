@@ -62,7 +62,7 @@ const API = (() => {
     getLeagues:             (customerId) => get('getLeagues', customerId ? { customerId } : {}),
     getLeaguesAll:          ()           => get('getLeagues', { includeHidden: true }),
     getLeagueAndPlayers:    (leagueId, customerId) => get('getLeagueAndPlayers', customerId ? { leagueId, customerId } : { leagueId }),
-    addLeague:        (leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues, hidden, customerId) => post({ action: 'addLeague', leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues, hidden, customerId }),
+    addLeague:        (leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues, hidden, customerId, adminEmail) => post({ action: 'addLeague', leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues, hidden, customerId, adminEmail }),
     updateLeague:          (leagueId, name, sheetId, active, canCreateLeagues, hidden, adminEmail, limits) => post({ action: 'updateLeague', leagueId, name, sheetId, active, canCreateLeagues, hidden, adminEmail, limits }),
     updateLeagueWithCaller: (leagueId, name, sheetId, active, canCreateLeagues, callerLeagueId, adminEmail) => post({ action: 'updateLeague', leagueId, name, sheetId, active, canCreateLeagues, callerLeagueId, adminEmail }),
 
@@ -82,7 +82,7 @@ const API = (() => {
     validateAppManager:      (password)   => post({ action: 'validateAppManager', password }),
     registerPlayer:   (payload)        => post({ action: 'registerPlayer', ...payload }),
     submitApplication:(payload)        => post({ action: 'submitApplication', ...payload }),
-    approvePlayer:    (playerName)     => post({ action: 'approvePlayer', playerName }),
+    approvePlayer:    (playerName, relayConfig) => post({ action: 'approvePlayer', playerName, relayConfig }),
     sendFeedback:     (payload)        => post({ action: 'sendFeedback', ...payload }),
     saveConfig:       (config)         => post({ action: 'saveConfig', config }),
     savePlayers:      (players)        => post({ action: 'savePlayers', players }),
@@ -94,7 +94,16 @@ const API = (() => {
     sendTournamentReport:       (payload) => post({ action: 'sendTournamentReport', ...payload }),
     sendAvailabilityRequest:    (payload) => post({ action: 'sendAvailabilityRequest', ...payload }),
     sendPlayerReport:           (payload) => post({ action: 'sendPlayerReport', ...payload }),
+    testEmailRelay:     (relayConfig, testEmail) => post({ action: 'testEmailRelay', relayConfig, testEmail }),
     changePin:        (name, currentPin, newPin) => post({ action: 'changePin', name, currentPin, newPin }),
     emailPin:         (name)             => post({ action: 'emailPin', name }),
+
+    // Push notifications
+    saveVapidPrivateKey:    (password, privateKey)         => post({ action: 'saveVapidPrivateKey', password, privateKey }),
+    getVapidPrivateKey:     (password)                     => post({ action: 'getVapidPrivateKey',  password }),
+    savePushSubscription:   (subscription, playerName)     => post({ action: 'savePushSubscription', subscription, playerName }),
+    deletePushSubscription: (endpoint)                     => post({ action: 'deletePushSubscription', endpoint }),
+    getPushSubscriptions:   (password)                     => post({ action: 'getPushSubscriptions',  password }),
+    sendPushNotifications:  (password, notifications)      => post({ action: 'sendPushNotifications', password, notifications }),
   };
 })();

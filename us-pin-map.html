@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>US Community Map</title>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f7f4ef;
+    --surface: #ffffff;
+    --ink: #1a1a18;
+    --ink2: #5a5a54;
+    --ink3: #9a9a92;
+    --accent: #c25c2a;
+    --accent2: #e8a87c;
+    --land: #ddd8cc;
+    --land-hover: #ccc6b8;
+    --border: #e2ddd4;
+    --map-stroke: #ffffff;
+    --pin-ring: #ffffff;
+    --shadow: 0 4px 24px rgba(0,0,0,0.12);
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--ink); min-height: 100vh; overflow-x: hidden; }
+
+  header {
+    padding: 1rem 1.5rem 0.75rem;
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo { font-family: 'Libre Baskerville', serif; font-size: 1.15rem; color: var(--ink); }
+  .logo span { color: var(--accent); }
+  .header-actions { display: flex; gap: 8px; align-items: center; }
+  .btn {
+    font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500;
+    padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--ink); cursor: pointer;
+    transition: all 0.15s; white-space: nowrap;
+  }
+  .btn:hover { background: var(--bg); }
+  .btn-accent { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-accent:hover { background: #a84d22; border-color: #a84d22; }
+
+  .map-container {
+    position: relative; width: 100%;
+    max-width: 960px; margin: 0 auto;
+    padding: 1rem 0.5rem 0;
+  }
+  #us-map { width: 100%; height: auto; display: block; cursor: crosshair; }
+  .state { fill: var(--land); stroke: var(--map-stroke); stroke-width: 1.5; transition: fill 0.15s; }
+  .state:hover { fill: var(--land-hover); }
+
+  .pin-group { cursor: pointer; }
+  .pin-circle {
+    stroke: var(--pin-ring); stroke-width: 2.5;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));
+    transition: r 0.15s;
+  }
+  .pin-label {
+    font-family: 'DM Sans', sans-serif; font-size: 9px; font-weight: 600;
+    fill: #fff; text-anchor: middle; dominant-baseline: middle;
+    pointer-events: none; user-select: none;
+  }
+  .pin-group:hover .pin-circle { r: 20; }
+
+  /* Modal overlay */
+  .overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(20,18,14,0.55); z-index: 200;
+    align-items: center; justify-content: center; padding: 1rem;
+  }
+  .overlay.open { display: flex; }
+
+  .modal {
+    background: var(--surface); border-radius: var(--radius);
+    width: 100%; max-width: 420px;
+    box-shadow: var(--shadow); overflow: hidden;
+    animation: slideUp 0.2s ease;
+    max-height: 90vh; overflow-y: auto;
+  }
+  @keyframes slideUp { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+  .modal-header {
+    background: var(--accent); padding: 1.25rem 1.5rem;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .modal-header h2 { font-family: 'Libre Baskerville', serif; font-size: 1.1rem; color: #fff; }
+  .close-btn { background: none; border: none; cursor: pointer; color: rgba(255,255,255,0.8); font-size: 1.5rem; line-height: 1; padding: 0 4px; }
+  .close-btn:hover { color: #fff; }
+
+  .modal-body { padding: 1.5rem; }
+  .modal-body label { display: block; font-size: 12px; font-weight: 600; color: var(--ink2); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; margin-top: 14px; }
+  .modal-body label:first-child { margin-top: 0; }
+  .modal-body input, .modal-body textarea {
+    width: 100%; padding: 9px 12px; border: 1px solid var(--border);
+    border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 14px;
+    background: var(--bg); color: var(--ink); outline: none;
+    transition: border-color 0.15s;
+  }
+  .modal-body input:focus, .modal-body textarea:focus { border-color: var(--accent); }
+  .modal-body textarea { resize: vertical; min-height: 72px; }
+
+  .photo-preview {
+    width: 80px; height: 80px; border-radius: 50%; object-fit: cover;
+    border: 3px solid var(--border); margin-bottom: 4px;
+    display: block;
+  }
+  .photo-placeholder {
+    width: 80px; height: 80px; border-radius: 50%;
+    background: var(--land); border: 3px dashed var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; color: var(--ink3);
+  }
+
+  .modal-footer { padding: 0 1.5rem 1.5rem; display: flex; gap: 8px; }
+  .modal-footer .btn { flex: 1; text-align: center; }
+
+  /* Profile card */
+  .profile-card { max-width: 380px; }
+  .profile-header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 1.5rem; border-bottom: 1px solid var(--border);
+  }
+  .profile-avatar {
+    width: 72px; height: 72px; border-radius: 50%;
+    object-fit: cover; border: 3px solid var(--accent2); flex-shrink: 0;
+  }
+  .profile-avatar-placeholder {
+    width: 72px; height: 72px; border-radius: 50%;
+    background: var(--accent2); display: flex; align-items: center;
+    justify-content: center; font-family: 'Libre Baskerville', serif;
+    font-size: 1.5rem; color: var(--accent); flex-shrink: 0;
+  }
+  .profile-name { font-family: 'Libre Baskerville', serif; font-size: 1.25rem; color: var(--ink); }
+  .profile-body { padding: 1.25rem 1.5rem; }
+  .profile-field { margin-bottom: 12px; }
+  .profile-field .field-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink3); margin-bottom: 2px; }
+  .profile-field .field-value { font-size: 14px; color: var(--ink); }
+  .tag { display: inline-block; padding: 3px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 20px; font-size: 12px; margin: 2px 3px 2px 0; color: var(--ink2); }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: #fff; padding: 10px 20px;
+    border-radius: 30px; font-size: 13px; z-index: 500;
+    opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; }
+
+  /* Config banner */
+  .config-banner {
+    margin: 0.75rem 1rem;
+    background: #fff8f2; border: 1px solid #f0c090;
+    border-radius: 10px; padding: 0.75rem 1rem;
+    font-size: 13px; color: #7a4a1a; line-height: 1.5;
+  }
+  .config-banner a { color: var(--accent); }
+  .config-banner strong { font-weight: 600; }
+  .config-banner code { background: #f5e8d4; border-radius: 4px; padding: 1px 5px; font-family: monospace; font-size: 11px; }
+
+  .mode-pill {
+    font-size: 11px; font-weight: 600; padding: 4px 10px;
+    border-radius: 20px; background: #fde8d8; color: var(--accent);
+    border: 1px solid #f0c090;
+  }
+
+  /* Placing mode indicator */
+  #place-mode-hint {
+    display: none; position: absolute; top: 1.5rem; left: 50%; transform: translateX(-50%);
+    background: var(--accent); color: #fff; padding: 7px 16px;
+    border-radius: 24px; font-size: 13px; font-weight: 500; pointer-events: none;
+    white-space: nowrap; z-index: 50;
+    box-shadow: 0 2px 12px rgba(194,92,42,0.3);
+  }
+  #place-mode-hint.active { display: block; }
+
+  .pin-count { font-size: 12px; color: var(--ink3); }
+
+  @media (max-width: 600px) {
+    header { padding: 0.75rem 1rem; }
+    .logo { font-size: 1rem; }
+    .modal { max-width: 100%; margin: 0; border-radius: var(--radius) var(--radius) 0 0; position: fixed; bottom: 0; left: 0; right: 0; max-height: 92vh; }
+    .overlay { align-items: flex-end; padding: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">US <span>Community</span> Map</div>
+  <div class="header-actions">
+    <span class="pin-count" id="pin-count">0 pins</span>
+    <button class="btn btn-accent" id="add-pin-btn">+ Add Me</button>
+  </div>
+</header>
+
+<div id="config-banner" class="config-banner">
+  <strong>Setup required:</strong> Replace the placeholders in the <code>&lt;script&gt;</code> at the bottom with your Google Sheets info.
+  See the <a href="#" onclick="showSetupGuide(); return false;">setup guide</a> below the map. &nbsp;
+  <span class="mode-pill">Demo mode</span>
+</div>
+
+<div class="map-container">
+  <div id="place-mode-hint">Click anywhere on the map to place your pin</div>
+  <svg id="us-map" viewBox="0 0 960 600" xmlns="http://www.w3.org/2000/svg">
+    <!-- US States SVG paths (simplified but accurate) -->
+    <g id="states">
+      <!-- WA --><path class="state" id="WA" d="M112,58 L117,59 L178,70 L181,87 L161,97 L155,108 L147,106 L126,120 L105,115 L89,103 L75,92 L68,80 L72,63 Z"/>
+      <!-- OR --><path class="state" id="OR" d="M68,80 L75,92 L89,103 L105,115 L126,120 L147,106 L143,165 L72,155 L58,150 L60,132 L68,115 Z"/>
+      <!-- CA --><path class="state" id="CA" d="M58,150 L72,155 L143,165 L138,190 L125,215 L118,240 L120,265 L110,285 L100,300 L90,310 L72,330 L60,340 L45,310 L48,280 L52,250 L54,220 L50,195 Z"/>
+      <!-- NV --><path class="state" id="NV" d="M143,165 L180,158 L185,175 L182,220 L175,240 L138,230 L120,265 L118,240 L125,215 L138,190 Z"/>
+      <!-- ID --><path class="state" id="ID" d="M147,106 L181,87 L190,95 L195,120 L200,145 L185,175 L180,158 L143,165 L143,120 Z"/>
+      <!-- MT --><path class="state" id="MT" d="M178,70 L280,72 L282,78 L285,130 L285,145 L200,145 L195,120 L190,95 L181,87 Z"/>
+      <!-- WY --><path class="state" id="WY" d="M200,145 L285,145 L290,195 L220,198 L200,198 Z"/>
+      <!-- UT --><path class="state" id="UT" d="M180,158 L200,158 L200,198 L220,198 L220,245 L175,240 L182,220 L185,175 Z"/>
+      <!-- CO --><path class="state" id="CO" d="M220,198 L290,195 L295,250 L220,250 Z"/>
+      <!-- AZ --><path class="state" id="AZ" d="M175,240 L220,245 L220,300 L200,305 L175,300 L148,285 L138,260 Z"/>
+      <!-- NM --><path class="state" id="NM" d="M220,250 L295,250 L298,308 L248,313 L220,308 L220,300 L220,245 Z"/>
+      <!-- ND --><path class="state" id="ND" d="M282,78 L390,78 L388,128 L285,130 Z"/>
+      <!-- SD --><path class="state" id="SD" d="M285,130 L388,128 L390,182 L290,182 L285,145 Z"/>
+      <!-- NE --><path class="state" id="NE" d="M290,182 L390,182 L392,232 L290,230 L290,195 Z"/>
+      <!-- KS --><path class="state" id="KS" d="M290,230 L392,232 L393,278 L290,278 Z"/>
+      <!-- OK --><path class="state" id="OK" d="M290,278 L393,278 L396,326 L355,326 L338,332 L290,332 Z"/>
+      <!-- TX --><path class="state" id="TX" d="M290,332 L338,332 L355,326 L396,326 L400,358 L390,385 L375,408 L360,425 L340,440 L318,445 L300,445 L285,435 L270,415 L260,395 L255,370 L255,345 L260,335 Z"/>
+      <!-- MN --><path class="state" id="MN" d="M390,78 L455,78 L458,105 L458,130 L420,130 L420,155 L388,155 L388,128 Z"/>
+      <!-- IA --><path class="state" id="IA" d="M388,155 L420,155 L458,155 L460,195 L390,196 Z"/>
+      <!-- MO --><path class="state" id="MO" d="M390,196 L460,195 L462,245 L445,250 L440,268 L395,270 L393,278 L392,232 Z"/>
+      <!-- AR --><path class="state" id="AR" d="M395,270 L440,268 L445,250 L462,248 L464,310 L395,310 Z"/>
+      <!-- LA --><path class="state" id="LA" d="M395,310 L464,310 L462,350 L450,360 L430,365 L415,358 L400,358 L396,326 Z"/>
+      <!-- WI --><path class="state" id="WI" d="M458,105 L492,105 L500,130 L490,155 L458,155 L458,130 Z"/>
+      <!-- MI --><path class="state" id="MI" d="M492,105 L530,100 L538,112 L528,125 L512,128 L500,130 L492,105 Z"/>
+      <!-- IL --><path class="state" id="IL" d="M458,155 L490,155 L492,200 L490,245 L462,245 L460,195 Z"/>
+      <!-- IN --><path class="state" id="IN" d="M490,155 L520,155 L522,200 L520,240 L490,245 L492,200 Z"/>
+      <!-- OH --><path class="state" id="OH" d="M520,155 L556,150 L558,200 L552,240 L520,240 L522,200 Z"/>
+      <!-- KY --><path class="state" id="KY" d="M490,245 L520,240 L552,240 L558,270 L540,278 L510,282 L478,280 L462,275 L462,248 Z"/>
+      <!-- TN --><path class="state" id="TN" d="M462,275 L478,280 L510,282 L540,278 L558,270 L562,295 L540,298 L510,300 L478,298 L462,295 Z"/>
+      <!-- MS --><path class="state" id="MS" d="M462,295 L478,298 L480,345 L470,368 L455,368 L445,360 L450,350 L462,310 Z"/>
+      <!-- AL --><path class="state" id="AL" d="M478,298 L510,300 L514,345 L512,368 L490,370 L470,368 L480,345 Z"/>
+      <!-- GA --><path class="state" id="GA" d="M510,300 L540,298 L545,345 L542,375 L530,385 L512,380 L512,368 L514,345 Z"/>
+      <!-- FL --><path class="state" id="FL" d="M512,368 L512,380 L530,385 L542,375 L548,400 L545,425 L530,440 L515,450 L500,455 L492,445 L488,425 L490,400 L490,370 Z"/>
+      <!-- SC --><path class="state" id="SC" d="M545,268 L565,265 L575,285 L572,305 L555,312 L542,305 L542,290 L540,278 L558,270 Z"/>
+      <!-- NC --><path class="state" id="NC" d="M558,245 L610,238 L615,258 L598,268 L575,272 L565,265 L545,268 L540,258 L552,250 L558,240 Z"/>
+      <!-- VA --><path class="state" id="VA" d="M558,220 L608,215 L615,235 L610,238 L558,245 L552,240 L550,225 Z"/>
+      <!-- WV --><path class="state" id="WV" d="M550,195 L572,192 L578,212 L570,225 L558,230 L550,225 L552,210 Z"/>
+      <!-- MD --><path class="state" id="MD" d="M578,195 L608,192 L610,210 L608,215 L578,212 Z"/>
+      <!-- DE --><path class="state" id="DE" d="M608,192 L618,188 L622,205 L610,210 Z"/>
+      <!-- PA --><path class="state" id="PA" d="M556,165 L618,160 L618,188 L578,195 L572,192 L550,195 L552,178 Z"/>
+      <!-- NJ --><path class="state" id="NJ" d="M618,160 L632,158 L635,178 L625,188 L618,188 L618,165 Z"/>
+      <!-- NY --><path class="state" id="NY" d="M558,140 L630,132 L640,145 L632,158 L618,160 L556,165 L552,155 Z"/>
+      <!-- CT --><path class="state" id="CT" d="M632,145 L648,142 L650,158 L635,158 L632,158 L632,145 Z"/>
+      <!-- RI --><path class="state" id="RI" d="M648,142 L658,140 L660,152 L650,158 L648,142 Z"/>
+      <!-- MA --><path class="state" id="MA" d="M630,128 L668,122 L672,138 L658,140 L630,135 Z"/>
+      <!-- VT --><path class="state" id="VT" d="M614,115 L630,112 L632,130 L618,132 Z"/>
+      <!-- NH --><path class="state" id="NH" d="M630,105 L642,102 L648,120 L632,125 Z"/>
+      <!-- ME --><path class="state" id="ME" d="M642,78 L668,80 L672,105 L648,120 L642,102 L632,90 L635,78 Z"/>
+      <!-- DC area --><path class="state" id="DC" d="M592,212 L598,209 L601,215 L595,218 Z"/>
+      <!-- AK (inset) --><path class="state" id="AK" d="M80,450 L150,440 L175,455 L185,480 L165,495 L140,498 L110,490 L85,475 Z"/>
+      <!-- HI (inset) --><path class="state" id="HI" d="M245,465 L260,460 L275,465 L278,475 L265,480 L250,478 Z"/>
+    </g>
+    <!-- Pins layer -->
+    <g id="pins-layer"></g>
+  </svg>
+</div>
+
+<!-- Setup Guide -->
+<div id="setup-guide" style="max-width:960px;margin:1rem auto;padding:0 1rem 2rem;">
+  <details>
+    <summary style="cursor:pointer;font-weight:600;font-size:14px;color:var(--accent);padding:0.5rem 0;border-top:1px solid var(--border);list-style:none;">▸ Developer Setup Guide — click to expand</summary>
+    <div style="margin-top:1rem;font-size:13px;color:var(--ink2);line-height:1.7;background:var(--surface);border-radius:10px;padding:1.25rem;border:1px solid var(--border);">
+      <h3 style="font-family:'Libre Baskerville',serif;font-size:1rem;color:var(--ink);margin-bottom:0.75rem;">How to connect Google Sheets &amp; Google Drive</h3>
+      <ol style="padding-left:1.25rem;">
+        <li style="margin-bottom:12px;"><strong>Create a Google Sheet</strong> with these exact column headers in row 1:<br>
+          <code style="background:#f0ebe4;border-radius:4px;padding:2px 7px;font-size:12px;">name | address | phone | age | interests | photo_url | lat | lng | pin_color</code>
+        </li>
+        <li style="margin-bottom:12px;"><strong>Publish the sheet:</strong> File → Share → Publish to web → CSV → Publish. Copy the URL.</li>
+        <li style="margin-bottom:12px;"><strong>Enable Google Sheets API</strong> at <a href="https://console.cloud.google.com" style="color:var(--accent);">console.cloud.google.com</a>, create an API key, and restrict it to Sheets API + your domain.</li>
+        <li style="margin-bottom:12px;"><strong>For photos:</strong> Upload images to a shared Google Drive folder. Right-click → Get link → set to "Anyone with link". Convert the share link to a direct image URL:<br>
+          <code style="background:#f0ebe4;border-radius:4px;padding:2px 7px;font-size:12px;">https://drive.google.com/uc?export=view&amp;id=FILE_ID</code>
+        </li>
+        <li style="margin-bottom:12px;"><strong>For writing new pins</strong> (optional): Use a Google Apps Script Web App as a proxy to handle POST requests and append rows. Deploy it as a web app with execute permissions set to "Anyone".</li>
+        <li style="margin-bottom:12px;"><strong>Update the CONFIG</strong> section in the &lt;script&gt; at the bottom of this file with your Sheet ID and API key.</li>
+      </ol>
+      <p style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border);color:var(--ink3);font-size:12px;">
+        Demo mode: The app loads sample pins from the DEMO_PINS array in the script. Once you configure your Sheet, it will read live data from Google Sheets.
+      </p>
+    </div>
+  </details>
+</div>
+
+<!-- Add/Edit Pin Modal -->
+<div class="overlay" id="add-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Add Your Pin</h2>
+      <button class="close-btn" onclick="closeModal('add-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:1rem;">
+        <div id="photo-preview-wrap">
+          <div class="photo-placeholder" id="photo-placeholder">👤</div>
+          <img class="photo-preview" id="photo-preview-img" style="display:none;" src="" alt="preview">
+        </div>
+        <div>
+          <label style="margin-top:0;">Photo URL</label>
+          <input type="url" id="f-photo" placeholder="https://drive.google.com/uc?export=view&id=…" oninput="previewPhoto(this.value)">
+        </div>
+      </div>
+      <label>First name <span style="color:var(--accent)">*</span></label>
+      <input type="text" id="f-name" placeholder="Your first name" required>
+      <label>Address <span style="color:var(--ink3);font-weight:400;font-size:11px;">(optional)</span></label>
+      <input type="text" id="f-address" placeholder="City, State">
+      <label>Phone <span style="color:var(--ink3);font-weight:400;font-size:11px;">(optional)</span></label>
+      <input type="tel" id="f-phone" placeholder="(555) 000-0000">
+      <label>Age <span style="color:var(--ink3);font-weight:400;font-size:11px;">(optional)</span></label>
+      <input type="number" id="f-age" placeholder="Age" min="1" max="120">
+      <label>Interests <span style="color:var(--ink3);font-weight:400;font-size:11px;">(comma-separated, optional)</span></label>
+      <input type="text" id="f-interests" placeholder="hiking, cooking, travel">
+      <label>Pin color</label>
+      <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap;" id="color-picker">
+        <button class="color-swatch selected" data-color="#c25c2a" style="background:#c25c2a;" onclick="pickColor(this)"></button>
+        <button class="color-swatch" data-color="#2a7ac2" style="background:#2a7ac2;" onclick="pickColor(this)"></button>
+        <button class="color-swatch" data-color="#2ac27a" style="background:#2ac27a;" onclick="pickColor(this)"></button>
+        <button class="color-swatch" data-color="#c22a7a" style="background:#c22a7a;" onclick="pickColor(this)"></button>
+        <button class="color-swatch" data-color="#7a2ac2" style="background:#7a2ac2;" onclick="pickColor(this)"></button>
+        <button class="color-swatch" data-color="#c2a02a" style="background:#c2a02a;" onclick="pickColor(this)"></button>
+      </div>
+      <p style="font-size:11px;color:var(--ink3);margin-top:12px;line-height:1.5;">📍 Your pin will be placed at the location you clicked on the map. Coordinates: <span id="coord-display">—</span></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('add-modal')">Cancel</button>
+      <button class="btn btn-accent" onclick="submitPin()">Place Pin</button>
+    </div>
+  </div>
+</div>
+
+<!-- Profile View Modal -->
+<div class="overlay" id="profile-modal">
+  <div class="modal profile-card">
+    <div class="modal-header">
+      <h2 id="pm-title">Profile</h2>
+      <button class="close-btn" onclick="closeModal('profile-modal')">×</button>
+    </div>
+    <div class="profile-header">
+      <img class="profile-avatar" id="pm-photo" src="" alt="" style="display:none;">
+      <div class="profile-avatar-placeholder" id="pm-avatar-placeholder">?</div>
+      <div>
+        <div class="profile-name" id="pm-name"></div>
+        <div id="pm-address" style="font-size:13px;color:var(--ink2);margin-top:3px;"></div>
+      </div>
+    </div>
+    <div class="profile-body" id="pm-body"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('profile-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<style>
+  .color-swatch {
+    width: 28px; height: 28px; border-radius: 50%; border: 3px solid transparent;
+    cursor: pointer; transition: border-color 0.1s; outline: none;
+  }
+  .color-swatch.selected { border-color: var(--ink); }
+</style>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  CONFIG — Replace with your real values
+// ═══════════════════════════════════════════════════════
+const CONFIG = {
+  SHEET_ID: '1SBzGGq7Z96uQOUoTD7OTA1vjY7sJYxMDxWws-ox9TBA',         // e.g. '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms'
+  API_KEY:  'AIzaSyAEMAFk3SNA8C3kGbaL1JM4S94TEi1hGWA',           // e.g. 'AIzaSy...'
+  // Optional: Google Apps Script Web App URL for adding new pins
+  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzSO5XLg0wyh2cOL9LiOLU8c75T6hU_H3TaYid1y-xbac_DP7FKaRhLExNWNiRTbOSr0A/exec',                       // e.g. 'https://script.google.com/macros/s/AKfy.../exec'
+};
+
+// ═══════════════════════════════════════════════════════
+//  DEMO PINS — shown when not connected to Sheets
+// ═══════════════════════════════════════════════════════
+const DEMO_PINS = [
+  { name:'Maria', address:'Austin, TX', phone:'(512) 555-0182', age:34, interests:'hiking, photography, tacos', photo_url:'', lat:350, lng:320, pin_color:'#c25c2a' },
+  { name:'James', address:'Seattle, WA', phone:'', age:28, interests:'coffee, coding, kayaking', photo_url:'', lat:120, lng:85, pin_color:'#2a7ac2' },
+  { name:'Priya', address:'New York, NY', phone:'(212) 555-0044', age:41, interests:'theater, yoga, travel', photo_url:'', lat:615, lng:152, pin_color:'#c22a7a' },
+  { name:'Carlos', address:'Miami, FL', phone:'', age:25, interests:'music, surfing, cooking', photo_url:'', lat:530, lng:415, pin_color:'#2ac27a' },
+  { name:'Lily', address:'Denver, CO', phone:'(720) 555-0091', age:32, interests:'skiing, painting, dogs', photo_url:'', lat:258, lng:225, pin_color:'#7a2ac2' },
+];
+
+// ═══════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════
+let pins = [];
+let pendingCoords = null;
+let selectedColor = '#c25c2a';
+let placingMode = false;
+
+// ═══════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+  loadPins();
+
+  document.getElementById('add-pin-btn').addEventListener('click', () => {
+    placingMode = true;
+    document.getElementById('place-mode-hint').classList.add('active');
+    document.getElementById('us-map').style.cursor = 'crosshair';
+    showToast('Click anywhere on the map to place your pin');
+  });
+
+  document.getElementById('us-map').addEventListener('click', onMapClick);
+
+  // Close modals on overlay click
+  ['add-modal','profile-modal'].forEach(id => {
+    document.getElementById(id).addEventListener('click', e => {
+      if (e.target.id === id) closeModal(id);
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════
+//  LOAD PINS
+// ═══════════════════════════════════════════════════════
+async function loadPins() {
+  const isConfigured = CONFIG.SHEET_ID !== 'YOUR_GOOGLE_SHEET_ID' && CONFIG.API_KEY !== 'YOUR_GOOGLE_API_KEY';
+
+  if (isConfigured) {
+    document.getElementById('config-banner').style.display = 'none';
+    try {
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/Sheet1!A2:I1000?key=${CONFIG.API_KEY}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.values) {
+        pins = data.values.map((row, i) => ({
+          id: i,
+          name: row[0] || '',
+          address: row[1] || '',
+          phone: row[2] || '',
+          age: row[3] || '',
+          interests: row[4] || '',
+          photo_url: row[5] || '',
+          lat: parseFloat(row[6]) || 300,
+          lng: parseFloat(row[7]) || 300,
+          pin_color: row[8] || '#c25c2a'
+        }));
+      }
+    } catch(e) {
+      console.error('Sheets load error:', e);
+      showToast('Could not load from Sheets — showing demo data');
+      pins = DEMO_PINS;
+    }
+  } else {
+    pins = DEMO_PINS;
+  }
+
+  renderPins();
+}
+
+// ═══════════════════════════════════════════════════════
+//  RENDER PINS ON MAP
+// ═══════════════════════════════════════════════════════
+function renderPins() {
+  const layer = document.getElementById('pins-layer');
+  layer.innerHTML = '';
+  pins.forEach((pin, i) => {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.classList.add('pin-group');
+    g.setAttribute('transform', `translate(${pin.lng}, ${pin.lat})`);
+    g.addEventListener('click', (e) => { e.stopPropagation(); showProfile(i); });
+
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.classList.add('pin-circle');
+    circle.setAttribute('cx', 0); circle.setAttribute('cy', 0); circle.setAttribute('r', 16);
+    circle.setAttribute('fill', pin.pin_color || '#c25c2a');
+
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.classList.add('pin-label');
+    label.setAttribute('x', 0); label.setAttribute('y', 0);
+    label.textContent = (pin.name || '?').slice(0,3).toUpperCase();
+
+    // If photo, use clipPath+image
+    if (pin.photo_url) {
+      const clipId = `clip-${i}`;
+      const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+      const cp = document.createElementNS('http://www.w3.org/2000/svg','clipPath');
+      cp.setAttribute('id', clipId);
+      const cpCirc = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      cpCirc.setAttribute('cx',0); cpCirc.setAttribute('cy',0); cpCirc.setAttribute('r',14);
+      cp.appendChild(cpCirc); defs.appendChild(cp);
+      layer.appendChild(defs);
+
+      const img = document.createElementNS('http://www.w3.org/2000/svg','image');
+      img.setAttribute('href', pin.photo_url);
+      img.setAttribute('x',-14); img.setAttribute('y',-14);
+      img.setAttribute('width',28); img.setAttribute('height',28);
+      img.setAttribute('clip-path',`url(#${clipId})`);
+      g.appendChild(circle); g.appendChild(img);
+    } else {
+      g.appendChild(circle); g.appendChild(label);
+    }
+
+    layer.appendChild(g);
+  });
+
+  document.getElementById('pin-count').textContent = `${pins.length} pin${pins.length!==1?'s':''}`;
+}
+
+// ═══════════════════════════════════════════════════════
+//  MAP CLICK
+// ═══════════════════════════════════════════════════════
+function onMapClick(e) {
+  if (!placingMode) return;
+
+  const svg = document.getElementById('us-map');
+  const rect = svg.getBoundingClientRect();
+  const vb = svg.viewBox.baseVal;
+
+  const scaleX = vb.width / rect.width;
+  const scaleY = vb.height / rect.height;
+
+  const x = (e.clientX - rect.left) * scaleX;
+  const y = (e.clientY - rect.top) * scaleY;
+
+  pendingCoords = { lat: Math.round(y), lng: Math.round(x) };
+  document.getElementById('coord-display').textContent = `(${pendingCoords.lat}, ${pendingCoords.lng})`;
+
+  placingMode = false;
+  document.getElementById('place-mode-hint').classList.remove('active');
+  document.getElementById('us-map').style.cursor = 'crosshair';
+  openModal('add-modal');
+}
+
+// ═══════════════════════════════════════════════════════
+//  SUBMIT PIN
+// ═══════════════════════════════════════════════════════
+async function submitPin() {
+  const name = document.getElementById('f-name').value.trim();
+  if (!name) { showToast('Please enter your name'); return; }
+  if (!pendingCoords) { showToast('Please pick a location on the map'); return; }
+
+  const pin = {
+    name, 
+    address: document.getElementById('f-address').value.trim(),
+    phone: document.getElementById('f-phone').value.trim(),
+    age: document.getElementById('f-age').value.trim(),
+    interests: document.getElementById('f-interests').value.trim(),
+    photo_url: document.getElementById('f-photo').value.trim(),
+    lat: pendingCoords.lat,
+    lng: pendingCoords.lng,
+    pin_color: selectedColor
+  };
+
+  const isConfigured = CONFIG.APPS_SCRIPT_URL && CONFIG.APPS_SCRIPT_URL.length > 0;
+
+  if (isConfigured) {
+    try {
+      await fetch(CONFIG.APPS_SCRIPT_URL, {
+        method: 'POST', mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pin)
+      });
+    } catch(e) { console.error('Save error:', e); }
+  }
+
+  pins.push(pin);
+  renderPins();
+  closeModal('add-modal');
+  resetForm();
+  showToast(`${name}'s pin added!`);
+}
+
+// ═══════════════════════════════════════════════════════
+//  SHOW PROFILE
+// ═══════════════════════════════════════════════════════
+function showProfile(i) {
+  const p = pins[i];
+  document.getElementById('pm-title').textContent = p.name || 'Profile';
+  document.getElementById('pm-name').textContent = p.name || '';
+
+  const addr = document.getElementById('pm-address');
+  addr.textContent = p.address || '';
+  addr.style.display = p.address ? 'block' : 'none';
+
+  // Photo
+  const img = document.getElementById('pm-photo');
+  const ph = document.getElementById('pm-avatar-placeholder');
+  if (p.photo_url) {
+    img.src = p.photo_url; img.style.display = 'block'; ph.style.display = 'none';
+  } else {
+    img.style.display = 'none'; ph.style.display = 'flex';
+    ph.textContent = (p.name || '?')[0].toUpperCase();
+    ph.style.background = (p.pin_color || '#c25c2a') + '33';
+    ph.style.color = p.pin_color || '#c25c2a';
+  }
+
+  // Body
+  let html = '';
+  if (p.phone) html += field('Phone', `<a href="tel:${p.phone}" style="color:var(--accent)">${p.phone}</a>`);
+  if (p.age) html += field('Age', p.age);
+  if (p.interests) {
+    const tags = p.interests.split(',').map(t => `<span class="tag">${t.trim()}</span>`).join('');
+    html += field('Interests', tags);
+  }
+  document.getElementById('pm-body').innerHTML = html;
+  openModal('profile-modal');
+}
+
+function field(label, value) {
+  return `<div class="profile-field"><div class="field-label">${label}</div><div class="field-value">${value}</div></div>`;
+}
+
+// ═══════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function previewPhoto(url) {
+  const img = document.getElementById('photo-preview-img');
+  const ph = document.getElementById('photo-placeholder');
+  if (url) { img.src = url; img.style.display = 'block'; ph.style.display = 'none'; }
+  else { img.style.display = 'none'; ph.style.display = 'flex'; }
+}
+
+function pickColor(btn) {
+  document.querySelectorAll('.color-swatch').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  selectedColor = btn.dataset.color;
+}
+
+function resetForm() {
+  ['f-name','f-address','f-phone','f-age','f-interests','f-photo'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('photo-preview-img').style.display = 'none';
+  document.getElementById('photo-placeholder').style.display = 'flex';
+  document.getElementById('coord-display').textContent = '—';
+  pendingCoords = null;
+  selectedColor = '#c25c2a';
+  document.querySelectorAll('.color-swatch').forEach((b,i) => b.classList.toggle('selected', i===0));
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+function showSetupGuide() {
+  document.querySelector('details').open = true;
+  document.querySelector('details').scrollIntoView({behavior:'smooth'});
+}
+</script>
+
+<!-- Google Apps Script Web App template (paste into Apps Script editor) -->
+<!--
+function doPost(e) {
+  var sheet = SpreadsheetApp.openById('YOUR_SHEET_ID').getSheetByName('Sheet1');
+  var data = JSON.parse(e.postData.contents);
+  sheet.appendRow([
+    data.name, data.address, data.phone, data.age,
+    data.interests, data.photo_url, data.lat, data.lng, data.pin_color
+  ]);
+  return ContentService.createTextOutput('OK');
+}
+-->
+</body>
+</html>

@@ -6,6 +6,30 @@
 
 const CHANGELOG = [
 {
+    version: '1.4.6',
+    date: '2026-04-05',
+    changes: [
+      'remove Games and Byes columns from overall and session standings tables',
+      'session standings now show overall season rank through that session',
+      'session standings now show change in overall rank vs. previous session',
+    ]},
+{
+    version: '1.4.5',
+    date: '2026-04-4',
+    changes: ['add timers with display on players dashboard if they are on a related court',
+   'support push notifications on timer start, warn, stop'
+]},
+{
+    version: '1.4.4',
+    date: '2026-04-3',
+    changes: ['add Push notifications (currently only allowed by app dev)',
+'ensure attendance changes get recorded',
+'change PIN entry to password and use full keyboard',
+'clean up league entry form',
+'allow league admin to be sender of messages',
+'auto set league admin to have access to sheet created by app'
+]},
+{
     version: '1.3.7',
     date: '2026-03-31',
     changes: [

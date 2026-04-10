@@ -86,7 +86,8 @@ const API = (() => {
     sendFeedback:     (payload)        => post({ action: 'sendFeedback', ...payload }),
     saveConfig:       (config)         => post({ action: 'saveConfig', config }),
     savePlayers:      (players)        => post({ action: 'savePlayers', players }),
-    setAttendance:    (player, week, status) => post({ action: 'setAttendance', player, week, status }),
+    setAttendance:      (player, week, status) => post({ action: 'setAttendance', player, week, status }),
+    batchSetAttendance: (changes)             => post({ action: 'batchSetAttendance', changes }),
     savePairings:     (week, pairings) => post({ action: 'savePairings', week, pairings }),
     saveScores:       (week, scores)   => post({ action: 'saveScores', week, scores }),
     sendWeeklyReport:   (payload)      => post({ action: 'sendWeeklyReport', ...payload }),
@@ -97,6 +98,7 @@ const API = (() => {
     testEmailRelay:     (relayConfig, testEmail) => post({ action: 'testEmailRelay', relayConfig, testEmail }),
     changePin:        (name, currentPin, newPin) => post({ action: 'changePin', name, currentPin, newPin }),
     emailPin:         (name)             => post({ action: 'emailPin', name }),
+    emailAdminPin:    (leagueId)         => post({ action: 'emailAdminPin', leagueId }),
 
     // Push notifications
     saveVapidPrivateKey:    (password, privateKey)         => post({ action: 'saveVapidPrivateKey', password, privateKey }),
@@ -105,5 +107,15 @@ const API = (() => {
     deletePushSubscription: (endpoint)                     => post({ action: 'deletePushSubscription', endpoint }),
     getPushSubscriptions:   (password)                     => post({ action: 'getPushSubscriptions',  password }),
     sendPushNotifications:  (password, notifications)      => post({ action: 'sendPushNotifications', password, notifications }),
+
+    // Queue-based pairing
+    getQueue:           (week)         => get('getQueue', week !== undefined ? { week } : {}),
+    saveQueue:          (week, entries) => post({ action: 'saveQueue', week, entries }),
+
+    // Game timers
+    getTimerState:      ()                       => get('getTimerState'),
+    setTimerState:      (timerState)             => post({ action: 'setTimerState', timerState }),
+    getTimerPushSubs:   (adminPin)               => get('getTimerPushSubs', { adminPin }),
+    sendTimerPush:      (adminPin, notifications) => post({ action: 'sendTimerPush', adminPin, notifications }),
   };
 })();

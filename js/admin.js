@@ -51,6 +51,68 @@ function showLeagueQR(event, url, leagueName) {
   modal.onclick = e => { if (e.target === modal) modal.style.display = 'none'; };
 }
 
+// ── Tier info popup ──────────────────────────────────────────
+function showTierInfo(currentTier) {
+  const modal = document.getElementById('tier-info-modal');
+  if (!modal) return;
+
+  const allFeatures = [
+    { key: 'messaging',          label: 'Messaging' },
+    { key: 'pushNotifications',  label: 'Push Notifications' },
+    { key: 'hostedDb',           label: 'Hosted DB (auto-create sheets)' },
+    { key: 'timers',             label: 'Game Timers' },
+    { key: 'tournamentPairings', label: 'Tournament Pairings' },
+    { key: 'queuePairings',      label: 'Queue-Based Pairings' },
+    { key: 'headToHead',         label: 'Head-to-Head Stats' },
+    { key: 'playerReport',       label: 'Player Reports' },
+    { key: 'playerRegistration', label: 'Player Self-Registration' },
+    { key: 'playerLogin',        label: 'Player Login' },
+    { key: 'playerScoring',      label: 'Player Score Entry' },
+    { key: 'pairingEditor',      label: 'Pairing / Score Editor' },
+  ];
+
+  const tierDefs = typeof TIERS !== 'undefined' ? TIERS : [];
+  const norm = s => s ? s.toLowerCase() : '';
+
+  let headerRow = `<th style="text-align:left; padding:6px 16px 10px 0; font-size:0.72rem;
+    color:var(--muted); letter-spacing:0.06em; text-transform:uppercase;">Feature</th>`;
+  tierDefs.forEach(t => {
+    const isCurrent = norm(t.version) === norm(currentTier);
+    headerRow += `<th style="text-align:center; padding:6px 12px 10px;
+      font-size:0.82rem; font-weight:700;
+      color:${isCurrent ? 'var(--green)' : 'var(--muted)'};">
+      ${t.version}${isCurrent ? ' <span style="font-size:0.6em;">▲ current</span>' : ''}
+    </th>`;
+  });
+
+  let rows = '';
+  allFeatures.forEach((f, idx) => {
+    const rowBg = idx % 2 === 0 ? '' : 'background:rgba(255,255,255,0.02);';
+    rows += `<tr style="${rowBg}">`;
+    rows += `<td style="padding:7px 16px 7px 0; font-size:0.82rem; color:var(--white);">${f.label}</td>`;
+    tierDefs.forEach(t => {
+      const disabled = (t.disableList || []).includes(f.key);
+      const isCurrent = norm(t.version) === norm(currentTier);
+      rows += `<td style="text-align:center; padding:7px 12px;
+        ${isCurrent ? 'background:rgba(94,194,106,0.06);' : ''}">
+        ${disabled
+          ? '<span style="color:rgba(255,255,255,0.2); font-size:0.85rem;">✕</span>'
+          : '<span style="color:var(--green); font-size:0.9rem;">✓</span>'}
+      </td>`;
+    });
+    rows += '</tr>';
+  });
+
+  document.getElementById('tier-info-table').innerHTML = `
+    <table style="width:100%; border-collapse:collapse;">
+      <thead><tr>${headerRow}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+
+  modal.style.display = 'flex';
+  modal.onclick = e => { if (e.target === modal) modal.style.display = 'none'; };
+}
+
 // ── Role display config ──────────────────────────────────────
 const ROLE_ORDER  = ['admin','assistant','scorer','','sub','spectator','pend'];
 const ROLE_LABELS = {
@@ -108,10 +170,11 @@ const ROLE_COLORS = {
       el.classList.toggle('hidden', isAssistant)
     );
     // These pages are always visible to all admin roles — explicitly ensure never hidden
+    // (skip items that were hidden by tier restrictions)
     ['pairings', 'scores', 'attendance', 'standings', 'player-report', 'head-to-head', 'dashboard'].forEach(page => {
-      document.querySelectorAll(`.nav-item[data-page="${page}"]`).forEach(el =>
-        el.classList.remove('hidden')
-      );
+      document.querySelectorAll(`.nav-item[data-page="${page}"]`).forEach(el => {
+        if (!el.dataset.tierHidden) el.classList.remove('hidden');
+      });
     });
   }
   applyNavVisibility();
@@ -139,11 +202,14 @@ const ROLE_COLORS = {
   let state = {
     config: {}, players: [], attendance: [],
     pairings: [], scores: [], standings: [],
+    queue: [],           // queue-based pairing: [{player, waitWeight, stayGames}]
     currentPairWeek: 1, currentScoreWeek: 1,
     currentStandWeek: 1, currentTournWeek: 1, pendingPairings: null,
     tournament: null,  // { week, mode, round, seeds }
     bestGeneration: null, // { score, pairings, breakdown, normalizedWeights, inputHash, totalTries }
-    saveLocks: {}       // per-week save queue to prevent concurrent writes
+    saveLocks: {},        // per-week save queue to prevent concurrent writes
+    _scoresheetLoading: false, // nav fetch in flight — block background re-renders
+    _scoresheetTouched: false  // user has typed in scoresheet — block background re-renders
   };
 
   // Helper: returns relay config from state.config for inclusion in email API calls.
@@ -242,18 +308,23 @@ const ROLE_COLORS = {
     state.pairings  = data.pairings  || [];
     state.scores    = data.scores    || [];
     state.standings = data.standings || [];
+    state._pairingsLoaded = true;
     if (data.limits) state.limits = data.limits;
     renderDashboard();
     renderPairingsPreview();
-    renderScoresheet();
+    if (!state._scoresheetLoading && !state._scoresheetTouched) renderScoresheet();
     renderStandings();
     applyLimitRestrictions();
+    applyTierRestrictions(state.limits?.tier);
+    updatePairingModeUI();
+    if (state.config.pairingMode === 'queue-based') loadQueueForWeek(state.currentPairWeek);
     // Reconcile week selectors now that pairings are loaded
     const reconciled = Math.max(state.currentPairWeek || 1, state.currentScoreWeek || 1);
     state.currentPairWeek  = reconciled;
     state.currentScoreWeek = reconciled;
     populateWeekSelect('pair-week-select',  'currentPairWeek');
     populateWeekSelect('score-week-select', 'currentScoreWeek');
+    updateTournamentResultsNav();
   }).catch(e => {
     const errHtml = `<p style="padding:12px; color:var(--danger); font-size:0.82rem;">⚠ Could not load scores/pairings: ${e.message}</p>`;
     if (standEl) standEl.innerHTML = errHtml;
@@ -274,6 +345,12 @@ const ROLE_COLORS = {
         if (currentPage === 'players' && state._playersDirty) {
           if (!confirm('You have unsaved changes to the player list. Leave without saving?')) return;
           state._playersDirty = false;
+        }
+        // Warn if navigating away from attendance page with unsaved changes
+        if (currentPage === 'attendance' && state._attDirty) {
+          if (!confirm('You have unsaved attendance changes. Leave without saving?')) return;
+          state._attDirty = false;
+          state._attPending = {};
         }
         // Warn if navigating away from pairings with generated but unlocked pairings
         if (currentPage === 'pairings' && state.pendingPairings) {
@@ -297,6 +374,22 @@ const ROLE_COLORS = {
         const panel = document.getElementById('page-' + page);
         if (panel) panel.classList.add('active');
         gaPage('Admin: ' + page);
+        if (page === 'timers') {
+          if (typeof setTimerCourtConfig === 'function') {
+            const numCourts = parseInt(state.config.courts || 3);
+            const nameMap = {};
+            for (let c = 1; c <= numCourts; c++) nameMap[c] = state.config['courtName_' + c] || ('Court ' + c);
+            setTimerCourtConfig(numCourts, nameMap);
+          }
+          if (typeof setTimerSessionContext === 'function') {
+            setTimerSessionContext(
+              state.config.adminPin       || null,
+              state.config.vapidPublicKey || null,
+              state.config.replyTo        || ''
+            );
+          }
+          renderTimersPage();
+        }
         if (page === 'standings') renderStandings();
         if (page === 'tourn-results') renderAdminTournamentResults();
         if (page === 'player-report') renderPlayerReportSelect();
@@ -309,6 +402,8 @@ const ROLE_COLORS = {
         if (page === 'scores') {
           const fetchId = Date.now();
           state._scoresFetchId = fetchId;
+          state._scoresheetLoading = true;
+          state._scoresheetTouched = false;
           API.getScores(state.currentScoreWeek).then(data => {
             if (state._scoresFetchId !== fetchId) return;
             if (data && data.scores) {
@@ -316,13 +411,23 @@ const ROLE_COLORS = {
               state.scores = state.scores.filter(s => parseInt(s.week) !== week);
               state.scores.push(...data.scores.filter(s => parseInt(s.week) === week));
             }
-            renderScoresheet();
+            state._scoresheetLoading = false;
+            if (!state._scoresheetTouched) renderScoresheet();
           }).catch(() => {
             if (state._scoresFetchId !== fetchId) return;
-            renderScoresheet();
+            state._scoresheetLoading = false;
+            if (!state._scoresheetTouched) renderScoresheet();
           });
         }
-        if (page === 'pairings') { renderPairingsPreview(); renderEditPairingForm(); }
+        if (page === 'pairings') {
+          state.selectedQueueCourts = null;
+          renderPairingsPreview();
+          renderEditPairingForm();
+          updatePairingModeUI();
+          // Refresh queue data every time pairings page is opened; also re-initialises
+          // selectedQueueCourts so stale null-Set click handlers can't throw.
+          if (state.config.pairingMode === 'queue-based') loadQueueForWeek(state.currentPairWeek);
+        }
         if (page === 'attendance') {
           // Show refreshing indicator and block grid interaction until fetch completes
           const grid = document.getElementById('attendance-grid');
@@ -337,39 +442,31 @@ const ROLE_COLORS = {
             grid.style.opacity = '0.5';
           }
           state._attRefreshing = true;
-          // Wait for any in-flight attendance saves to complete before fetching
-          // fresh data — prevents the refresh from returning stale pre-save values
-          const doFetch = () => {
-            API.getAttendance().then(data => {
-              if (data && data.attendance) {
-                const generationActive = !document.getElementById('pairing-overlay')?.classList.contains('hidden');
-                if (!generationActive) {
-                  // Apply server data but preserve any locally-queued unsaved changes
-                  // (queue entries are intentional admin changes not yet confirmed by server)
-                  const queue = state._attQueue || {};
-                  state.attendance = data.attendance.map(a => {
-                    const queued = queue[`${a.player}|${a.week}`];
-                    return queued ? { ...a, status: queued.status } : a;
-                  });
-                  // Add queued entries for player+week combos not yet in server data
-                  Object.values(queue).forEach(q => {
-                    if (!state.attendance.find(a => a.player === q.player && String(a.week) === String(q.week))) {
-                      state.attendance.push({ player: q.player, week: q.week, status: q.status });
-                    }
-                  });
-                }
+          API.getAttendance().then(data => {
+            if (data && data.attendance) {
+              const generationActive = !document.getElementById('pairing-overlay')?.classList.contains('hidden');
+              if (!generationActive) {
+                // Apply server data but re-overlay any unsaved pending changes
+                const pending = state._attPending || {};
+                state.attendance = data.attendance.map(a => {
+                  const p = pending[`${a.player}|${a.week}`];
+                  return p ? { ...a, status: p.status } : a;
+                });
+                // Add pending entries for player+week combos not yet in server data
+                Object.values(pending).forEach(p => {
+                  if (!state.attendance.find(a => a.player === p.player && String(a.week) === String(p.week))) {
+                    state.attendance.push({ player: p.player, week: p.week, status: p.status });
+                  }
+                });
               }
-              renderAttendance();
-            }).catch(() => renderAttendance())
-              .finally(() => {
-                state._attRefreshing = false;
-                const grid2 = document.getElementById('attendance-grid');
-                if (grid2) { grid2.style.pointerEvents = ''; grid2.style.opacity = ''; }
-              });
-          };
-          // Attempt to flush any queued saves before fetching, but don't block
-          flushAttQueue();
-          doFetch();
+            }
+            renderAttendance();
+          }).catch(() => renderAttendance())
+            .finally(() => {
+              state._attRefreshing = false;
+              const grid2 = document.getElementById('attendance-grid');
+              if (grid2) { grid2.style.pointerEvents = ''; grid2.style.opacity = ''; }
+            });
         }
         if (page === 'leagues') renderLeagues();
         if (page === 'head-to-head') renderHeadToHead();
@@ -700,12 +797,72 @@ const ROLE_COLORS = {
       sendBtn._pushWired = true;
       sendBtn.addEventListener('click', handlePushSend);
     }
+    // Wire subscriber list buttons once
+    const selAll  = document.getElementById('btn-push-select-all');
+    const selNone = document.getElementById('btn-push-select-none');
+    const refresh = document.getElementById('btn-push-refresh-subs');
+    if (selAll && !selAll._pushWired) {
+      selAll._pushWired = true;
+      selAll.addEventListener('click', () => {
+        document.querySelectorAll('.push-sub-cb').forEach(cb => cb.checked = true);
+      });
+    }
+    if (selNone && !selNone._pushWired) {
+      selNone._pushWired = true;
+      selNone.addEventListener('click', () => {
+        document.querySelectorAll('.push-sub-cb').forEach(cb => cb.checked = false);
+      });
+    }
+    if (refresh && !refresh._pushWired) {
+      refresh._pushWired = true;
+      refresh.addEventListener('click', loadPushSubscriberList);
+    }
   }
 
   function refreshPushActiveUI() {
     const privKey = sessionStorage.getItem(PUSH_PRIV_KEY);
     document.getElementById('push-unlock-section').style.display = privKey ? 'none' : '';
     document.getElementById('push-send-section').style.display   = privKey ? ''     : 'none';
+    if (privKey) loadPushSubscriberList();
+  }
+
+  async function loadPushSubscriberList() {
+    const listEl  = document.getElementById('push-recipients-list');
+    const countEl = document.getElementById('push-recipient-count');
+    if (!listEl) return;
+
+    listEl.innerHTML = '<span style="color:var(--muted); font-style:italic;">Loading subscribers…</span>';
+    if (countEl) countEl.textContent = '';
+
+    try {
+      const adminPin = state.config.adminPin;
+      if (!adminPin) {
+        listEl.innerHTML = '<span style="color:var(--warn); font-style:italic;">Admin PIN not configured — set it in Setup first.</span>';
+        return;
+      }
+
+      const { subscriptions } = await API.getTimerPushSubs(adminPin);
+
+      if (!subscriptions || !subscriptions.length) {
+        listEl.innerHTML = '<span style="color:var(--muted); font-style:italic;">No subscribers yet — players subscribe via their dashboard.</span>';
+        listEl._subscriptions = [];
+        return;
+      }
+
+      listEl._subscriptions = subscriptions;
+      listEl.innerHTML = subscriptions.map((sub, i) =>
+        `<label style="display:flex;align-items:center;gap:8px;padding:3px 0;cursor:pointer;">
+          <input type="checkbox" class="push-sub-cb" value="${i}" checked
+            style="accent-color:var(--green);width:15px;height:15px;flex-shrink:0;">
+          <span style="font-size:0.83rem;">${esc(sub.player || 'Unknown')}</span>
+        </label>`
+      ).join('');
+
+      if (countEl) countEl.textContent = `(${subscriptions.length} subscriber${subscriptions.length !== 1 ? 's' : ''})`;
+    } catch(e) {
+      listEl.innerHTML = `<span style="color:var(--danger); font-style:italic;">Failed to load: ${esc(e.message)}</span>`;
+      listEl._subscriptions = [];
+    }
   }
 
   async function handlePushGenerateKeys() {
@@ -781,34 +938,35 @@ const ROLE_COLORS = {
     const privKey = sessionStorage.getItem(PUSH_PRIV_KEY);
     if (!privKey) { refreshPushActiveUI(); return; }
 
-    const password = prompt('Enter your App Manager password to fetch subscribers:');
-    if (!password) return;
+    // Build recipient list from checked checkboxes in the loaded subscriber list
+    const listEl  = document.getElementById('push-recipients-list');
+    const allSubs = (listEl && listEl._subscriptions) || [];
+    const checked = new Set(
+      Array.from(document.querySelectorAll('.push-sub-cb:checked')).map(cb => parseInt(cb.value))
+    );
+    const subscriptions = allSubs.filter((_, i) => checked.has(i));
+
+    if (!subscriptions.length) {
+      statusEl.textContent = allSubs.length ? 'No recipients selected — use the checkboxes above.' : 'No subscribers yet — players subscribe via their dashboard.';
+      statusEl.style.color = 'var(--gold)';
+      return;
+    }
 
     btn.disabled    = true;
     btn.textContent = '⏳ Sending…';
-    statusEl.textContent = '';
+    statusEl.textContent = `Encrypting and sending to ${subscriptions.length} recipient(s)…`;
     statusEl.style.color = 'var(--muted)';
 
     try {
-      const { subscriptions } = await API.getPushSubscriptions(password);
-      if (!subscriptions.length) {
-        statusEl.textContent = 'No subscribers yet — players need to subscribe first.';
-        statusEl.style.color = 'var(--gold)';
-        return;
-      }
-
-      statusEl.textContent = `Encrypting and sending to ${subscriptions.length} subscriber(s)…`;
-
       const vapidPub = state.config.vapidPublicKey;
       const subject  = `mailto:${state.config.replyTo || 'noreply@example.com'}`;
       const payload  = JSON.stringify({ title, body, url });
 
-      // Encrypt all payloads in the browser, then deliver via GAS proxy.
-      // Direct fetch() to push endpoints is blocked by CORS on Apple devices.
+      // Encrypt in the browser, then relay through GAS (CORS blocks direct push on Apple)
       const notifications = await VapidPush.buildNotifications(
         subscriptions, payload, privKey, vapidPub, subject
       );
-      const { results } = await API.sendPushNotifications(password, notifications);
+      const { results } = await API.sendTimerPush(state.config.adminPin, notifications);
 
       let sent = 0, failed = 0;
       const expired = [];
@@ -820,19 +978,20 @@ const ROLE_COLORS = {
         }
       });
 
-      // Clean up expired subscriptions automatically
+      // Clean up expired subscriptions and refresh the list
       if (expired.length) {
         await Promise.allSettled(expired.map(ep => API.deletePushSubscription(ep)));
+        loadPushSubscriberList();
       }
 
-      statusEl.textContent = `✓ Sent to ${sent} subscriber(s).${failed ? ` ${failed} failed.` : ''}${expired.length ? ` ${expired.length} expired subscription(s) removed.` : ''}`;
+      statusEl.textContent = `✓ Sent to ${sent} recipient(s).${failed ? ` ${failed} failed.` : ''}${expired.length ? ` ${expired.length} expired removed.` : ''}`;
       statusEl.style.color = sent > 0 ? 'var(--green)' : 'var(--danger)';
     } catch (e) {
       statusEl.textContent = 'Send failed: ' + e.message;
       statusEl.style.color = 'var(--danger)';
     } finally {
       btn.disabled    = false;
-      btn.textContent = '🔔 Send to All Subscribers';
+      btn.textContent = '🔔 Send Notification';
     }
   }
 
@@ -921,6 +1080,22 @@ const ROLE_COLORS = {
       }
     }
 
+    // Tier badge
+    let tierHtml = '';
+    if (L.tier) {
+      const tierDef = typeof TIERS !== 'undefined' ? TIERS.find(t => t.version.toLowerCase() === L.tier.toLowerCase()) : null;
+      const tierDesc = tierDef ? tierDef.description : '';
+      tierHtml = `<div style="font-size:0.78rem; color:var(--muted); margin-bottom:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <span>Plan:</span>
+        <span style="background:rgba(94,194,106,0.12); border:1px solid rgba(94,194,106,0.3);
+          border-radius:4px; padding:2px 8px; font-size:0.75rem; color:var(--green); font-weight:600;">${esc(L.tier)}</span>
+        ${tierDesc ? `<span style="color:var(--muted); font-size:0.75rem;">${esc(tierDesc)}</span>` : ''}
+        <a href="#" onclick="showTierInfo('${esc(L.tier)}'); return false;"
+          style="color:var(--green); font-size:0.75rem; text-decoration:none; opacity:0.75;"
+          onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.75'">View features ›</a>
+      </div>`;
+    }
+
     // Limits badges
     const limitBadge = (label, used, max) => {
       if (max === null || max === undefined) return '';
@@ -933,11 +1108,18 @@ const ROLE_COLORS = {
     const weeksWithScores = [...new Set(state.scores.map(s => s.week))].length;
     const totalGames = state.scores.filter(s => s.score1 || s.score2).length;
 
+    // Append tier badge + expiry to dash-info (both are now defined)
+    if (tierHtml || expiryHtml) {
+      document.getElementById('dash-info').innerHTML += tierHtml + expiryHtml;
+    }
+
+    const loadingVal = `<span style="font-size:0.75em; color:var(--muted); animation:pulse 1.2s ease-in-out infinite;">…</span>`;
+    const loaded = !!state._pairingsLoaded;
     document.getElementById('dash-stats').innerHTML = `
       <div class="stat-tile"><div class="stat-value">${activePlayers}</div><div class="stat-label">Players</div></div>
       <div class="stat-tile"><div class="stat-value">${state.config.weeks || '—'}${L.maxSessions ? '<span style="font-size:0.6em;color:var(--muted);">/' + L.maxSessions + '</span>' : ''}</div><div class="stat-label">Total Sessions</div></div>
-      <div class="stat-tile"><div class="stat-value">${weeksWithScores}</div><div class="stat-label">Sessions Played</div></div>
-      <div class="stat-tile"><div class="stat-value">${totalGames}</div><div class="stat-label">Games Entered</div></div>
+      <div class="stat-tile"><div class="stat-value">${loaded ? weeksWithScores : loadingVal}</div><div class="stat-label">Sessions Played</div></div>
+      <div class="stat-tile"><div class="stat-value">${loaded ? totalGames : loadingVal}</div><div class="stat-label">Games Entered</div></div>
     `;
 
     const activeNames = new Set(state.players.filter(p => p.active === true).map(p => p.name));
@@ -1125,6 +1307,7 @@ const ROLE_COLORS = {
     document.getElementById('cfg-tries').value   = c.optimizerTries || 100;
     document.getElementById('cfg-game-mode').value      = c.gameMode      || 'doubles';
     document.getElementById('cfg-ranking-method').value = c.rankingMethod || 'avgptdiff';
+    document.getElementById('cfg-pairing-mode').value   = c.pairingMode   || 'round-based';
     document.getElementById('cfg-min-participation').value = c.minParticipation !== undefined ? c.minParticipation : '';
     // Cap inputs per registry limits
     applyLimitRestrictions();
@@ -1141,6 +1324,8 @@ const ROLE_COLORS = {
     document.getElementById('cfg-w-session-bye').value       = c.wSessionBye       ?? D.sessionByeWeight;
     document.getElementById('cfg-w-rank-balance').value           = c.wRankBalance           ?? D.rankBalanceWeight;
     document.getElementById('cfg-w-rank-std-dev').value            = c.wRankStdDev            ?? D.rankStdDevWeight;
+    const queueWaitEl = document.getElementById('cfg-w-queue-wait');
+    if (queueWaitEl) queueWaitEl.value = c.wQueueWait ?? 10;
     const localImproveEl = document.getElementById('cfg-local-improve');
     if (localImproveEl) localImproveEl.checked = c.localImprove === undefined ? true : (c.localImprove === true || c.localImprove === 'true');
     const swapPassesEl = document.getElementById('cfg-swap-passes');
@@ -1170,7 +1355,7 @@ const ROLE_COLORS = {
 
     // Court names
     const numCourts = parseInt(c.courts || 3);
-    let courtNamesHtml = '<div class="form-row" style="margin-top:12px;">';
+    let courtNamesHtml = '<div class="form-row" style="display:flex; margin-top:8px;">';
     for (let cn = 1; cn <= numCourts; cn++) {
       courtNamesHtml += `
         <div class="form-group">
@@ -1198,7 +1383,7 @@ const ROLE_COLORS = {
       </select>
       <input class="form-control" data-field="email" data-idx="${i}" type="email" value="${esc(p.email || '')}" placeholder="email@example.com">
       <input type="checkbox" data-field="notify" data-idx="${i}" ${p.notify ? 'checked' : ''} style="width:18px;height:18px;margin:auto;">
-      <input type="checkbox" data-field="canScore" data-idx="${i}" ${p.canScore ? 'checked' : ''} style="width:18px;height:18px;margin:auto;">
+      <input type="checkbox" data-field="canScore" data-idx="${i}" ${p.canScore ? 'checked' : ''} style="width:18px;height:18px;margin:auto;${state._tierDisableScoring ? 'visibility:hidden;' : ''}" ${state._tierDisableScoring ? 'disabled' : ''}>
       <input class="form-control" data-field="initialRank" data-idx="${i}" type="number" min="1" value="${p.initialRank || ''}" placeholder="—" style="text-align:center;">
       <select class="form-control" data-field="role" data-idx="${i}">
         <option value="" ${!p.role||p.role===''?'selected':''}>Player</option>
@@ -1368,57 +1553,34 @@ function doPost(e) {
 }`;
   }
 
-  // ── Attendance save queue ───────────────────────────────────
-  // Allows offline attendance changes — saves queue locally and flush
-  // automatically when connectivity returns. Generate uses local state
-  // so it works offline with whatever attendance is currently showing.
-  let _attFlushInProgress = false;
-  async function flushAttQueue() {
-    if (_attFlushInProgress) return;
-    const queue = state._attQueue || {};
-    const entries = Object.values(queue);
-    if (!entries.length) return;
-    _attFlushInProgress = true;
-
-    // Show a subtle indicator if there are pending saves
-    const pendingCount = entries.length;
-    const indicator = document.getElementById('att-pending-indicator');
-    if (indicator) {
-      indicator.textContent = `⏳ ${pendingCount} attendance change${pendingCount !== 1 ? 's' : ''} pending sync…`;
-      indicator.style.display = '';
-    }
-
-    let anyFailed = false;
-    for (const entry of entries) {
-      try {
-        await API.setAttendance(entry.player, entry.week, entry.status);
-        // Remove from queue on success
-        delete state._attQueue[`${entry.player}|${entry.week}`];
-      } catch (e) {
-        anyFailed = true;
-      }
-    }
-    _attFlushInProgress = false;
-
-    if (indicator) {
-      const remaining = Object.keys(state._attQueue || {}).length;
-      if (remaining === 0) {
-        indicator.textContent = '✓ Attendance synced';
-        indicator.style.color = 'var(--green)';
-        setTimeout(() => { indicator.style.display = 'none'; indicator.style.color = ''; }, 2500);
-      } else {
-        indicator.textContent = `⚠ ${remaining} attendance change${remaining !== 1 ? 's' : ''} not yet synced — will retry when online`;
-        indicator.style.color = 'var(--gold)';
-      }
-    }
+  // ── Attendance dirty tracking ────────────────────────────────
+  function setAttDirty(dirty) {
+    state._attDirty = dirty;
+    const indicator = document.getElementById('att-dirty-indicator');
+    const saveBtn = document.getElementById('btn-save-attendance');
+    if (indicator) { indicator.textContent = 'Unsaved changes'; indicator.style.display = dirty ? '' : 'none'; }
+    if (saveBtn) saveBtn.disabled = !dirty;
   }
 
-  // Retry queued attendance saves when connectivity returns
-  window.addEventListener('online', () => {
-    if (state._attQueue && Object.keys(state._attQueue).length > 0) {
-      flushAttQueue();
+  async function saveAttendance() {
+    const changes = Object.values(state._attPending || {});
+    if (!changes.length) return;
+    const saveBtn = document.getElementById('btn-save-attendance');
+    const indicator = document.getElementById('att-dirty-indicator');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+    if (indicator) indicator.textContent = 'Saving…';
+    try {
+      await API.batchSetAttendance(changes);
+      state._attPending = {};
+      setAttDirty(false);
+      if (saveBtn) saveBtn.textContent = 'Save Attendance';
+      toast('Attendance saved', 'success');
+    } catch (e) {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Attendance'; }
+      if (indicator) indicator.textContent = 'Unsaved changes';
+      toast('Failed to save attendance — please try again', 'error');
     }
-  });
+  }
 
   function renderAttendance() {
     const weeks = parseInt(state.config.weeks || 8);
@@ -1485,8 +1647,21 @@ function doPost(e) {
     html += '</div>';
     document.getElementById('attendance-grid').innerHTML = html;
 
+    // Sync lock-player-attendance checkbox with current config
+    const lockChk = document.getElementById('cfg-lock-player-attendance');
+    if (lockChk) {
+      lockChk.checked = !!state.config.lockPlayerAttendance;
+      lockChk.onchange = async function () {
+        const newConfig = { ...state.config, lockPlayerAttendance: this.checked };
+        try {
+          await API.saveConfig(newConfig);
+          state.config = sanitizeConfig(newConfig);
+        } catch (e) { toast('Failed to save', 'error'); this.checked = !this.checked; }
+      };
+    }
+
     document.querySelectorAll('.att-cell.editable').forEach(cell => {
-      cell.addEventListener('click', async () => {
+      cell.addEventListener('click', () => {
         // Block clicks while attendance is being refreshed from server
         if (state._attRefreshing) return;
         const isSpectatorRole = (() => { const p = state.players.find(pl => pl.name === cell.dataset.player); return p && p.role === 'spectator'; })();
@@ -1516,13 +1691,19 @@ function doPost(e) {
           totalCell.style.color = count > 0 ? 'var(--green)' : 'var(--muted)';
         }
 
-        // Queue the save — local state already updated above, so generate works offline.
-        // The queue flushes automatically when connectivity returns.
-        if (!state._attQueue) state._attQueue = {};
-        state._attQueue[`${player}|${week}`] = { player, week, status: next };
-        flushAttQueue(); // attempt immediately; retries on reconnect if offline
+        // Track pending change — will be written when Save is clicked
+        if (!state._attPending) state._attPending = {};
+        state._attPending[`${player}|${week}`] = { player, week, status: next };
+        setAttDirty(true);
       });
     });
+
+    // Wire up Save button
+    const saveBtn = document.getElementById('btn-save-attendance');
+    if (saveBtn) {
+      saveBtn.disabled = !state._attDirty;
+      saveBtn.onclick = saveAttendance;
+    }
   }
 
   // ── Pairings ───────────────────────────────────────────────
@@ -1581,7 +1762,17 @@ function doPost(e) {
       resetBtn.classList.toggle('hidden', !inTournament);
       if (lockBtn) lockBtn.classList.toggle('hidden', !inTournament || !state.pendingPairings);
       // Hide the regular Generate button when a tournament is in progress
-      if (genBtn) genBtn.classList.toggle('hidden', !!inTournament);
+      // or when tournament rounds have already been locked for this week
+      const hasLockedTourn = state.pairings.some(p => parseInt(p.week) === week && p.type === 'tourn-game');
+      if (genBtn) genBtn.classList.toggle('hidden', !!inTournament || hasLockedTourn);
+      // Disable Generate Bracket and format dropdown once a tournament round is saved
+      const tournGenBtn = document.getElementById('btn-tourn-generate');
+      const tournModeEl = document.getElementById('tourn-mode');
+      const tournLocked = !!inTournament || hasLockedTourn;
+      if (tournGenBtn) tournGenBtn.disabled = tournLocked;
+      if (tournModeEl) tournModeEl.disabled = tournLocked;
+      // Disable Advance Round while pending pairings exist (until Lock & Save is pressed)
+      if (advBtn) advBtn.disabled = !!state.pendingPairings;
       if (inTournament) {
         renderTournamentStatus();
       } else {
@@ -1839,6 +2030,11 @@ function doPost(e) {
 
     const rounds = [...new Set(allWeekPairings.map(p => p.round))].sort((a,b) => a-b);
     let html = '';
+    const isQueueMode = state.config.pairingMode === 'queue-based';
+
+    // Build rank map for rank-differential and upset indicators
+    const ssRankMap = {};
+    state.standings.forEach(s => { if (s.rank != null) ssRankMap[s.name] = s.rank; });
 
     rounds.forEach(r => {
       const roundGames = weekPairings.filter(p => p.round == r);
@@ -1851,24 +2047,34 @@ function doPost(e) {
       const remaining  = total - scored;
       const allDone    = remaining === 0 && total > 0;
 
-      // Summary badge: green when all done, gold when in progress, muted when not started
-      const badgeColor = allDone ? 'var(--green)' : scored > 0 ? 'var(--gold)' : 'var(--muted)';
-      const badgeText  = allDone ? `${scored}/${total} ✓`
-                       : scored > 0 ? `${scored}/${total} · ${remaining} left`
-                       : `${total} game${total !== 1 ? 's' : ''}`;
+      if (isQueueMode) {
+        // Queue mode: flat list with simple batch label, no collapsible details
+        const doneStyle = allDone ? 'color:var(--green);' : '';
+        html += `<div style="font-size:0.72rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; padding:4px 2px 3px; margin-top:4px; display:flex; justify-content:space-between;">
+          <span>Batch ${r}</span>
+          <span style="${doneStyle}">${allDone ? `${scored}/${total} ✓` : scored > 0 ? `${scored}/${total}` : `${total} game${total !== 1 ? 's' : ''}`}</span>
+        </div>
+        <div>`;
+      } else {
+        // Round-based mode: collapsible details with progress badge
+        const badgeColor = allDone ? 'var(--green)' : scored > 0 ? 'var(--gold)' : 'var(--muted)';
+        const badgeText  = allDone ? `${scored}/${total} ✓`
+                         : scored > 0 ? `${scored}/${total} · ${remaining} left`
+                         : `${total} game${total !== 1 ? 's' : ''}`;
 
-      html += `<details open style="margin-bottom:3px;">
-        <summary style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;
-                        padding:3px 8px; border-radius:6px; background:var(--card-bg);
-                        list-style:none; user-select:none;"
-                 class="round-summary">
-          <span style="display:flex; align-items:center; gap:6px;">
-            <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">${!allDone ? '▲' : '▼'}</span>
-            <span style="font-size:0.76rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">Round ${r}</span>
-          </span>
-          <span class="round-badge" style="font-size:0.73rem; color:${badgeColor}; font-weight:600;">${badgeText}</span>
-        </summary>
-        <div style="padding-top:3px;">`;
+        html += `<details open style="margin-bottom:3px;">
+          <summary style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;
+                          padding:3px 8px; border-radius:6px; background:var(--card-bg);
+                          list-style:none; user-select:none;"
+                   class="round-summary">
+            <span style="display:flex; align-items:center; gap:6px;">
+              <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">${!allDone ? '▲' : '▼'}</span>
+              <span style="font-size:0.76rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">Round ${r}</span>
+            </span>
+            <span class="round-badge" style="font-size:0.73rem; color:${badgeColor}; font-weight:600;">${badgeText}</span>
+          </summary>
+          <div style="padding-top:3px;">`;
+      }
 
       roundGames.forEach(game => {
         const existingScore = state.scores.find(
@@ -1882,6 +2088,20 @@ function doPost(e) {
         const winStyle  = 'color:var(--green); font-weight:700;';
         const loseStyle = 'color:var(--muted);';
         const readOnly  = !session.isAdmin ? 'readonly style="opacity:0.5;pointer-events:none;"' : '';
+
+        // Rank differential: Team 1 avg rank minus Team 2 avg rank
+        const t1Names  = [game.p1, game.p2].filter(Boolean);
+        const t2Names  = [game.p3, game.p4].filter(Boolean);
+        const t1Ranks  = t1Names.map(n => ssRankMap[n]).filter(r => r != null);
+        const t2Ranks  = t2Names.map(n => ssRankMap[n]).filter(r => r != null);
+        const t1Avg    = t1Ranks.length ? t1Ranks.reduce((a, b) => a + b, 0) / t1Ranks.length : null;
+        const t2Avg    = t2Ranks.length ? t2Ranks.reduce((a, b) => a + b, 0) / t2Ranks.length : null;
+        const rankDiff = (t1Avg !== null && t2Avg !== null) ? t1Avg - t2Avg : null;
+        const isUpset  = entered && rankDiff !== null && rankDiff !== 0
+          ? (rankDiff < 0 ? t2win : t1win)   // rankDiff<0 → T1 ranked higher; if T2 won → upset
+          : false;
+        const diffStr  = rankDiff !== null ? (rankDiff > 0 ? '+' : '') + rankDiff.toFixed(1) : '—';
+        const diffColor = rankDiff === null ? 'var(--muted)' : rankDiff < 0 ? 'var(--green)' : rankDiff > 0 ? 'var(--danger)' : 'var(--muted)';
 
         html += `<div style="background:var(--card-bg); border-radius:7px; padding:6px 10px; margin-bottom:4px;"
             data-week="${week}" data-round="${game.round}" data-court="${game.court}">
@@ -1907,6 +2127,18 @@ function doPost(e) {
               ${game.p4 ? `<div style="${entered ? (t2win ? winStyle : loseStyle) : ''} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p4)}</div>` : ''}
             </div>
           </div>
+          ${(t1Avg !== null || t2Avg !== null) ? `<div style="display:grid; grid-template-columns:auto 1fr auto 1fr; gap:6px; font-size:0.68rem; color:var(--muted); margin-top:4px; padding-top:3px; border-top:1px solid rgba(255,255,255,0.06);">
+            <div></div>
+            <div style="text-align:right;" title="Team 1 average rank">${t1Avg !== null ? '#' + t1Avg.toFixed(1) : ''}</div>
+            <div style="text-align:center;" title="Rank difference (Team 1 avg rank − Team 2 avg rank). Negative = Team 1 ranked higher. U = upset." style="color:${diffColor}; cursor:help;"><span style="color:${diffColor};">Rnk&thinsp;Δ&thinsp;${diffStr}${isUpset ? '&thinsp;<strong style="color:var(--gold);">U</strong>' : ''}</span></div>
+            <div title="Team 2 average rank">${t2Avg !== null ? '#' + t2Avg.toFixed(1) : ''}</div>
+          </div>` : ''}
+          ${canDeletePairings && !entered ? `<div style="text-align:right; margin-top:4px;">
+            <button class="btn-delete-game" tabindex="-1" data-week="${week}" data-round="${game.round}" data-court="${game.court}"
+              style="font-size:0.7rem; color:var(--danger); background:none; border:1px solid var(--danger);
+                     border-radius:4px; padding:1px 7px; cursor:pointer; opacity:0.6;"
+              title="Delete this game">Delete game</button>
+          </div>` : ''}
         </div>`;
       });
 
@@ -1921,17 +2153,19 @@ function doPost(e) {
         </div>`;
       }
 
-      html += `</div></details>`;
+      html += isQueueMode ? `</div>` : `</div></details>`;
     });
 
-    // Snapshot which rounds are currently collapsed before overwriting the DOM
+    // Snapshot which rounds are currently collapsed before overwriting the DOM (round-based only)
     const collapsedRounds = new Set();
-    document.querySelectorAll('#scoresheet details').forEach(d => {
-      if (!d.open) {
-        const m = (d.querySelector('.round-summary')?.textContent || '').match(/Round\s*(\d+)/);
-        if (m) collapsedRounds.add(parseInt(m[1]));
-      }
-    });
+    if (!isQueueMode) {
+      document.querySelectorAll('#scoresheet details').forEach(d => {
+        if (!d.open) {
+          const m = (d.querySelector('.round-summary')?.textContent || '').match(/Round\s*(\d+)/);
+          if (m) collapsedRounds.add(parseInt(m[1]));
+        }
+      });
+    }
 
     document.getElementById('scoresheet').innerHTML = html;
 
@@ -1941,15 +2175,60 @@ function doPost(e) {
     document.querySelectorAll('#scoresheet summary').forEach(s => { s.tabIndex = -1; });
     document.querySelectorAll('#scoresheet .score-input').forEach((input, i) => {
       input.tabIndex = i + 1;
+      input.addEventListener('input', () => { state._scoresheetTouched = true; }, { once: true });
     });
 
-    // Restore collapsed state
-    if (collapsedRounds.size) {
+    // Restore collapsed state (round-based mode only)
+    if (!isQueueMode && collapsedRounds.size) {
       document.querySelectorAll('#scoresheet details').forEach(d => {
         const m = (d.querySelector('.round-summary')?.textContent || '').match(/Round\s*(\d+)/);
         if (m && collapsedRounds.has(parseInt(m[1]))) d.open = false;
       });
     }
+
+    // ── Delete game buttons ─────────────────────────────────
+    document.querySelectorAll('#scoresheet .btn-delete-game').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const wk    = parseInt(btn.dataset.week);
+        const round = parseInt(btn.dataset.round);
+        const court = String(btn.dataset.court);
+        const game  = state.pairings.find(
+          p => parseInt(p.week) === wk && parseInt(p.round) === round && String(p.court) === court
+        );
+        if (!game) return;
+        const players = [game.p1, game.p2, game.p3, game.p4].filter(Boolean).join(' / ');
+        if (!confirm(`Delete this game?\n${courtName(court)}  ·  Round ${round}\n${players}\n\nThis cannot be undone.`)) return;
+
+        btn.disabled = true;
+        btn.textContent = 'Deleting…';
+        try {
+          state.pairings = state.pairings.filter(
+            p => !(parseInt(p.week) === wk && parseInt(p.round) === round && String(p.court) === court)
+          );
+          const weekPairings = state.pairings.filter(p => parseInt(p.week) === wk);
+          await API.savePairings(wk, weekPairings);
+          renderScoresheet();
+          // In queue mode: put the deleted game's players back in the queue
+          if (state.config.pairingMode === 'queue-based') {
+            const deletedPlayers = [game.p1, game.p2, game.p3, game.p4].filter(Boolean);
+            const inQueueSet = new Set(state.queue.map(e => e.player));
+            deletedPlayers.forEach(name => {
+              if (!inQueueSet.has(name)) {
+                state.queue.push({ player: name, waitWeight: 0, stayGames: 0 });
+              }
+            });
+            try {
+              await API.saveQueue(wk, state.queue.map(e => ({ ...e, week: wk })));
+            } catch (_) { /* non-fatal */ }
+            renderQueuePanel();
+          }
+        } catch (e) {
+          toast('Failed to delete game — please try again', 'error');
+          btn.disabled = false;
+          btn.textContent = 'Delete game';
+        }
+      });
+    });
 
     // ── Auto-save scores on input ───────────────────────────
     document.querySelectorAll('#scoresheet [data-round]').forEach(card => {
@@ -1999,7 +2278,7 @@ function doPost(e) {
             !(parseInt(s.week) === wk && parseInt(s.round) === parseInt(round) && String(s.court) === String(court))
           );
           state.scores.push(newScore);
-          state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance);
+          state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance, state.config.pairingMode);
 
           // Save to server silently — show small indicator on the card
           const indicator = document.createElement('div');
@@ -2025,6 +2304,8 @@ function doPost(e) {
             setTimeout(() => indicator.remove(), 1800);
             // Update finish scenarios as scores are entered
             renderFinishScenarios();
+            // Queue mode: update player queue based on game outcome
+            if (state.config.pairingMode === 'queue-based') updateQueueAfterScore(newScore, pairing);
             // Re-render just this card to apply win/loss styling, without touching
             // the rest of the scoresheet (preserves focus and other in-progress inputs)
             const s1now = parseInt(card.querySelector('[data-score="1"]').value) || 0;
@@ -2064,6 +2345,839 @@ function doPost(e) {
     });
   }
 
+  // ═══════════════════════════════════════════════════════════
+  // ── Queue-based pairing mode ────────────────────────────────
+  // ═══════════════════════════════════════════════════════════
+
+  function updatePairingModeUI() {
+    const isQueue = state.config.pairingMode === 'queue-based';
+    document.getElementById('round-pairing-card')?.classList.toggle('hidden', isQueue);
+    document.getElementById('queue-pairing-card')?.classList.toggle('hidden', !isQueue);
+    document.getElementById('cfg-queue-wait-group')?.classList.toggle('hidden', !isQueue);
+  }
+
+  async function loadQueueForWeek(week) {
+    state._queueLoading = true;
+    renderQueuePanel(); // show loading indicator immediately
+    try {
+      const data = await API.getQueue(week);
+      state.queue = (data.queue || [])
+        .filter(e => parseInt(e.week) === week)
+        .map(e => ({
+          player: e.player,
+          waitWeight: parseFloat(e.waitWeight) || 0,
+          stayGames: parseInt(e.stayGames) || 0
+        }));
+    } catch (e) {
+      state.queue = [];
+    } finally {
+      state._queueLoading = false;
+    }
+    renderQueuePanel();
+  }
+
+  // Returns array of court ID strings ["1","2",...] for all configured courts
+  function getQueueCourtIds() {
+    return Array.from({ length: parseInt(state.config.courts || 3) }, (_, i) => String(i + 1));
+  }
+
+  // Returns Set of court IDs where the most recent batch FOR THAT COURT has an unscored game.
+  // Each court is checked independently — a court is occupied if its own latest batch is unscored,
+  // regardless of whether other courts have already moved on to a newer batch.
+  function getOccupiedCourts(week) {
+    const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && p.type === 'game');
+    if (!weekPairings.length) return new Set();
+
+    // Find the highest batch number each court appears in
+    const courtMaxBatch = {};
+    weekPairings.forEach(p => {
+      const batch = parseInt(p.round);
+      const court = String(p.court);
+      if (!(court in courtMaxBatch) || batch > courtMaxBatch[court]) {
+        courtMaxBatch[court] = batch;
+      }
+    });
+
+    // A court is occupied if its most recent batch game is unscored
+    const occupied = new Set();
+    Object.entries(courtMaxBatch).forEach(([court, maxBatch]) => {
+      const scored = state.scores.find(s =>
+        parseInt(s.week) === week && parseInt(s.round) === maxBatch &&
+        String(s.court) === court &&
+        s.score1 !== '' && s.score1 !== null && s.score2 !== '' && s.score2 !== null
+      );
+      if (!scored) occupied.add(court);
+    });
+    return occupied;
+  }
+
+  function getNextQueueBatchNum(week) {
+    const weekPairings = state.pairings.filter(p => parseInt(p.week) === week);
+    return weekPairings.length ? Math.max(...weekPairings.map(p => parseInt(p.round))) + 1 : 1;
+  }
+
+  // Returns arrays of stayer players who were partners in their most recent batch
+  function findStayerTeams(week) {
+    const stayerNames = new Set(state.queue.filter(e => e.stayGames > 0).map(e => e.player));
+    if (!stayerNames.size) return [];
+    const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && p.type === 'game');
+    if (!weekPairings.length) return [];
+    const batches = [...new Set(weekPairings.map(p => parseInt(p.round)))].sort((a, b) => b - a);
+    const teams = [];
+    for (const batch of batches) {
+      const batchGames = weekPairings.filter(p => parseInt(p.round) === batch);
+      for (const p of batchGames) {
+        const t1stayers = [p.p1, p.p2].filter(n => n && stayerNames.has(n));
+        const t2stayers = [p.p3, p.p4].filter(n => n && stayerNames.has(n));
+        if (t1stayers.length >= 2) teams.push(t1stayers);
+        if (t2stayers.length >= 2) teams.push(t2stayers);
+      }
+      if (teams.length) break; // stop at most recent batch with stayer pairs
+    }
+    return teams;
+  }
+
+  // Post-process optimizer output: rearrange so each stayer-teammate pair ends up on
+  // opposite teams of the SAME court. Handles both "same court, same team" and the common
+  // case where the optimizer places them on different courts entirely.
+  function applyOppositeSplit(pairings, stayerTeams, gameMode) {
+    if (!stayerTeams.length) return pairings;
+    const singles = gameMode === 'singles' || gameMode === 'fixed-pairs';
+    if (singles) return pairings;
+
+    // Work on a mutable copy so multi-team corrections compose correctly
+    const result = pairings.map(p => ({ ...p }));
+
+    const findPos = (name) => {
+      for (const game of result) {
+        if (game.type !== 'game') continue;
+        if (game.p1 === name) return { game, teamNum: 1, slot: 'p1' };
+        if (game.p2 === name) return { game, teamNum: 1, slot: 'p2' };
+        if (game.p3 === name) return { game, teamNum: 2, slot: 'p3' };
+        if (game.p4 === name) return { game, teamNum: 2, slot: 'p4' };
+      }
+      return null;
+    };
+
+    for (const team of stayerTeams) {
+      if (team.length < 2) continue;
+      const [nameA, nameB] = team;
+
+      const posA = findPos(nameA);
+      const posB = findPos(nameB);
+      if (!posA || !posB) continue;
+
+      if (posA.game === posB.game) {
+        // Same court — ensure they are on opposite teams
+        if (posA.teamNum === posB.teamNum) {
+          // Same team: swap B into the first slot of the opposite team
+          const oppSlot = posA.teamNum === 1 ? 'p3' : 'p1';
+          const displaced = posA.game[oppSlot];
+          posA.game[oppSlot] = nameB;
+          posA.game[posB.slot] = displaced;
+        }
+        // else already opponents on same court — nothing to do
+      } else {
+        // Different courts: bring B to A's court onto the opposite team.
+        // Swap B with the first slot on A's opposite team; place the displaced
+        // player into B's old slot on B's court.
+        const oppSlot = posA.teamNum === 1 ? 'p3' : 'p1';
+        const displaced = posA.game[oppSlot];
+        posA.game[oppSlot] = nameB;
+        posB.game[posB.slot] = displaced;
+      }
+    }
+
+    return result;
+  }
+
+  function updateWinnerSummary() {
+    const el = document.getElementById('queue-winner-summary');
+    if (!el) return;
+    const stay  = parseInt(document.getElementById('cfg-queue-winner-stay')?.value) || 0;
+    const split = document.getElementById('cfg-queue-winner-split')?.value || 'none';
+    if (stay === 0) {
+      el.textContent = 'off';
+    } else {
+      const splitLabel = split === 'opposite' ? 'split/same court'
+                       : split === 'separate'  ? 'split/any court'
+                       :                         'same team';
+      el.textContent = `${stay} replay${stay !== 1 ? 's' : ''}, ${splitLabel}`;
+    }
+  }
+
+  // ── Shared optimizer breakdown table (used by both round-based and queue-based) ──
+  function buildBreakdownTable(bd, nw, label, weights) {
+    if (!bd) return '';
+    const LABELS = {
+      mixedViolations: 'Mixed doubles violations',
+      sessionPartner:  'Repeat Partner (this session)',
+      sessionOpponent: 'Repeat Opponent (this session)',
+      historyPartner:  'Repeat Partner (prior weeks)',
+      historyOpponent: 'Repeat Opponent (prior weeks)',
+      sessionBye:      'Byes this session',
+      byeVariance:     'Bye spread (season)',
+      rankBalance:     'Rank imbalance',
+      rankStdDev:      'Rank std dev (all-player spread)',
+    };
+    const WEIGHT_KEYS = {
+      sessionPartner:  'sessionPartnerWeight',  sessionOpponent: 'sessionOpponentWeight',
+      historyPartner:  'historyPartnerWeight',  historyOpponent: 'historyOpponentWeight',
+      sessionBye:      'sessionByeWeight',      byeVariance:     'byeVarianceWeight',
+      rankBalance:     'rankBalanceWeight',      rankStdDev:      'rankStdDevWeight',
+    };
+    let bhtml = `<table style="font-size:0.78rem; width:100%; border-collapse:collapse; margin-top:4px;">
+      <thead><tr>
+        <th style="text-align:left; padding:3px 8px; color:var(--muted); font-weight:500;">${label || 'Criterion'}</th>
+        <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">Raw</th>
+        <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">User Weight</th>
+        <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">Norm. Weight</th>
+        <th style="text-align:right; padding:3px 8px; color:var(--muted); font-weight:500;">Score</th>
+      </tr></thead><tbody>`;
+    Object.entries(bd).forEach(([key, v]) => {
+      const nonzero = v.weighted > 0;
+      const wKey  = WEIGHT_KEYS[key];
+      const userW = wKey ? (weights?.[wKey] ?? Pairings.DEFAULTS[wKey] ?? '—') : '—';
+      const normW = (wKey && nw?.[wKey] != null) ? nw[wKey].toFixed(2) : '—';
+      bhtml += `<tr style="${nonzero ? 'color:var(--white);' : 'color:var(--muted);'}">
+        <td style="padding:3px 8px;">${LABELS[key] || key}</td>
+        <td style="text-align:right; padding:3px 8px;">${typeof v.raw === 'number' ? v.raw.toFixed(2) : '—'}</td>
+        <td style="text-align:right; padding:3px 8px;">${userW}</td>
+        <td style="text-align:right; padding:3px 8px; color:var(--muted);">${normW}</td>
+        <td style="text-align:right; padding:3px 8px; font-weight:${nonzero?'600':'400'};">${typeof v.weighted === 'number' ? v.weighted.toFixed(1) : '—'}</td>
+      </tr>`;
+    });
+    bhtml += '</tbody></table>';
+    return bhtml;
+  }
+
+  function renderQueuePanel() {
+    const week = state.currentPairWeek;
+    const gameMode = state.config.gameMode || 'doubles';
+    const ppc = (gameMode === 'singles' || gameMode === 'fixed-pairs') ? 2 : 4;
+    const allCourtIds = getQueueCourtIds();
+    const occupied = getOccupiedCourts(week);
+    const freeCourts = allCourtIds.filter(c => !occupied.has(c));
+    const stayers = state.queue.filter(e => e.stayGames > 0);
+    const regularQueue = state.queue.filter(e => e.stayGames === 0)
+      .sort((a, b) => b.waitWeight - a.waitWeight);
+
+    // Sync winner-stay config display
+    const stayInput = document.getElementById('cfg-queue-winner-stay');
+    if (stayInput) stayInput.value = state.config.queueWinnerStay ?? 0;
+    const splitSel = document.getElementById('cfg-queue-winner-split');
+    if (splitSel) {
+      splitSel.value = state.config.queueWinnerSplit || 'none';
+      splitSel.disabled = (state.config.queueWinnerStay ?? 0) == 0;
+    }
+    updateWinnerSummary();
+
+    // ── Court selection state ────────────────────────────────
+    // Keep a persistent Set of which free courts the admin has chosen.
+    // Auto-add newly free courts; auto-remove newly occupied courts.
+    if (!state.selectedQueueCourts) {
+      // First render after page navigation — default to all free courts selected
+      state.selectedQueueCourts = new Set(freeCourts);
+    }
+    // Always remove courts that have since become occupied
+    occupied.forEach(c => state.selectedQueueCourts.delete(c));
+    // Clamp to courts that actually exist
+    [...state.selectedQueueCourts].forEach(c => {
+      if (!allCourtIds.includes(c)) state.selectedQueueCourts.delete(c);
+    });
+
+    // ── Loading state — block interaction while queue data is being fetched ──
+    // selectedQueueCourts is always a Set by this point, so any lingering click
+    // handlers from a previous render will not throw a null error.
+    if (state._queueLoading) {
+      const loadCourtEl = document.getElementById('queue-court-select');
+      const loadGenBtn  = document.getElementById('btn-queue-generate');
+      const loadLockBtn = document.getElementById('btn-queue-lock');
+      if (loadCourtEl) loadCourtEl.innerHTML =
+        `<span style="color:var(--muted); font-size:0.78rem; display:flex; align-items:center; gap:6px;">` +
+        `<span style="animation:spin 0.8s linear infinite; display:inline-block;">⏳</span> Loading queue…</span>`;
+      if (loadGenBtn)  { loadGenBtn.disabled  = true; loadGenBtn.textContent = '🎲 Generate'; }
+      if (loadLockBtn) loadLockBtn.disabled = true;
+      return;
+    }
+
+    const selectedFreeCourts = freeCourts.filter(c => state.selectedQueueCourts.has(c));
+
+    // Status line
+    const inQueue = state.queue.length;
+    const statusEl = document.getElementById('queue-status');
+    if (statusEl) {
+      const freeStr = `${freeCourts.length} court${freeCourts.length !== 1 ? 's' : ''} free`;
+      const qStr = `${inQueue} in queue`;
+      const stayStr = stayers.length ? `<span style="color:var(--gold);">${stayers.length} staying</span>` : '';
+      statusEl.innerHTML = [freeStr, qStr, stayStr].filter(Boolean)
+        .join(' <span style="color:var(--muted);">·</span> ');
+    }
+
+    // ── Court selector pills ─────────────────────────────────
+    const courtSelectEl = document.getElementById('queue-court-select');
+    if (courtSelectEl) {
+      if (allCourtIds.length <= 1) {
+        courtSelectEl.innerHTML = '';
+      } else {
+        let chtml = `<div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
+          <span style="font-size:0.75rem; color:var(--muted); white-space:nowrap; margin-right:2px;">Fill:</span>`;
+        allCourtIds.forEach(c => {
+          const isFree = !occupied.has(c);
+          const isSelected = isFree && state.selectedQueueCourts.has(c);
+          const name = courtName(c);
+          if (isFree) {
+            const bg     = isSelected ? 'rgba(94,194,106,0.2)'   : 'rgba(122,155,181,0.08)';
+            const border = isSelected ? 'rgba(94,194,106,0.5)'   : 'rgba(122,155,181,0.2)';
+            const color  = isSelected ? 'var(--green)' : 'var(--muted)';
+            chtml += `<button class="queue-court-btn" data-court="${c}"
+              style="padding:3px 9px; font-size:0.75rem; border-radius:5px;
+                     border:1px solid ${border}; background:${bg}; color:${color};
+                     cursor:pointer; user-select:none; transition:all 0.15s;"
+              >${isSelected ? '✓ ' : ''}${name}</button>`;
+          } else {
+            chtml += `<span style="padding:3px 9px; font-size:0.75rem; border-radius:5px;
+              border:1px solid rgba(122,155,181,0.1); background:rgba(122,155,181,0.04);
+              color:var(--muted); opacity:0.45;" title="Court occupied">${name} ●</span>`;
+          }
+        });
+        chtml += '</div>';
+        courtSelectEl.innerHTML = chtml;
+
+        courtSelectEl.querySelectorAll('.queue-court-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const c = btn.dataset.court;
+            if (state.selectedQueueCourts.has(c)) state.selectedQueueCourts.delete(c);
+            else state.selectedQueueCourts.add(c);
+            const nowSel = state.selectedQueueCourts.has(c);
+            btn.style.background   = nowSel ? 'rgba(94,194,106,0.2)'  : 'rgba(122,155,181,0.08)';
+            btn.style.borderColor  = nowSel ? 'rgba(94,194,106,0.5)'  : 'rgba(122,155,181,0.2)';
+            btn.style.color        = nowSel ? 'var(--green)' : 'var(--muted)';
+            btn.textContent = (nowSel ? '✓ ' : '') + courtName(c);
+            // Recompute and refresh generate button
+            const selFree = freeCourts.filter(x => state.selectedQueueCourts.has(x));
+            const fc = Math.min(selFree.length, Math.floor(inQueue / ppc));
+            if (genBtn) {
+              genBtn.disabled = fc === 0;
+              genBtn.textContent = fc > 0
+                ? `🎲 Generate — ${fc} court${fc !== 1 ? 's' : ''}`
+                : '🎲 Generate';
+            }
+          });
+        });
+      }
+    }
+
+    // Button states
+    const genBtn  = document.getElementById('btn-queue-generate');
+    const lockBtn = document.getElementById('btn-queue-lock');
+    const fullCourts = Math.min(selectedFreeCourts.length, Math.floor(inQueue / ppc));
+    if (genBtn) {
+      genBtn.disabled = fullCourts === 0;
+      genBtn.textContent = fullCourts > 0
+        ? `🎲 Generate — ${fullCourts} court${fullCourts !== 1 ? 's' : ''}`
+        : '🎲 Generate';
+    }
+    if (lockBtn) lockBtn.disabled = !state.pendingPairings;
+
+    // Pending preview (shown after Generate, before Lock)
+    const previewEl = document.getElementById('queue-pending-preview');
+    if (previewEl) {
+      if (state.pendingPairings) {
+        const batchNum = state.pendingPairings[0]?.round ?? '?';
+        let html = `<div style="font-size:0.75rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.07em; margin:8px 0 6px;">Pending — Batch ${batchNum}</div>`;
+        state.pendingPairings.filter(p => p.type === 'game').forEach(game => {
+          html += `<div style="background:var(--card-bg); border-radius:7px; padding:5px 10px; margin-bottom:3px;">
+            <div style="display:grid; grid-template-columns:auto 1fr auto 1fr; align-items:center; gap:4px;">
+              <div style="font-size:0.68rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); padding-right:4px; white-space:nowrap;">${courtName(game.court)}</div>
+              <div style="min-width:0; text-align:right;">
+                <div style="font-size:0.85rem;">${esc(game.p1)}</div>
+                ${game.p2 ? `<div style="font-size:0.85rem;">${esc(game.p2)}</div>` : ''}
+              </div>
+              <div style="text-align:center; color:var(--muted); font-size:0.72rem; padding:0 4px;">VS</div>
+              <div style="min-width:0;">
+                <div style="font-size:0.85rem;">${esc(game.p3)}</div>
+                ${game.p4 ? `<div style="font-size:0.85rem;">${esc(game.p4)}</div>` : ''}
+              </div>
+            </div>
+          </div>`;
+        });
+        previewEl.innerHTML = html;
+        previewEl.classList.remove('hidden');
+      } else {
+        previewEl.innerHTML = '';
+        previewEl.classList.add('hidden');
+      }
+    }
+
+    // Optimizer breakdown (shown after Generate, cleared after Lock)
+    const qStatusEl = document.getElementById('queue-optimizer-status');
+    if (qStatusEl) {
+      if (state.queueGeneration) {
+        const gen = state.queueGeneration;
+        const showing = gen.showing || 'best';
+        const activeScore     = showing === 'second' ? gen.secondScore     : gen.score;
+        const activeBreakdown = showing === 'second' ? gen.secondBreakdown : gen.breakdown;
+
+        const cfgWeights = {
+          sessionPartnerWeight:  state.config.wSessionPartner  ?? Pairings.DEFAULTS.sessionPartnerWeight,
+          sessionOpponentWeight: state.config.wSessionOpponent ?? Pairings.DEFAULTS.sessionOpponentWeight,
+          historyPartnerWeight:  state.config.wHistoryPartner  ?? Pairings.DEFAULTS.historyPartnerWeight,
+          historyOpponentWeight: state.config.wHistoryOpponent ?? Pairings.DEFAULTS.historyOpponentWeight,
+          byeVarianceWeight:     state.config.wByeVariance     ?? Pairings.DEFAULTS.byeVarianceWeight,
+          sessionByeWeight:      state.config.wSessionBye      ?? Pairings.DEFAULTS.sessionByeWeight,
+          rankBalanceWeight:     state.config.wRankBalance      ?? Pairings.DEFAULTS.rankBalanceWeight,
+          rankStdDevWeight:      state.config.wRankStdDev       ?? Pairings.DEFAULTS.rankStdDevWeight,
+        };
+        const swapInfo = (state.config.localImprove === false || state.config.localImprove === 'false')
+          ? ' · no swap' : ` · swap ${(v => isNaN(v) ? 5 : v)(parseInt(state.config.swapPasses))} passes`;
+
+        const has2nd = gen.secondPairings && gen.secondScore < Infinity;
+        const secondBtnHtml = has2nd
+          ? `<button id="btn-queue-show-second" class="btn btn-secondary"
+               style="padding:3px 10px; font-size:0.75rem;"
+               data-showing="${showing}">
+               ${showing === 'second' ? 'Show Best' : 'Show 2nd Best'}
+             </button>`
+          : '';
+
+        // Extra row for queue wait priority weight (informational — controls queue ordering, not optimizer)
+        const wQueueWait = gen.wQueueWait ?? (state.config.wQueueWait ?? 10);
+        const queueWaitRow = `<tr style="color:var(--muted);">
+          <td style="padding:3px 8px;">Queue wait priority</td>
+          <td style="text-align:right; padding:3px 8px;">—</td>
+          <td style="text-align:right; padding:3px 8px;">${wQueueWait}</td>
+          <td style="text-align:right; padding:3px 8px; color:var(--muted);">—</td>
+          <td style="text-align:right; padding:3px 8px; font-style:italic; font-size:0.72rem;">queue order</td>
+        </tr>`;
+
+        const tableHtml = buildBreakdownTable(
+          activeBreakdown, gen.normalizedWeights,
+          `Criterion — ${showing === 'second' ? `2nd Best (score ${gen.secondScore?.toFixed(1)})` : `Best (score ${activeScore.toFixed(1)})`}`,
+          cfgWeights
+        );
+        // Inject queue wait row before closing </tbody>
+        const tableWithQueueRow = tableHtml.replace('</tbody>', queueWaitRow + '</tbody>');
+
+        qStatusEl.innerHTML =
+          `<div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:6px;">
+            <span>Total Score: <span class="score">${activeScore.toFixed(1)}</span></span>
+            <span style="font-size:0.78rem; color:var(--muted);">${gen.tries} iterations${swapInfo} · ${gen.playerCount} players</span>
+            ${secondBtnHtml}
+          </div>` + tableWithQueueRow;
+        qStatusEl.classList.remove('hidden');
+
+        // Wire up 2nd best toggle
+        document.getElementById('btn-queue-show-second')?.addEventListener('click', () => {
+          const next = gen.showing === 'second' ? 'best' : 'second';
+          gen.showing = next;
+          state.pendingPairings = next === 'second' ? gen.secondPairings : gen.bestPairings;
+          renderQueuePanel();
+        });
+      } else {
+        qStatusEl.innerHTML = '';
+        qStatusEl.classList.add('hidden');
+      }
+    }
+
+    // Queue table
+    const tableEl = document.getElementById('queue-table-content');
+    if (tableEl) {
+      if (!state.queue.length) {
+        tableEl.innerHTML = '<p class="text-muted" style="font-size:0.85rem; padding:8px 0;">Queue is empty. Use Initialize Queue to add all present players.</p>';
+      } else {
+        const isMixed = gameMode === 'mixed-doubles';
+        const rankMap = {};
+        state.standings.forEach(s => { if (s.rank != null && s.rank !== '-') rankMap[s.name] = s.rank; });
+        const groupMap = {};
+        state.players.forEach(p => { groupMap[p.name] = p.group || 'M'; });
+
+        let html = `<table style="width:100%; font-size:0.85rem; border-collapse:collapse;">
+          <thead><tr style="color:var(--muted); font-size:0.72rem; text-transform:uppercase;">
+            <th style="text-align:left; padding:4px 6px;">Player</th>
+            <th style="text-align:center; padding:4px 6px;" title="Current rank">#</th>
+            ${isMixed ? `<th style="text-align:center; padding:4px 6px;" title="Gender group (M/F/Either)">Grp</th>` : ''}
+            <th style="text-align:center; padding:4px 6px;" title="Wait weight — higher means waited longer">Wt</th>
+            <th style="text-align:center; padding:4px 6px;" title="Stay games remaining (winners)">Stay</th>
+          </tr></thead><tbody>`;
+        [...stayers, ...regularQueue].forEach(e => {
+          const isStayer = e.stayGames > 0;
+          const rank = rankMap[e.player] ?? '—';
+          const grp  = isMixed ? (groupMap[e.player] === 'Either' ? 'E' : (groupMap[e.player] || 'M')) : '';
+          html += `<tr style="${isStayer ? 'color:var(--gold);' : ''}">
+            <td style="padding:3px 6px; font-weight:${isStayer ? '600' : '400'};">${esc(e.player)}</td>
+            <td style="text-align:center; padding:3px 6px; color:var(--muted); font-size:0.78rem;">${rank}</td>
+            ${isMixed ? `<td style="text-align:center; padding:3px 6px; font-size:0.78rem;">${grp}</td>` : ''}
+            <td style="text-align:center; padding:3px 6px;">${isStayer ? '—' : e.waitWeight}</td>
+            <td style="text-align:center; padding:3px 6px;">${isStayer ? e.stayGames : '—'}</td>
+          </tr>`;
+        });
+        html += '</tbody></table>';
+        tableEl.innerHTML = html;
+      }
+    }
+  }
+
+  async function runQueueGenerate() {
+    const week = state.currentPairWeek;
+    const gameMode = state.config.gameMode || 'doubles';
+    const singles = gameMode === 'singles' || gameMode === 'fixed-pairs';
+    const ppc = singles ? 2 : 4;
+    const allCourtIds = getQueueCourtIds();
+    const occupied = getOccupiedCourts(week);
+    const freeCourts = allCourtIds.filter(c => !occupied.has(c));
+    if (!freeCourts.length) { toast('No free courts available.', 'warn'); return; }
+
+    // Unified priority: stayGames × wQueueWait bonus + waitWeight
+    // wQueueWait=0 → pure wait-time order (no stayer advantage)
+    // wQueueWait=10 (default) → each stay game is worth 10 wait-weight points
+    const wQueueWait = state.config.wQueueWait ?? 10;
+    const ordered = [...state.queue].sort((a, b) => {
+      const pa = a.waitWeight + wQueueWait * a.stayGames;
+      const pb = b.waitWeight + wQueueWait * b.stayGames;
+      return pb - pa;
+    });
+    // Use only the courts the admin has selected; fall back to all free if no selection state exists
+    const selectedFreeCourts = freeCourts.filter(c =>
+      !state.selectedQueueCourts || state.selectedQueueCourts.size === 0 || state.selectedQueueCourts.has(c)
+    );
+    if (!selectedFreeCourts.length) { toast('No courts selected. Choose which courts to fill.', 'warn'); return; }
+
+    const fullCourts = Math.min(selectedFreeCourts.length, Math.floor(ordered.length / ppc));
+    if (!fullCourts) { toast('Not enough players in queue to fill a court.', 'warn'); return; }
+
+    // Block generation if scores already exist for the next batch number
+    // (can happen if pairings were cleared but scores were not)
+    const nextBatch = getNextQueueBatchNum(week);
+    const hasScores = state.scores.some(s =>
+      parseInt(s.week) === week && parseInt(s.round) === nextBatch
+    );
+    if (hasScores) {
+      toast(`Scores already exist for Batch ${nextBatch}. Use "Clear" to remove them first.`, 'warn');
+      return;
+    }
+
+    const playersToAssign = ordered.slice(0, fullCourts * ppc).map(e => e.player);
+    const actualCourts = selectedFreeCourts.slice(0, fullCourts);
+
+    const pastPairings = state.pairings.filter(p => parseInt(p.week) < week);
+    const sessionHistory = state.pairings.filter(p => parseInt(p.week) === week);
+
+    // For "separate" and "opposite" splits: inject fake partner-history for stayer-teammate
+    // pairs so the optimizer strongly avoids re-partnering them. For "opposite", we further
+    // post-process to bring them onto the same court on opposite teams.
+    const stayerTeams = findStayerTeams(week);
+    let augmentedHistory = sessionHistory;
+    if ((state.config.queueWinnerSplit || 'none') !== 'none' && stayerTeams.length) {
+      const fakePairings = stayerTeams.map((team, i) => ({
+        week, round: -1 - i, court: '0', type: 'game',
+        p1: team[0], p2: team[1] || team[0], p3: '_phantom_a_', p4: '_phantom_b_'
+      }));
+      augmentedHistory = [...sessionHistory, ...fakePairings];
+    }
+
+    const baseTries = parseInt(state.config.optimizerTries || 100);
+    // Scale tries based on present player count (not total registered)
+    const tries = playersToAssign.length <= 8
+      ? baseTries
+      : Math.max(15, Math.round(baseTries * Math.pow(8 / playersToAssign.length, 1.5)));
+    const weights = {
+      sessionPartnerWeight:  state.config.wSessionPartner  ?? Pairings.DEFAULTS.sessionPartnerWeight,
+      sessionOpponentWeight: state.config.wSessionOpponent ?? Pairings.DEFAULTS.sessionOpponentWeight,
+      historyPartnerWeight:  state.config.wHistoryPartner  ?? Pairings.DEFAULTS.historyPartnerWeight,
+      historyOpponentWeight: state.config.wHistoryOpponent ?? Pairings.DEFAULTS.historyOpponentWeight,
+      byeVarianceWeight:     state.config.wByeVariance     ?? Pairings.DEFAULTS.byeVarianceWeight,
+      sessionByeWeight:      state.config.wSessionBye      ?? Pairings.DEFAULTS.sessionByeWeight,
+      rankBalanceWeight:     state.config.wRankBalance      ?? Pairings.DEFAULTS.rankBalanceWeight,
+      rankStdDevWeight:      state.config.wRankStdDev       ?? Pairings.DEFAULTS.rankStdDevWeight,
+    };
+    const playerGroups = {};
+    state.players.forEach(pl => { playerGroups[pl.name] = pl.group || 'M'; });
+    const useLocalImprove = state.config.localImprove === undefined ? true : (state.config.localImprove === true || state.config.localImprove === 'true');
+    const swapPasses = (v => isNaN(v) ? 5 : v)(parseInt(state.config.swapPasses));
+    const useInitialRank = state.config.useInitialRank === true || state.config.useInitialRank === 'true';
+    const verbose = document.getElementById('cfg-verbose-optimizer')?.checked === true;
+
+    const workerParams = {
+      presentPlayers: playersToAssign,
+      courts: actualCourts.length,
+      rounds: 1,
+      pastPairings,
+      tries,
+      weights,
+      standings: state.standings,
+      gameMode,
+      playerGroups,
+      startRound: 1,
+      sessionHistory: augmentedHistory,
+      players: state.players,
+      useLocalImprove,
+      swapPasses,
+      useInitialRank,
+      verbose,
+    };
+
+    // Show the shared generation overlay
+    const overlay    = document.getElementById('pairing-overlay');
+    const overlayMsg = document.getElementById('pairing-overlay-msg');
+    overlayMsg.textContent = `${tries} iterations · ${playersToAssign.length} players`;
+    overlay.classList.remove('hidden');
+    overlay.style.display = 'flex';
+
+    // Run optimizer in Web Worker with progress updates; chunked fallback if unavailable
+    const runOptimize = () => new Promise((resolve, reject) => {
+      if (typeof Worker !== 'undefined') {
+        try {
+          const workerUrl = new URL('js/pairing-worker.js', window.location.href).href;
+          const worker = new Worker(workerUrl);
+          worker.onmessage = (e) => {
+            if (e.data.progress) {
+              const { phase, iteration, tries: t } = e.data;
+              const pct = Math.round((iteration / t) * 100);
+              overlayMsg.textContent = phase === 'swap'
+                ? `Iteration ${iteration}/${t} · Swap optimising… (${pct}%)`
+                : `Iteration ${iteration}/${t} · Generating… (${pct}%)`;
+              return;
+            }
+            worker.terminate();
+            if (e.data.ok) resolve(e.data.result);
+            else reject(new Error(e.data.error));
+          };
+          worker.onerror = () => { worker.terminate(); runInChunks(resolve, reject); };
+          worker.postMessage(workerParams);
+          return;
+        } catch (e) { /* fall through to chunked */ }
+      }
+      runInChunks(resolve, reject);
+    });
+
+    function runInChunks(resolve, reject) {
+      const CHUNK = 25;
+      let remaining = workerParams.tries;
+      let best = null;
+      const accumulatedScores = workerParams.verbose ? [] : null;
+      function nextChunk() {
+        try {
+          const batchTries = Math.min(CHUNK, remaining);
+          const res = Pairings.optimize({ ...workerParams, tries: batchTries });
+          if (accumulatedScores && res.allScores) accumulatedScores.push(...res.allScores);
+          if (res.pairings) {
+            if (!best || res.score < best.score) {
+              if (best && best.pairings) {
+                if (!res.secondPairings || best.score < res.secondScore) {
+                  res.secondPairings  = best.pairings;
+                  res.secondScore     = best.score;
+                  res.secondBreakdown = best.breakdown;
+                }
+              }
+              best = res;
+            } else if (!best.secondPairings || res.score < best.secondScore) {
+              best.secondPairings  = res.pairings;
+              best.secondScore     = res.score;
+              best.secondBreakdown = res.breakdown;
+            }
+          }
+          remaining -= batchTries;
+          overlayMsg.textContent = `${workerParams.tries - remaining}/${workerParams.tries} iterations · ${workerParams.presentPlayers.length} players`;
+          if (remaining > 0) { setTimeout(nextChunk, 0); }
+          else {
+            if (accumulatedScores && best) best.allScores = accumulatedScores;
+            resolve(best || { pairings: null, score: Infinity, error: 'No valid pairings could be generated.' });
+          }
+        } catch (err) { reject(err); }
+      }
+      setTimeout(nextChunk, 0);
+    }
+
+    // Helper: remap raw optimizer pairings to real court IDs and batch number
+    function remapPairings(raw, batchNum) {
+      return raw.map(p => ({
+        ...p, week, round: batchNum,
+        court: actualCourts[parseInt(p.court) - 1] ?? p.court,
+        type: 'game'
+      }));
+    }
+
+    try {
+      const { pairings: result, score, breakdown, normalizedWeights,
+              secondPairings: rawSecond, secondScore, secondBreakdown, allScores } = await runOptimize();
+
+      overlay.classList.add('hidden');
+      overlay.style.display = 'none';
+
+      if (!result) {
+        toast('Could not generate queue pairings.', 'error');
+        renderQueuePanel();
+        return;
+      }
+
+      const batchNum = getNextQueueBatchNum(week);
+      // Remap optimizer court indices (1-based) to actual court IDs
+      let pairings = remapPairings(result, batchNum);
+
+      // Apply opposite split: ensure stayer-teammates end up on opposite teams
+      if ((state.config.queueWinnerSplit || 'none') === 'opposite') {
+        pairings = applyOppositeSplit(pairings, stayerTeams, gameMode);
+      }
+
+      // Remap 2nd best pairings the same way
+      let secondPairings = rawSecond ? remapPairings(rawSecond, batchNum) : null;
+      if (secondPairings && (state.config.queueWinnerSplit || 'none') === 'opposite') {
+        secondPairings = applyOppositeSplit(secondPairings, stayerTeams, gameMode);
+      }
+
+      state.pendingPairings = pairings;
+      state.queueGeneration = {
+        score, breakdown, normalizedWeights, tries, playerCount: playersToAssign.length,
+        bestPairings: pairings,
+        secondPairings, secondScore, secondBreakdown,
+        allScores, showing: 'best',
+        wQueueWait: state.config.wQueueWait ?? 10,
+      };
+      renderQueuePanel();
+    } catch (e) {
+      overlay.classList.add('hidden');
+      overlay.style.display = 'none';
+      toast('Queue generation failed: ' + e.message, 'error');
+      renderQueuePanel();
+    }
+  }
+
+  async function queueLockAndSave() {
+    if (!state.pendingPairings) return;
+    const week = state.currentPairWeek;
+    const assignedPlayers = new Set(
+      state.pendingPairings.flatMap(p => [p.p1, p.p2, p.p3, p.p4].filter(Boolean))
+    );
+    const assignedCount = assignedPlayers.size;
+
+    showLoading(true);
+    try {
+      // Merge new batch with existing pairings for this week
+      const allWeekPairings = [
+        ...state.pairings.filter(p => parseInt(p.week) === week),
+        ...state.pendingPairings
+      ];
+      await API.savePairings(week, allWeekPairings);
+      state.pairings = state.pairings.filter(p => parseInt(p.week) !== week);
+      state.pairings.push(...allWeekPairings);
+      state.pendingPairings = null;
+      state.queueGeneration = null;
+
+      // Remove assigned players; bump wait weight for those remaining
+      state.queue = state.queue
+        .filter(e => !assignedPlayers.has(e.player))
+        .map(e => ({ ...e, waitWeight: e.waitWeight + assignedCount }));
+
+      await API.saveQueue(week, state.queue.map(e => ({ ...e, week })));
+
+      // Clear the unsaved-pairings warning (shown when pendingPairings was set)
+      const unsavedWarn = document.getElementById('pairings-unsaved-warning');
+      if (unsavedWarn) unsavedWarn.style.display = 'none';
+
+      toast(`Batch saved for Session ${week}.`);
+      renderQueuePanel();
+      renderScoresheet();
+    } catch (e) {
+      toast('Save failed: ' + e.message, 'error');
+    } finally {
+      showLoading(false);
+    }
+  }
+
+  // Called after a score is auto-saved in queue mode.
+  // Adds players back to the queue based on win/loss outcome.
+  async function updateQueueAfterScore(newScore, pairing) {
+    const week = newScore.week;
+    const winnerStay = parseInt(state.config.queueWinnerStay ?? 0);
+    const t1players = [pairing.p1, pairing.p2].filter(Boolean);
+    const t2players = [pairing.p3, pairing.p4].filter(Boolean);
+    const t1wins = newScore.score1 > newScore.score2;
+    const t2wins = newScore.score2 > newScore.score1;
+    const winners = t1wins ? t1players : t2wins ? t2players : [];
+    const losers  = t1wins ? t2players : t2wins ? t1players : [...t1players, ...t2players];
+
+    const inQueueMap = new Map(state.queue.map(e => [e.player, e]));
+
+    winners.forEach(name => {
+      const existing = inQueueMap.get(name);
+      if (!existing) {
+        state.queue.push({ player: name, waitWeight: 0, stayGames: winnerStay });
+      } else if (winnerStay > 0) {
+        existing.stayGames = winnerStay; // re-scored: reset stay counter
+      }
+    });
+
+    losers.forEach(name => {
+      const existing = inQueueMap.get(name);
+      if (!existing) {
+        state.queue.push({ player: name, waitWeight: 0, stayGames: 0 });
+      } else {
+        existing.stayGames = 0; // re-scored: loss clears stay
+      }
+    });
+
+    try {
+      await API.saveQueue(week, state.queue.map(e => ({ ...e, week })));
+    } catch (e) { /* non-fatal — queue state updated in memory */ }
+
+    renderQueuePanel();
+  }
+
+  async function initializeQueue(week) {
+    const presentPlayers = state.players
+      .filter(p => p.active === true && p.role !== 'spectator')
+      .filter(p => {
+        const rec = state.attendance.find(a => a.player === p.name && String(a.week) === String(week));
+        return rec && rec.status === 'present';
+      })
+      .map(p => p.name);
+
+    if (!presentPlayers.length) {
+      toast('No present players found. Mark players as present first.', 'warn'); return;
+    }
+
+    if (!state.queue.length) {
+      // Empty queue — full initialization, no confirm needed
+      state.queue = presentPlayers.map(name => ({ player: name, waitWeight: 0, stayGames: 0 }));
+    } else {
+      // Smart refresh: add newly-present players, remove absent ones, preserve existing entries
+      const inQueue    = new Set(state.queue.map(e => e.player));
+      const presentSet = new Set(presentPlayers);
+
+      const toAdd    = presentPlayers.filter(n => !inQueue.has(n));
+      const toRemove = state.queue.filter(e => !presentSet.has(e.player));
+
+      if (!toAdd.length && !toRemove.length) {
+        toast('Queue is already up to date — no changes needed.', 'info'); return;
+      }
+
+      const summary = [
+        toAdd.length    ? `Adding ${toAdd.length} player(s): ${toAdd.join(', ')}`          : '',
+        toRemove.length ? `Removing ${toRemove.length} player(s): ${toRemove.map(e => e.player).join(', ')}` : '',
+      ].filter(Boolean).join('\n');
+
+      if (!confirm(`Refresh queue?\n\n${summary}`)) return;
+
+      // Apply changes: keep existing order, remove absent, append new arrivals at end
+      state.queue = [
+        ...state.queue.filter(e => presentSet.has(e.player)),
+        ...toAdd.map(name => ({ player: name, waitWeight: 0, stayGames: 0 })),
+      ];
+    }
+
+    showLoading(true);
+    try {
+      await API.saveQueue(week, state.queue.map(e => ({ ...e, week })));
+      toast(`Queue updated — ${state.queue.length} player(s) in queue.`);
+      renderQueuePanel();
+    } catch (e) {
+      toast('Failed to save queue: ' + e.message, 'error');
+    } finally {
+      showLoading(false);
+    }
+  }
+
   // ── Final Round Finish Scenarios ───────────────────────────
   function renderFinishScenarios() {
     const card    = document.getElementById('finish-scenarios-card');
@@ -2080,10 +3194,16 @@ function doPost(e) {
       return;
     }
 
+    // Don't show possible outcomes when the last session is a tournament
+    const lastWeekPairings = state.pairings.filter(p => parseInt(p.week) === week);
+    if (lastWeekPairings.some(p => p.type === 'tourn-game')) {
+      card.style.display = 'none';
+      return;
+    }
+
     // Check that the final round has pairings
-    const finalPairings = state.pairings.filter(p =>
-      parseInt(p.week) === week && parseInt(p.round) === totalRounds &&
-      (p.type === 'game' || p.type === 'tourn-game')
+    const finalPairings = lastWeekPairings.filter(p =>
+      parseInt(p.round) === totalRounds && (p.type === 'game' || p.type === 'tourn-game')
     );
     if (!finalPairings.length) {
       card.style.display = 'none';
@@ -2152,11 +3272,15 @@ function doPost(e) {
       const name = Auth.getSession()?.leagueName || state.config.leagueName || '';
       standTitle.textContent = name ? `${name} — Standings` : 'Standings';
     }
-    const season = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance);
+    const season = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance, state.config.pairingMode);
     document.getElementById('standings-season-table').innerHTML = renderStandingsTable(season);
 
-    const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, state.currentStandWeek, state.config.rankingMethod, state.attendance);
-    document.getElementById('standings-weekly-table').innerHTML = renderStandingsTable(weekStand);
+    const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, state.currentStandWeek, state.config.rankingMethod, state.attendance, state.config.pairingMode);
+    const overallThisWeek = Reports.computeStandings(state.scores, state.players, state.pairings, state.currentStandWeek, state.config.rankingMethod, state.attendance, state.config.pairingMode);
+    const overallPrevWeek = state.currentStandWeek > 1
+      ? Reports.computeStandings(state.scores, state.players, state.pairings, state.currentStandWeek - 1, state.config.rankingMethod, state.attendance, state.config.pairingMode)
+      : null;
+    document.getElementById('standings-weekly-table').innerHTML = renderStandingsTable(weekStand, false, overallThisWeek, overallPrevWeek);
     document.getElementById('stand-week-label').textContent = `Session ${state.currentStandWeek}`;
     const standWkSel = document.getElementById('stand-week-select');
     if (standWkSel && standWkSel.value != state.currentStandWeek) standWkSel.value = state.currentStandWeek;
@@ -2363,13 +3487,23 @@ function doPost(e) {
     drawRankTrendChart('rank-trend-chart', 'rank-trend-legend', state, session.name);
   }
 
-  function renderStandingsTable(standings, compact = false) {
+  function renderStandingsTable(standings, compact = false, overallStandings = null, prevOverallStandings = null) {
     if (!standings || !standings.length) return '<p class="text-muted">No standings data yet.</p>';
     const rm = state.config.rankingMethod || 'avgptdiff';
     const usePtsPct = rm === 'ptspct';
     const minPct = (state.config.minParticipation !== null && state.config.minParticipation !== undefined)
       ? parseFloat(state.config.minParticipation) / 100 : 0.50;
     const hasParticipation = standings.some(s => s.participationPct !== null && s.participationPct !== undefined);
+
+    // Build rank lookups from overall standings for rank column and movement indicator
+    const overallRankMap = {};
+    if (overallStandings) {
+      overallStandings.forEach(s => { if (s.rank && s.rank !== '-') overallRankMap[s.name] = s.rank; });
+    }
+    const prevOverallRankMap = {};
+    if (prevOverallStandings) {
+      prevOverallStandings.forEach(s => { if (s.rank && s.rank !== '-') prevOverallRankMap[s.name] = s.rank; });
+    }
 
     const rows = standings.filter(s => s.games > 0).map((s, i) => {
       const top = i < 3 ? 'top' : '';
@@ -2394,6 +3528,29 @@ function doPost(e) {
         }
       }
 
+      let overallHtml = '';
+      let movHtml = '';
+      if (overallStandings) {
+        const curOverall = overallRankMap[s.name] || null;
+        overallHtml = `<td style="color:var(--muted);">${curOverall !== null ? curOverall : '—'}</td>`;
+
+        const prevOverall = prevOverallRankMap[s.name] || null;
+        if (curOverall === null) {
+          movHtml = `<td style="color:var(--muted);">—</td>`;
+        } else if (!prevOverall) {
+          movHtml = `<td style="color:var(--muted); font-size:0.8rem;">new</td>`;
+        } else {
+          const delta = prevOverall - curOverall; // positive = moved up (lower rank number = better)
+          if (delta > 0) {
+            movHtml = `<td style="color:var(--green); font-weight:600;">▲${delta}</td>`;
+          } else if (delta < 0) {
+            movHtml = `<td style="color:var(--danger); font-weight:600;">▼${Math.abs(delta)}</td>`;
+          } else {
+            movHtml = `<td style="color:var(--muted);">—</td>`;
+          }
+        }
+      }
+
       return `<tr>
         <td class="rank-cell ${top}">${s.rank}</td>
         <td class="player-name">${esc(s.name)}</td>
@@ -2401,7 +3558,8 @@ function doPost(e) {
         <td>${Reports.pct(s.winPct)}</td>
         ${secCol}
         ${hasParticipation ? partHtml : ''}
-        ${!compact ? `<td class="text-muted">${s.games}</td><td class="text-muted">${s.byes}</td>` : ''}
+        ${overallStandings ? overallHtml : ''}
+        ${overallStandings ? movHtml : ''}
       </tr>`;
     });
 
@@ -2409,12 +3567,19 @@ function doPost(e) {
     const pctHeader = hasParticipation
       ? `<th title="(Games played + byes) / total league rounds. Min ${Math.round(minPct*100)}% for prize eligibility." style="cursor:help;">Partic.</th>`
       : '';
+    const overallHeader = overallStandings
+      ? `<th title="Overall season rank through this session" style="cursor:help;">Overall</th>`
+      : '';
+    const movHeader = overallStandings
+      ? `<th title="Change in overall season rank vs. previous session" style="cursor:help;">±</th>`
+      : '';
     return `<table class="compact-table">
       <thead><tr>
         <th>#</th><th>Player</th><th>W/L</th><th>Win%</th>
         ${secHeader}
         ${pctHeader}
-        ${!compact ? '<th>Games</th><th>Byes</th>' : ''}
+        ${overallHeader}
+        ${movHeader}
       </tr></thead>
       <tbody>${rows.join('')}</tbody>
     </table>`;
@@ -2729,26 +3894,36 @@ function doPost(e) {
 
     html += `</div></div>`;
 
-    // Champion banner — only show when the last game is truly the final:
-    // all players who received byes in earlier rounds must have since played a real game.
+    // Champion banner — only show when the tournament is truly complete
+    // (every team except the winner has been eliminated).
     const lastRound = lockedRounds[lockedRounds.length - 1];
     const lastGames = weekPairings.filter(g => g.round === lastRound && (g.type === 'game' || g.type === 'tourn-game'));
 
-    // Collect all players who had a bye in any round
-    const byePlayerNames = new Set();
-    weekPairings.filter(g => g.type === 'tourn-bye' || g.type === 'bye').forEach(g => {
-      if (g.p1) byePlayerNames.add(g.p1);
-      if (g.p2) byePlayerNames.add(g.p2);
-    });
-    // Collect all players who appeared in a real game in any round
-    const gamePlayers = new Set();
-    weekPairings.filter(g => g.type === 'game' || g.type === 'tourn-game').forEach(g => {
-      [g.p1, g.p2, g.p3, g.p4].filter(Boolean).forEach(n => gamePlayers.add(n));
-    });
-    // All bye recipients must have also played a real game before we declare a champion
-    const byesUnresolved = [...byePlayerNames].some(n => !gamePlayers.has(n));
+    // Determine whether all teams except one have been eliminated.
+    // When seeds are available (active tournament), use the seed state directly.
+    // Otherwise derive from scored games: count losses per team and check that
+    // only 1 team remains below the elimination threshold (1 for single-elim,
+    // 2 for double-elim — inferred from the highest loss count seen).
+    function isTournamentDone() {
+      if (seeds) return seeds.filter(s => !s.eliminated).length === 1;
+      const lossMap = {};
+      const teamKeys = new Set();
+      weekPairings.filter(g => g.type === 'tourn-game' || g.type === 'game').forEach(g => {
+        const k1 = g.p1 + (g.p2 ? '|' + g.p2 : '');
+        const k2 = g.p3 + (g.p4 ? '|' + g.p4 : '');
+        if (g.p1) teamKeys.add(k1);
+        if (g.p3) teamKeys.add(k2);
+        const sc = scores.find(s => parseInt(s.week) === week && parseInt(s.round) === parseInt(g.round) && String(s.court) === String(g.court));
+        if (!sc || sc.score1 === '' || sc.score1 === null) return;
+        const loser = parseInt(sc.score1) > parseInt(sc.score2) ? k2 : k1;
+        lossMap[loser] = (lossMap[loser] || 0) + 1;
+      });
+      const maxLosses = Math.max(0, ...Object.values(lossMap));
+      const threshold = maxLosses >= 2 ? 2 : 1;
+      return [...teamKeys].filter(k => (lossMap[k] || 0) < threshold).length === 1;
+    }
 
-    if (lastGames.length === 1 && !byesUnresolved) {
+    if (lastGames.length === 1 && isTournamentDone()) {
       const fg = lastGames[0];
       const fs = scores.find(s => parseInt(s.week) === week && parseInt(s.round) === lastRound && String(s.court) === String(fg.court));
       if (fs && fs.score1 !== '' && fs.score1 !== null && fs.score2 !== '' && fs.score2 !== null) {
@@ -3082,6 +4257,11 @@ function doPost(e) {
       const statusEl = document.getElementById('tourn-status');
       if (statusEl) statusEl.innerHTML = '';
       renderPairingsPreview();
+      // Re-enable generate bracket and format dropdown after explicit reset
+      const tournGenBtn = document.getElementById('btn-tourn-generate');
+      const tournModeEl = document.getElementById('tourn-mode');
+      if (tournGenBtn) tournGenBtn.disabled = false;
+      if (tournModeEl) tournModeEl.disabled = false;
       toast('Tournament reset.');
     });
   }
@@ -3236,6 +4416,7 @@ function doPost(e) {
         wRankBalance:     parseFloat(document.getElementById('cfg-w-rank-balance')?.value) ?? D.rankBalanceWeight,
         wRankStdDev:      parseFloat(document.getElementById('cfg-w-rank-std-dev')?.value) ?? D.rankStdDevWeight,
         wMixedViolation:  parseFloat(document.getElementById('cfg-w-mixed-violation')?.value) || D.mixedViolationWeight,
+        wQueueWait:       parseFloat(document.getElementById('cfg-w-queue-wait')?.value) ?? 10,
       };
       try {
         await API.saveConfig(newConfig);
@@ -3245,7 +4426,7 @@ function doPost(e) {
     ['cfg-tries','cfg-local-improve','cfg-swap-passes','cfg-use-initial-rank',
      'cfg-w-session-partner','cfg-w-session-opponent','cfg-w-history-partner',
      'cfg-w-history-opponent','cfg-w-bye-variance','cfg-w-session-bye',
-     'cfg-w-rank-balance','cfg-w-rank-std-dev','cfg-w-mixed-violation'].forEach(id => {
+     'cfg-w-rank-balance','cfg-w-rank-std-dev','cfg-w-mixed-violation','cfg-w-queue-wait'].forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
       const evt = el.type === 'checkbox' ? 'change' : 'blur';
@@ -3277,6 +4458,88 @@ function doPost(e) {
       document.getElementById('cfg-dates-area').innerHTML = datesHtml;
     });
 
+    // Rebuild court name inputs when number of courts changes
+    document.getElementById('cfg-courts')?.addEventListener('change', () => {
+      const numCourts = parseInt(document.getElementById('cfg-courts').value) || 3;
+      let courtNamesHtml = '<div class="form-row" style="display:flex; margin-top:8px;">';
+      for (let cn = 1; cn <= numCourts; cn++) {
+        const existing = document.getElementById(`cfg-court-name-${cn}`)?.value || '';
+        courtNamesHtml += `
+          <div class="form-group">
+            <label class="form-label">Court ${cn} Name</label>
+            <input class="form-control" id="cfg-court-name-${cn}" placeholder="Court ${cn}" value="${esc(existing)}">
+          </div>`;
+      }
+      courtNamesHtml += '</div>';
+      document.getElementById('cfg-court-names-area').innerHTML = courtNamesHtml;
+    });
+
+    // Pending config held here while the confirm-current-password modal is open
+    let _pendingConfigSave = null;
+
+    async function doSaveConfig(config) {
+      showLoading(true);
+      try {
+        await API.saveConfig(config);
+        state.config = sanitizeConfig(config);
+
+        // Update registry with league name and admin email so the app manager sees current values
+        const session = Auth.getSession();
+        if (session && session.leagueId) {
+          const registryName  = config.leagueName || undefined;
+          const registryEmail = config.replyTo    || undefined;
+          API.updateLeague(session.leagueId, registryName, undefined, undefined, undefined, undefined, registryEmail)
+            .catch(() => {});
+        }
+
+        toast('Configuration saved!');
+        state._setupDirty = false;
+        document.getElementById('cfg-admin-pin').value = '';
+        renderDashboard();
+        renderAttendance();
+        // Rebuild all week/session dropdowns to reflect new session count or dates
+        populateWeekSelect('pair-week-select',  'currentPairWeek');
+        populateWeekSelect('score-week-select', 'currentScoreWeek');
+        populateWeekSelect('tourn-week-select', 'currentTournWeek');
+        populateWeekSelect('stand-week-select', 'currentStandWeek');
+        initAvailUI();
+      } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+      finally { showLoading(false); }
+    }
+
+    // Confirm-current-password modal — wired once, reads _pendingConfigSave at click time
+    document.getElementById('confirm-pw-save-btn').addEventListener('click', async () => {
+      const currentPw = document.getElementById('confirm-pw-input').value.trim();
+      const errEl     = document.getElementById('confirm-pw-error');
+      errEl.style.display = 'none';
+      if (!currentPw) { errEl.textContent = 'Please enter your current password.'; errEl.style.display = 'block'; return; }
+
+      const btn = document.getElementById('confirm-pw-save-btn');
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        const result = await API.validateAdminPassword(currentPw);
+        if (result.valid) {
+          document.getElementById('confirm-pw-modal').style.display = 'none';
+          document.getElementById('confirm-pw-input').value = '';
+          if (_pendingConfigSave) await doSaveConfig(_pendingConfigSave);
+          _pendingConfigSave = null;
+        } else {
+          errEl.textContent = result.reason || 'Incorrect password.';
+          errEl.style.display = 'block';
+          document.getElementById('confirm-pw-input').value = '';
+        }
+      } catch (e) {
+        errEl.textContent = 'Error: ' + e.message;
+        errEl.style.display = 'block';
+      } finally {
+        btn.disabled = false; btn.textContent = 'Confirm & Save';
+      }
+    });
+
+    document.getElementById('confirm-pw-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('confirm-pw-save-btn').click();
+    });
+
     document.getElementById('btn-save-config').addEventListener('click', async () => {
       if (isAssistant) { toast('Admin assistants cannot change league settings.', 'warn'); return; }
       const weeks = parseInt(document.getElementById('cfg-weeks').value);
@@ -3298,6 +4561,10 @@ function doPost(e) {
         gamesPerSession:parseInt(document.getElementById('cfg-games').value),
         optimizerTries: parseInt(document.getElementById('cfg-tries').value),
         gameMode:       document.getElementById('cfg-game-mode').value,
+        pairingMode:      document.getElementById('cfg-pairing-mode').value,
+        queueWinnerStay:  parseInt(document.getElementById('cfg-queue-winner-stay')?.value) || 0,
+        queueWinnerSplit: document.getElementById('cfg-queue-winner-split')?.value || 'none',
+        wQueueWait:       parseFloat(document.getElementById('cfg-w-queue-wait')?.value) ?? 10,
         rankingMethod:  document.getElementById('cfg-ranking-method').value,
         minParticipation: document.getElementById('cfg-min-participation').value !== '' ? parseFloat(document.getElementById('cfg-min-participation').value) : null,
         wSessionPartner:  parseFloat(document.getElementById('cfg-w-session-partner').value),
@@ -3339,26 +4606,18 @@ function doPost(e) {
         toast(`Round limit exceeded: this league allows up to ${maxR} rounds per session.`, 'warn'); return;
       }
 
-      showLoading(true);
-      try {
-        await API.saveConfig(config);
-        state.config = sanitizeConfig(config);
+      // If the admin PIN field has a value, the admin is changing the password —
+      // require them to confirm their current password before saving.
+      const newPin = document.getElementById('cfg-admin-pin').value;
+      if (newPin && newPin !== state.config.adminPin) {
+        _pendingConfigSave = config;
+        document.getElementById('confirm-pw-input').value = '';
+        document.getElementById('confirm-pw-error').style.display = 'none';
+        document.getElementById('confirm-pw-modal').style.display = 'flex';
+        return;
+      }
 
-        // Update registry with league name and admin email so the app manager sees current values
-        const session = Auth.getSession();
-        if (session && session.leagueId) {
-          const registryName  = config.leagueName || undefined;
-          const registryEmail = config.replyTo    || undefined;
-          API.updateLeague(session.leagueId, registryName, undefined, undefined, undefined, undefined, registryEmail)
-            .catch(() => {}); // fire-and-forget — config save already succeeded
-        }
-
-        toast('Configuration saved!');
-        state._setupDirty = false;
-        renderDashboard();
-        renderAttendance();
-      } catch (e) { toast('Save failed: ' + e.message, 'error'); }
-      finally { showLoading(false); }
+      await doSaveConfig(config);
     });
 
     // ── Availability Request — event wiring only (functions at outer scope) ───
@@ -3482,7 +4741,7 @@ function doPost(e) {
         rules:       incRules    ? (c.rules       || '') : '',
         leagueUrl:   incUrl      ? (c.leagueUrl || '') : '',
         players:     incPlayers  ? state.players.filter(p => p.active === true).map(p => p.name) : [],
-        standings:   incStandings ? Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance)
+        standings:   incStandings ? Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance, state.config.pairingMode)
                                       .filter(s => state.players.find(p => p.name === s.name && p.active === true))
                                   : [],
         dates:       incDates    ? (() => {
@@ -3634,6 +4893,8 @@ function doPost(e) {
       if (scoreSelEl && scoreSelEl.value != state.currentPairWeek) scoreSelEl.value = state.currentPairWeek;
       renderPairingsPreview();
       renderScoresheet();
+      updatePairingModeUI();
+      if (state.config.pairingMode === 'queue-based') loadQueueForWeek(state.currentPairWeek);
       const epWeek = document.getElementById('ep-week');
       if (epWeek) epWeek.value = state.currentPairWeek;
     });
@@ -3749,13 +5010,82 @@ function doPost(e) {
     });
 
     setupWeekSelect('stand-week-select', 'currentStandWeek', () => {
-      const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, state.currentStandWeek, state.config.rankingMethod, state.attendance);
-      document.getElementById('standings-weekly-table').innerHTML = renderStandingsTable(weekStand);
+      const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, state.currentStandWeek, state.config.rankingMethod, state.attendance, state.config.pairingMode);
+      const overallThisWeek = Reports.computeStandings(state.scores, state.players, state.pairings, state.currentStandWeek, state.config.rankingMethod, state.attendance, state.config.pairingMode);
+      const overallPrevWeek = state.currentStandWeek > 1
+        ? Reports.computeStandings(state.scores, state.players, state.pairings, state.currentStandWeek - 1, state.config.rankingMethod, state.attendance, state.config.pairingMode)
+        : null;
+      document.getElementById('standings-weekly-table').innerHTML = renderStandingsTable(weekStand, false, overallThisWeek, overallPrevWeek);
       const swDate = formatDateTime(state.currentStandWeek, state.config);
       document.getElementById('stand-week-label').textContent = `Session ${state.currentStandWeek}${swDate ? ' — ' + swDate : ''}`;
     });
 
     // Generate pairings — keep-best across multiple attempts
+    // Queue mode button listeners
+    document.getElementById('btn-queue-generate')?.addEventListener('click', runQueueGenerate);
+    document.getElementById('btn-queue-lock')?.addEventListener('click', queueLockAndSave);
+    document.getElementById('btn-queue-init')?.addEventListener('click', () => initializeQueue(state.currentPairWeek));
+    document.getElementById('btn-queue-clear')?.addEventListener('click', async () => {
+      if (isAssistant) { toast('Admin assistants cannot delete pairings.', 'warn'); return; }
+      const week = state.currentPairWeek;
+      const lockedBatches = [...new Set(
+        state.pairings.filter(p => parseInt(p.week) === week).map(p => parseInt(p.round))
+      )].sort((a, b) => a - b);
+
+      // If only a pending (unlocked) generation exists, just discard it
+      if (!lockedBatches.length) {
+        if (state.pendingPairings) {
+          state.pendingPairings = null;
+          state.queueGeneration = null;
+          renderQueuePanel();
+          toast('Pending generation discarded.');
+        } else {
+          toast('No batches to clear for this session.', 'warn');
+        }
+        return;
+      }
+
+      const affectedScores = state.scores.filter(s =>
+        parseInt(s.week) === week && lockedBatches.includes(parseInt(s.round))
+      );
+      const batchLabel = lockedBatches.length === 1
+        ? `Batch ${lockedBatches[0]}`
+        : `Batches ${lockedBatches.join(', ')}`;
+      const msg = affectedScores.length
+        ? `Clear ${batchLabel} pairings AND scores for Session ${week}? This cannot be undone.`
+        : `Clear ${batchLabel} pairings for Session ${week}?`;
+      if (!confirm(msg)) return;
+
+      showLoading(true);
+      try {
+        await API.savePairings(week, []);
+        state.pairings = state.pairings.filter(p => parseInt(p.week) !== week);
+        state.pendingPairings = null;
+        state.queueGeneration = null;
+
+        if (affectedScores.length) {
+          await API.saveScores(week, []);
+          state.scores = state.scores.filter(s => parseInt(s.week) !== week);
+          state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance, state.config.pairingMode);
+        }
+        toast(`${batchLabel} cleared for Session ${week}.`);
+        renderQueuePanel();
+        renderScoresheet();
+      } catch (e) { toast('Failed: ' + e.message, 'error'); }
+      finally { showLoading(false); }
+    });
+    document.getElementById('cfg-queue-winner-stay')?.addEventListener('change', e => {
+      const val = parseInt(e.target.value) || 0;
+      state.config.queueWinnerStay = val;
+      const splitSel = document.getElementById('cfg-queue-winner-split');
+      if (splitSel) splitSel.disabled = val === 0;
+      updateWinnerSummary();
+    });
+    document.getElementById('cfg-queue-winner-split')?.addEventListener('change', e => {
+      state.config.queueWinnerSplit = e.target.value;
+      updateWinnerSummary();
+    });
+
     document.getElementById('btn-generate').addEventListener('click', () => runGenerate(false));
     document.getElementById('btn-generate-fresh')?.addEventListener('click', () => runGenerate(true));
 
@@ -3783,6 +5113,19 @@ function doPost(e) {
       );
       if (hasScores) { toast('Scores already exist for the selected round(s). Clear them first.', 'warn'); return; }
 
+      // Ensure full pairings history is loaded before generating —
+      // Phase 2 loads it in the background and may not have completed yet.
+      // Without this, pastPairings is empty and historical penalties are ignored.
+      if (!state._pairingsLoaded) {
+        try {
+          const fullData = await API.getAllData();
+          state.pairings  = fullData.pairings  || [];
+          state.scores    = fullData.scores    || [];
+          state.standings = fullData.standings || [];
+          state._pairingsLoaded = true;
+        } catch (e) { /* non-fatal — generate with whatever is cached */ }
+      }
+
       // Always fetch fresh attendance from server before generating —
       // avoids using stale cached data that could include wrong player counts.
       try {
@@ -3791,7 +5134,7 @@ function doPost(e) {
       } catch (e) { /* non-fatal — use cached state.attendance if fetch fails */ }
 
       let courts = parseInt(state.config.courts || 3);
-      const tries  = parseInt(state.config.optimizerTries || 100);
+      const baseTries = parseInt(state.config.optimizerTries || 100);
 
       const presentPlayers = state.players
         .filter(p => p.active === true && p.role !== 'spectator')
@@ -3816,10 +5159,19 @@ function doPost(e) {
         toast(`Round limit exceeded: this league allows up to ${maxR} rounds per session.`, 'warn'); return;
       }
 
+      // Scale tries based on present player count — not total registered.
+      // Larger present pools make each construction heavier (more combinations
+      // to evaluate per court), so reduce outer iterations to keep generation
+      // time reasonable. The inner MAX_COMBOS in pairings.js is now 2000,
+      // giving exhaustive or near-exhaustive per-court search.
+      const tries = presentPlayers.length <= 8
+        ? baseTries
+        : Math.max(15, Math.round(baseTries * Math.pow(8 / presentPlayers.length, 1.5)));
+
       // Input hash — detect when inputs change so best is automatically reset
       const inputHash = JSON.stringify({
         week, scope, courts, gameMode,
-        players: [...presentPlayers].sort().join(','), tries
+        players: [...presentPlayers].sort().join(','), tries: baseTries
       });
       const inputsChanged = !state.bestGeneration || state.bestGeneration.inputHash !== inputHash;
       if (forceFresh || inputsChanged) {
@@ -3864,6 +5216,13 @@ function doPost(e) {
       const swapPasses = (v => isNaN(v) ? 5 : v)(parseInt(state.config.swapPasses));
       const useInitialRank = state.config.useInitialRank === true || state.config.useInitialRank === 'true';
       const verbose = document.getElementById('cfg-verbose-optimizer')?.checked === true;
+
+      // Capture historical stats now so the result display can show what was loaded.
+      // pastPairings.length = 0 means history is unavailable (race condition or first session).
+      const pastGames    = pastPairings.filter(p => p.type === 'game' || !p.type);
+      const priorWeeks   = [...new Set(pastPairings.map(p => parseInt(p.week)))].sort((a,b)=>a-b);
+      const historyStats = { games: pastGames.length, sessions: priorWeeks.length };
+
       const workerParams = {
         presentPlayers, courts, rounds, pastPairings, tries, weights,
         standings: state.standings, gameMode, playerGroups,
@@ -4080,9 +5439,20 @@ function doPost(e) {
             return bhtml;
           }
 
+          // Historical context note — shown above breakdown table.
+          // Lets the admin verify history was loaded even when raw repeat counts are 0
+          // (which just means the optimizer successfully avoided all historical repeats).
+          const histNote = historyStats.games > 0
+            ? `<div style="font-size:0.74rem; color:var(--muted); margin-bottom:4px;">` +
+              `Historical data: ${historyStats.games} game${historyStats.games!==1?'s':''} from ` +
+              `${historyStats.sessions} prior session${historyStats.sessions!==1?'s':''} loaded — ` +
+              `"Repeat" rows show repeats <em>in the generated output</em>; 0 means the optimizer avoided all historical repeats.</div>`
+            : `<div style="font-size:0.74rem; color:var(--gold); margin-bottom:4px;">` +
+              `⚠ No historical pairing data found — this is either Session 1 or history failed to load.</div>`;
+
           // Show best breakdown by default
           document.getElementById('optimizer-breakdown').innerHTML =
-            renderBreakdownTable(best.breakdown, best.normalizedWeights, `Criterion — Best (score ${best.score.toFixed(1)})`);
+            histNote + renderBreakdownTable(best.breakdown, best.normalizedWeights, `Criterion — Best (score ${best.score.toFixed(1)})`);
 
           // ── 2nd best toggle ─────────────────────────────────
           const secondBtn = document.getElementById('btn-show-second');
@@ -4097,7 +5467,7 @@ function doPost(e) {
               if (showing === 'best') {
                 // Switch to 2nd best
                 document.getElementById('optimizer-breakdown').innerHTML =
-                  renderBreakdownTable(best.secondBreakdown, best.normalizedWeights,
+                  histNote + renderBreakdownTable(best.secondBreakdown, best.normalizedWeights,
                     `Criterion — 2nd Best (score ${best.secondScore.toFixed(1)})`);
                 document.getElementById('optimizer-score').textContent = best.secondScore.toFixed(1);
                 state.pendingPairings = best.secondPairings;
@@ -4106,7 +5476,7 @@ function doPost(e) {
               } else {
                 // Switch back to best
                 document.getElementById('optimizer-breakdown').innerHTML =
-                  renderBreakdownTable(best.breakdown, best.normalizedWeights,
+                  histNote + renderBreakdownTable(best.breakdown, best.normalizedWeights,
                     `Criterion — Best (score ${best.score.toFixed(1)})`);
                 document.getElementById('optimizer-score').textContent = best.score.toFixed(1);
                 state.pendingPairings = best.pairings;
@@ -4284,7 +5654,7 @@ function doPost(e) {
           const weekKeptScores = keptScores.filter(s => parseInt(s.week) === week);
           await API.saveScores(week, weekKeptScores);
           state.scores = keptScores;
-          state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance);
+          state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance, state.config.pairingMode);
         }
         toast(`${scopeLabel.charAt(0).toUpperCase() + scopeLabel.slice(1)} cleared.`);
         renderPairingsPreview();
@@ -4372,7 +5742,7 @@ function doPost(e) {
         state.scores = state.scores.filter(s => parseInt(s.week) !== week);
         state.scores.push(...scores);
         // Refresh standings
-        state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance);
+        state.standings = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance, state.config.pairingMode);
         toast(`Scores for Session ${week} saved!`);
       } catch (e) { toast('Save failed: ' + e.message, 'error'); }
       finally { showLoading(false); }
@@ -4402,7 +5772,7 @@ function doPost(e) {
       // Build report data
       const weekScores   = state.scores.filter(s => parseInt(s.week) === week);
       const weekPairings = state.pairings.filter(p => parseInt(p.week) === week && (p.type === 'game' || p.type === 'tourn-game'));
-      const weekStand    = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week, state.config.rankingMethod, state.attendance);
+      const weekStand    = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week, state.config.rankingMethod, state.attendance, state.config.pairingMode);
       const seasonStand  = Reports.computeStandings(state.scores, state.players, state.pairings);
       const weekDate     = formatDateTime(week, state.config);
 
@@ -4542,6 +5912,43 @@ function doPost(e) {
     });
   }
 
+  // ── Tier feature restrictions ──────────────────────────────
+  function applyTierRestrictions(tier) {
+    if (!tier || typeof TIERS === 'undefined') return;
+    const tierDef = TIERS.find(t => t.version.toLowerCase() === tier.toLowerCase());
+    if (!tierDef) return;
+    const disabled = new Set(tierDef.disableList || []);
+
+    const hideEl = id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; };
+    const hideNav = page => document.querySelectorAll(`.nav-item[data-page="${page}"]`).forEach(el => {
+      el.classList.add('hidden');
+      el.dataset.tierHidden = '1';
+    });
+
+    if (disabled.has('messaging'))          hideNav('messaging');
+    if (disabled.has('timers'))             hideNav('timers');
+    if (disabled.has('headToHead'))         hideNav('head-to-head');
+    if (disabled.has('playerReport'))       hideNav('player-report');
+    if (disabled.has('pushNotifications'))  hideEl('push-notif-card');
+    if (disabled.has('hostedDb'))           hideEl('new-league-sheet-group');
+    if (disabled.has('tournamentPairings')) hideEl('tournament-card');
+    if (disabled.has('queuePairings'))      hideEl('queue-pairing-card');
+    if (disabled.has('pairingEditor'))      hideEl('edit-pairing-card');
+    if (disabled.has('playerRegistration')) {
+      hideEl('cfg-registration-row');
+      hideEl('cfg-registration-options');
+    }
+    if (disabled.has('playerScoring')) {
+      const hdr = document.getElementById('col-can-score');
+      if (hdr) hdr.style.visibility = 'hidden';
+      document.querySelectorAll('[data-field="canScore"]').forEach(el => {
+        el.style.visibility = 'hidden';
+        el.disabled = true;
+      });
+      state._tierDisableScoring = true;
+    }
+  }
+
   // ── Leagues ────────────────────────────────────────────────
   function applyLimitRestrictions() {
     const L = state.limits;
@@ -4622,12 +6029,13 @@ function doPost(e) {
         <th>Status</th>
         <th title="Whether this league's admin can create new leagues">Create</th>
         <th>Visibility</th>
+        <th>Tier</th>
         ${isMgr ? '<th>Customer</th><th>Created</th><th>Expires</th><th>Limits</th><th></th>' : ''}
       </tr></thead>
       <tbody>`;
 
     if (!leagues.length) {
-      html += '<tr><td colspan="6" class="text-muted">No leagues yet. Add one above.</td></tr>';
+      html += '<tr><td colspan="7" class="text-muted">No leagues yet. Add one above.</td></tr>';
     }
 
     leagues.forEach(l => {
@@ -4673,6 +6081,13 @@ function doPost(e) {
         <td>${btnActive}</td>
         <td>${btnCreate}</td>
         <td>${btnVisible}</td>
+        <td>${l.tier
+          ? `<a href="#" onclick="showTierInfo('${esc(l.tier)}'); return false;"
+              style="font-size:0.75rem; color:var(--green); text-decoration:none;
+                     background:rgba(94,194,106,0.1); border:1px solid rgba(94,194,106,0.3);
+                     border-radius:4px; padding:2px 7px; white-space:nowrap;"
+              title="Click to see what's included in the ${esc(l.tier)} tier">${esc(l.tier)}</a>`
+          : '<span style="font-size:0.72rem; color:rgba(255,255,255,0.2);">—</span>'}</td>
         ${isMgr ? `
         <td style="font-size:0.75rem; color:var(--muted);">${l.customerId || '<span style="opacity:0.4;">—</span>'}</td>
         <td style="font-size:0.75rem; color:var(--muted);">${l.createdDate || '—'}</td>
@@ -4841,16 +6256,21 @@ function doPost(e) {
       <div class="card-title" style="font-size:0.8rem; margin-bottom:8px; color:var(--muted);">GAME LOG</div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Ses</th><th>Rd</th><th>Partner</th><th>Opponents</th><th>Score</th><th>Result</th></tr></thead>
-          <tbody>${report.games.length ? report.games.map(g =>
-            `<tr>
+          <thead><tr><th>Ses</th><th>Rd</th><th>Partner</th><th>Opponents</th><th>Score</th>
+            <th title="Rank difference: your team's average rank minus opponents' average rank. Negative means your team was ranked higher. U = upset (lower-ranked team won)." style="cursor:help;">Rnk Δ</th>
+            <th>Result</th></tr></thead>
+          <tbody>${report.games.length ? report.games.map(g => {
+            const diffStr = g.rankDiff !== null ? (g.rankDiff > 0 ? '+' : '') + g.rankDiff.toFixed(1) : '—';
+            const resultLabel = (g.won ? 'W' : 'L') + (g.isUpset ? ' U' : '');
+            return `<tr>
               <td>${g.week}</td><td>${g.round}</td>
               <td class="player-name">${esc(g.partner)}</td>
               <td class="text-muted">${g.opponents.map(o => esc(o)).join(' & ')}</td>
               <td><strong>${g.myScore}</strong> — ${g.oppScore}</td>
-              <td><span class="badge ${g.won ? 'badge-green' : 'badge-red'}">${g.won ? 'W' : 'L'}</span></td>
-            </tr>`
-          ).join('') : '<tr><td colspan="6" class="text-muted">No games recorded yet.</td></tr>'}</tbody>
+              <td style="text-align:center; color:${g.rankDiff === null ? 'var(--muted)' : g.rankDiff < 0 ? 'var(--green)' : g.rankDiff > 0 ? 'var(--danger)' : 'var(--muted)'};">${diffStr}</td>
+              <td><span class="badge ${g.won ? 'badge-green' : 'badge-red'}">${resultLabel}</span></td>
+            </tr>`;
+          }).join('') : '<tr><td colspan="7" class="text-muted">No games recorded yet.</td></tr>'}</tbody>
         </table>
       </div>
     </div>`;

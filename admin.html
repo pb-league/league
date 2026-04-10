@@ -72,6 +72,10 @@
         <div class="nav-item" data-page="head-to-head"><span class="icon">⚔️</span> Head-to-Head</div>
       </div>
       <div class="nav-section">
+        <div class="nav-section-label">Tools</div>
+        <div class="nav-item" data-page="timers"><span class="icon">⏱</span> Timers</div>
+      </div>
+      <div class="nav-section">
         <div class="nav-section-label">Help</div>
         <div class="nav-item" onclick="window.open('help.html','_blank')" style="cursor:pointer;"><span class="icon">❓</span> User Guide</div>
       </div>
@@ -127,7 +131,7 @@
           <div class="card-header"><div class="card-title">Configuration</div></div>
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">League Name <span style="color:var(--muted);font-weight:400;">(also updates registry)</span></label>
+              <label class="form-label">League Name <span style="color:var(--muted);font-weight:400;"></span></label>
               <input class="form-control" id="cfg-name" placeholder="My League">
             </div>
             <div class="form-group">
@@ -137,12 +141,12 @@
             </div>
           <div class="form-row">
             <div class="form-group" style="flex:1;">
-              <label class="form-label">League ID <span style="color:var(--muted);font-weight:400;">(cannot be changed)</span></label>
+              <label class="form-label">League ID <span style="color:var(--muted);font-weight:400;"></span></label>
               <input class="form-control" id="cfg-league-id-display" readonly
                 style="opacity:0.55; cursor:default; background:rgba(255,255,255,0.03);">
             </div>
             <div class="form-group" style="flex:2;">
-              <label class="form-label">League URL <span style="color:var(--muted);font-weight:400;">(auto-generated — share with players)</span></label>
+              <label class="form-label">League URL <span style="color:var(--muted);font-weight:400;"></span></label>
               <input class="form-control" id="cfg-league-url" readonly
                 style="opacity:0.55; cursor:default; background:rgba(255,255,255,0.03);">
             </div>
@@ -150,48 +154,51 @@
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Location</label>
-              <input class="form-control" id="cfg-location" placeholder="e.g. Riverside Courts">
+              <input class="form-control" id="cfg-location" placeholder="e.g. Town Courts">
             </div>
             <div class="form-group">
               <label class="form-label">Session Time</label>
               <input class="form-control" id="cfg-time" placeholder="e.g. Thursdays 6–9pm">
             </div>
-            <div class="form-group" style="flex:2;">
+          </div>
+
+            <div class="form-group" style=":2;">
               <label class="form-label">Notes</label>
               <input class="form-control" id="cfg-notes" placeholder="Announcements, reminders…">
             </div>
-          </div>
+          
           <div class="form-group" style="margin-top:4px;">
             <label class="form-label">League Rules</label>
             <textarea class="form-control" id="cfg-rules" rows="5"
               placeholder="Enter league rules here. Each line will be displayed as a separate item on the dashboard."
               style="resize:vertical; font-size:0.88rem; line-height:1.6;"></textarea>
           </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Number of Sessions</label>
-              <input class="form-control" id="cfg-weeks" type="number" min="1" max="20" value="8">
+          <div class="form-row">     
+              <div class="form-group" style="display:inline; gap:6px">
+                <label class="form-label">Sessions</label>
+                <input class="form-control" id="cfg-weeks" type="number" min="1" max="10" value="8" style="width:80px;">
+              </div>
+              <div class="form-group">
+              <label class="form-label">Courts</label>
+              <input class="form-control" id="cfg-courts" type="number" min="1" max="8" value="3" style="width:80px;">           
             </div>
             <div class="form-group">
-              <label class="form-label">Courts per Session</label>
-              <input class="form-control" id="cfg-courts" type="number" min="1" max="10" value="3">
-            </div>
+            <label class="form-label">Games/Session</label>
+            <input class="form-control" id="cfg-games" type="number" min="1" max="10" value="7" style="width:80px;">
+         </div>
             <div class="form-group">
-              <label class="form-label">Games per Session</label>
-              <input class="form-control" id="cfg-games" type="number" min="1" max="15" value="7">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Min Participation % <span style="color:var(--muted); font-weight:400; font-size:0.78rem;">(for prize eligibility)</span></label>
-              <input class="form-control" id="cfg-min-participation" type="number" min="0" max="100"
-                placeholder="50" style="width:90px;">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Secondary Ranking</label>
-              <select class="form-control" id="cfg-ranking-method">
-                <option value="avgptdiff">Avg Point Diff (+/-)</option>
-                <option value="ptspct">Pts/Tot %</option>
-              </select>
-            </div>
+          <label class="form-label">Min Participation % <span style="color:var(--muted); font-weight:400; font-size:0.78rem;">(for
+              prize)</span></label>
+          <input class="form-control" id="cfg-min-participation" type="number" min="0" max="100" placeholder="50"
+            style="width:80px;">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Secondary Ranking</label>
+            <select class="form-control" id="cfg-ranking-method">
+              <option value="avgptdiff">Avg Point Diff (+/-)</option>
+              <option value="ptspct">Pts/Tot %</option>
+            </select>
+          </div>
             <div class="form-group">
               <label class="form-label">Game Mode</label>
               <select class="form-control" id="cfg-game-mode">
@@ -201,11 +208,18 @@
                 <option value="fixed-pairs">Fixed Pairs (team name = both player names)</option>
               </select>
             </div>
+            <div class="form-group">
+              <label class="form-label">Pairing Mode</label>
+              <select class="form-control" id="cfg-pairing-mode">
+                <option value="round-based">Round Based</option>
+                <option value="queue-based">Queue Based</option>
+              </select>
+            </div>
           </div>
           <div style="display:flex; flex-wrap:wrap; gap:16px; margin:12px 0 4px;">
-            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.85rem;">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.85rem;" id="cfg-registration-row">
               <input type="checkbox" id="cfg-allow-registration" style="width:16px;height:16px;">
-              <span>Allow player self-registration</span>
+              <span>Allow player self-registration (with admin doing final approval)</span>
               <span style="color:var(--muted); font-size:0.78rem;">(new players can register from the login page — admin must approve)</span>
             </label>
           </div>
@@ -240,9 +254,9 @@
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Admin Email</label>
-              <input class="form-control" id="cfg-reply-to" type="email" placeholder="league@example.com"
+              <input class="form-control" id="cfg-reply-to" type="email" placeholder="adminName@gmail.com"
                 style="max-width:300px;">
-              <div style="font-size:0.75rem; color:var(--muted); margin-top:4px;">Used as reply-to address on all league emails. Also updates registry.</div>
+              <div style="font-size:0.75rem; color:var(--muted); margin-top:4px;">Used as reply-to address on all league emails sent by APP (unless admin sets up script to use their email)</div>
             </div>
             <div class="form-group" style="flex:2; display:flex; align-items:flex-end; padding-bottom:4px;">
               <label class="form-label" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
@@ -432,7 +446,7 @@
             <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">▼</span>
           </summary>
           <div class="collapsible-body">
-            <p style="font-size:0.82rem; color:var(--muted); margin-bottom:14px; margin-top:12px;">
+            <p style="font-size:0.82rem; color:var(--muted); margin-bottom:10px; margin-top:10px;">
               Report a bug, request a feature, or ask for help. Your message goes directly to the app developer.
             </p>
             <div class="form-row">
@@ -545,7 +559,7 @@
                 </div>
                 <div id="push-send-status" style="font-size:0.8rem; margin-top:10px;"></div>
                 <div style="display:flex; gap:10px; margin-top:12px; align-items:center; flex-wrap:wrap;">
-                  <button class="btn btn-primary" id="btn-push-send" disabled>🔔 Send</button>
+                  <button class="btn btn-primary" id="btn-push-send">🔔 Send Notification</button>
                 </div>
                 <div style="font-size:0.75rem; color:var(--muted); margin-top:10px; font-style:italic;">
                   Expired subscriptions are cleaned up automatically after each send.
@@ -575,7 +589,7 @@
             <span class="label" title="Gender group — only used for Mixed Doubles mode to balance partnerships. Has no effect in other game modes.">Group</span>
             <span class="label">Email</span>
             <span class="label" title="Email notifications">Ntfy</span>
-            <span class="label" title="Can enter scores">Scr</span>
+            <span class="label" title="Can enter scores" id="col-can-score">Scr</span>
             <span class="label" title="Initial ranking used before season standings are established">Rank&#x2070;</span>
             <span class="label" title="Player: view only&#10;Scorer: can enter scores&#10;Assistant: generate pairings &amp; enter scores, no settings&#10;Admin: full league control (logs in via admin password)&#10;Spectator: view only, never in pairings&#10;Sub: plays in pairings but excluded from standings">Role</span>
             <span class="label">Status</span>
@@ -591,9 +605,18 @@
       <section id="page-attendance" class="tab-panel">
         <div class="page-header"><h2>Attendance</h2></div>
         <div class="card">
-          <div id="att-pending-indicator" style="display:none; font-size:0.78rem; color:var(--muted); padding:2px 0 6px;"></div>
           <div id="attendance-grid"></div>
-          <div class="mt-2 text-muted" style="font-size:0.8rem;">Click to cycle: TBD → <span style="color:var(--green);">In</span> → <span style="color:var(--danger);">Out</span>. Spectator-role members never appear in pairings. Changes save automatically.</div>
+          <div class="mt-2 text-muted" style="font-size:0.8rem;">Click to cycle: TBD → <span style="color:var(--green);">In</span> → <span style="color:var(--danger);">Out</span>. Spectator-role members never appear in pairings.</div>
+          <div class="mt-2" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+            <button class="btn btn-primary" id="btn-save-attendance">Save Attendance</button>
+            <span id="att-dirty-indicator" style="display:none; font-size:0.8rem; color:var(--gold);">Unsaved changes</span>
+          </div>
+          <div class="mt-2" style="border-top:1px solid var(--border); padding-top:10px;">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.85rem;">
+              <input type="checkbox" id="cfg-lock-player-attendance">
+              Lock player attendance — prevent players from changing their own attendance status
+            </label>
+          </div>
         </div>
       </section>
 
@@ -605,7 +628,7 @@
           </select>
           <div id="pair-week-label" style="display:none;">Week 1</div>
         </div>
-        <div class="card">
+        <div id="round-pairing-card" class="card">
           <details open>
           <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;">
             <div class="card-title">Generate Pairings</div>
@@ -639,95 +662,176 @@
             <div id="optimizer-breakdown"></div>
             <div id="optimizer-distribution" style="display:none; margin-top:10px;"></div>
           </div>
-          <!-- Optimizer Weights (nested inside Generate Pairings) -->
-          <div style="margin-top:14px; padding:10px 12px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.07); border-radius:8px;">
-            <details>
-            <summary class="collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; padding:4px 0;">
-              <span style="font-size:0.82rem; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">Optimizer Weights</span>
-              <span class="collapse-arrow" style="font-size:0.68rem; color:var(--green); opacity:0.6;">▼</span>
-            </summary>
-            <div style="padding-top:8px;">
-            <p style="font-size:0.78rem; color:var(--muted); margin-bottom:12px;">
-              Higher values make that factor more important. Set to 0 to ignore. Changes save automatically.
-            </p>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Repeat Partner (this session)</label>
-                <input class="form-control" id="cfg-w-session-partner" type="number" min="0" max="500" step="1">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Repeat Opponent (this session)</label>
-                <input class="form-control" id="cfg-w-session-opponent" type="number" min="0" max="500" step="1">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Repeat Partner (prior weeks)</label>
-                <input class="form-control" id="cfg-w-history-partner" type="number" min="0" max="500" step="1">
-              </div>
+          </div>
+          </details>
+        </div>
+        <div id="queue-pairing-card" class="card mt-2 hidden">
+          <details open>
+          <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;">
+            <div class="card-title" style="display:flex; align-items:center; gap:7px;">
+              Queue-Based Pairing
+              <span title="Players are assigned to available courts from a queue. Use Initialize / Refresh Queue at session start, then press Generate each time courts open up. Winners can optionally stay on to play again before returning to the queue."
+                style="display:inline-flex; align-items:center; justify-content:center;
+                       width:15px; height:15px; border-radius:50%;
+                       background:rgba(122,155,181,0.25); color:var(--muted);
+                       font-size:0.65rem; font-weight:700; font-family:serif;
+                       cursor:help; flex-shrink:0; line-height:1;">i</span>
             </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label">Repeat Opponent (prior weeks)</label>
-                <input class="form-control" id="cfg-w-history-opponent" type="number" min="0" max="500" step="1">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Bye Spread (season balance)</label>
-                <input class="form-control" id="cfg-w-bye-variance" type="number" min="0" max="500" step="1">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Byes per Player (this session)</label>
-                <input class="form-control" id="cfg-w-session-bye" type="number" min="0" max="500" step="1">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Rank Balance <span style="color:var(--muted); font-weight:400; font-size:0.72rem;">(penalty for unequal team avg ranks)</span></label>
-                <input class="form-control" id="cfg-w-rank-balance" type="number" min="0" max="500" step="1">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Rank Std Dev <span style="color:var(--muted); font-weight:400; font-size:0.72rem;">(penalty for mixed-rank players on same court)</span></label>
-                <input class="form-control" id="cfg-w-rank-std-dev" type="number" min="0" max="500" step="1">
-              </div>
-              <div class="form-group" id="cfg-mixed-violation-group" style="display:none;">
-                <label class="form-label">Mixed Violation Penalty <span style="color:var(--muted); font-weight:400; font-size:0.75rem;">(same-gender partnership)</span></label>
-                <input class="form-control" id="cfg-w-mixed-violation" type="number" min="0" max="5000" step="10">
-              </div>
-            </div>
-            <div class="form-row" style="margin-top:10px;">
-              <div class="form-group" style="flex:0 0 150px;">
-                <label class="form-label">Optimizer Tries</label>
-                <input class="form-control" id="cfg-tries" type="number" min="10" max="500" value="100">
-              </div>
-              <div class="form-group" style="flex:2;">
-                <label class="form-label" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-                  <input type="checkbox" id="cfg-local-improve" style="width:16px; height:16px; cursor:pointer;">
-                  <span>Post-generation swap optimisation <span style="color:var(--muted); font-weight:400;">(hill-climb player swaps after each attempt to improve pairing quality)</span></span>
-                </label>
-              </div>
-              <div class="form-group" style="flex:0 0 130px;">
-                <label class="form-label">Swap Passes <span style="color:var(--muted); font-weight:400; font-size:0.75rem;">(per attempt)</span></label>
-                <input class="form-control" id="cfg-swap-passes" type="number" min="0" max="20" value="5">
-              </div>
-            </div>
-            <div style="margin-top:10px;">
-              <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:0.82rem;">
-                <input type="checkbox" id="cfg-use-initial-rank" style="width:15px;height:15px;margin-top:2px;">
-                <span>Use initial rankings instead of season standings for rank-based pairing factors
-                  <span style="color:var(--muted); font-weight:400;"> — useful when standings don't yet reflect true skill level</span>
+            <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">▲</span>
+          </summary>
+          <div class="collapsible-body">
+
+            <div id="queue-status" style="margin:0 0 12px;"></div>
+
+            <!-- Winner settings -->
+            <details id="queue-winner-details" style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.07); border-radius:8px; margin-bottom:14px;">
+              <summary style="list-style:none; cursor:pointer; padding:8px 12px; display:flex; align-items:center; justify-content:space-between; user-select:none;">
+                <span style="display:flex; align-items:center; gap:10px;">
+                  <span style="font-size:0.78rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em;">Winner Settings</span>
+                  <span id="queue-winner-summary" style="font-size:0.78rem; color:var(--muted); font-style:italic;"></span>
                 </span>
-              </label>
-            </div>
-            <div style="margin-top:10px;">
-              <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:0.82rem;">
-                <input type="checkbox" id="cfg-verbose-optimizer" style="width:15px;height:15px;margin-top:2px;">
-                <span>Verbose mode — record score of every attempt and show distribution after generating
-                  <span style="color:var(--muted); font-weight:400;"> (adds no time; only affects what is displayed)</span>
-                </span>
-              </label>
-            </div>
-            </div>
+                <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">▲</span>
+              </summary>
+              <div style="padding:0 12px 10px;">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:0.85rem; color:var(--muted);">
+                  <span>Plays again</span>
+                  <input class="form-control" id="cfg-queue-winner-stay" type="number" min="0" max="20" value="0"
+                    style="width:52px; text-align:center; padding:3px 6px; display:inline-block;"
+                    title="0 = winner returns to queue after every game">
+                  <span>time(s) as</span>
+                  <select class="form-control" id="cfg-queue-winner-split"
+                    style="flex:1; min-width:160px; max-width:280px; padding:3px 6px; display:inline-block;">
+                    <option value="none">same team</option>
+                    <option value="opposite">oppose / same court</option>
+                    <option value="separate">oppose / any court</option>
+                  </select>
+                </div>
+              </div>
             </details>
+
+            <!-- Court selector (populated by renderQueuePanel) -->
+            <div id="queue-court-select" style="margin-bottom:10px;"></div>
+
+            <!-- Action buttons -->
+            <div class="btn-group" style="margin-bottom:8px;">
+              <button class="btn btn-gold" id="btn-queue-generate">🎲 Generate</button>
+              <button class="btn btn-primary" id="btn-queue-lock" disabled>🔒 Lock &amp; Save</button>
+              <button class="btn btn-danger" id="btn-queue-clear">🗑 Clear</button>
+            </div>
+
+            <!-- Pending preview -->
+            <div id="queue-pending-preview"></div>
+
+            <!-- Queue optimizer breakdown (shown after Generate) -->
+            <div id="queue-optimizer-status" class="optimizer-status hidden" style="margin-top:10px;"></div>
+
+            <!-- Queue table -->
+            <div style="margin-top:16px;">
+              <div style="font-size:0.78rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px;">Player Queue</div>
+              <div id="queue-table-content"></div>
+              <button class="btn btn-secondary mt-1" id="btn-queue-init"
+                style="font-size:0.8rem; padding:5px 14px; margin-top:10px;">
+                Initialize / Refresh Queue
+              </button>
+              <div style="font-size:0.78rem; color:var(--muted); margin-top:6px; line-height:1.45;">
+                Press at session start, and again any time a player's attendance changes (to add or remove them from the queue).
+              </div>
+            </div>
+          </div>
+          </details>
+        </div>
+
+        <!-- Shared optimizer weights — used by both round-based and queue-based generation -->
+        <div class="card mt-2" id="optimizer-weights-card">
+          <details>
+          <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;">
+            <div class="card-title">Optimizer Weights</div>
+            <span class="collapse-arrow" style="font-size:0.72rem; color:var(--green); opacity:0.6;">▼</span>
+          </summary>
+          <div class="collapsible-body">
+          <p style="font-size:0.78rem; color:var(--muted); margin-bottom:12px; margin-top:12px;">
+            Higher values make that factor more important. Set to 0 to ignore. Changes save automatically.
+          </p>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Repeat Partner (this session)</label>
+              <input class="form-control" id="cfg-w-session-partner" type="number" min="0" max="500" step="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Repeat Opponent (this session)</label>
+              <input class="form-control" id="cfg-w-session-opponent" type="number" min="0" max="500" step="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Repeat Partner (prior weeks)</label>
+              <input class="form-control" id="cfg-w-history-partner" type="number" min="0" max="500" step="1">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Repeat Opponent (prior weeks)</label>
+              <input class="form-control" id="cfg-w-history-opponent" type="number" min="0" max="500" step="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Bye Spread (season balance)</label>
+              <input class="form-control" id="cfg-w-bye-variance" type="number" min="0" max="500" step="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Byes per Player (this session)</label>
+              <input class="form-control" id="cfg-w-session-bye" type="number" min="0" max="500" step="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Rank Balance <span style="color:var(--muted); font-weight:400; font-size:0.72rem;">(penalty for unequal team avg ranks)</span></label>
+              <input class="form-control" id="cfg-w-rank-balance" type="number" min="0" max="500" step="1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Rank Std Dev <span style="color:var(--muted); font-weight:400; font-size:0.72rem;">(penalty for mixed-rank players on same court)</span></label>
+              <input class="form-control" id="cfg-w-rank-std-dev" type="number" min="0" max="500" step="1">
+            </div>
+            <div class="form-group" id="cfg-mixed-violation-group" style="display:none;">
+              <label class="form-label">Mixed Violation Penalty <span style="color:var(--muted); font-weight:400; font-size:0.75rem;">(same-gender partnership)</span></label>
+              <input class="form-control" id="cfg-w-mixed-violation" type="number" min="0" max="5000" step="10">
+            </div>
+            <div class="form-group hidden" id="cfg-queue-wait-group">
+              <label class="form-label">Queue Stayer Advantage <span style="color:var(--muted); font-weight:400; font-size:0.72rem;">(priority bonus per remaining stay game; 0 = pure wait-time order)</span></label>
+              <input class="form-control" id="cfg-w-queue-wait" type="number" min="0" max="500" step="1">
+            </div>
+          </div>
+          <div class="form-row" style="margin-top:10px;">
+            <div class="form-group" style="flex:0 0 150px;">
+              <label class="form-label">Optimizer Tries</label>
+              <input class="form-control" id="cfg-tries" type="number" min="10" max="500" value="100">
+            </div>
+            <div class="form-group" style="flex:2;">
+              <label class="form-label" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                <input type="checkbox" id="cfg-local-improve" style="width:16px; height:16px; cursor:pointer;">
+                <span>Post-generation swap optimisation <span style="color:var(--muted); font-weight:400;">(hill-climb player swaps after each attempt to improve pairing quality)</span></span>
+              </label>
+            </div>
+            <div class="form-group" style="flex:0 0 130px;">
+              <label class="form-label">Swap Passes <span style="color:var(--muted); font-weight:400; font-size:0.75rem;">(per attempt)</span></label>
+              <input class="form-control" id="cfg-swap-passes" type="number" min="0" max="20" value="5">
+            </div>
+          </div>
+          <div style="margin-top:10px;">
+            <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:0.82rem;">
+              <input type="checkbox" id="cfg-use-initial-rank" style="width:15px;height:15px;margin-top:2px;">
+              <span>Use initial rankings instead of season standings for rank-based pairing factors
+                <span style="color:var(--muted); font-weight:400;"> — useful when standings don't yet reflect true skill level</span>
+              </span>
+            </label>
+          </div>
+          <div style="margin-top:10px;">
+            <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:0.82rem;">
+              <input type="checkbox" id="cfg-verbose-optimizer" style="width:15px;height:15px;margin-top:2px;">
+              <span>Verbose mode — record score of every attempt and show distribution after generating
+                <span style="color:var(--muted); font-weight:400;"> (adds no time; only affects what is displayed)</span>
+              </span>
+            </label>
           </div>
           </div>
           </details>
         </div>
+
         <div class="card mt-2" id="tournament-card">
           <details>
           <summary class="card-header collapsible-header" style="list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between;">
@@ -745,7 +849,7 @@
               <select class="form-control" id="tourn-mode" style="width:220px;">
                 <option value="single">Single Elimination</option>
                 <option value="double">Double Elimination</option>
-                <option value="rr">Round Robin (reseeded)</option>
+                <option value="rr">Round Robin (reseeded each round)</option>
               </select>
             </div>
             <div class="form-group" style="margin-top:20px;">
@@ -956,6 +1060,7 @@
       <section id="page-leagues" class="tab-panel">
         <div class="page-header">
           <h2>All Leagues</h2>
+          <button class="btn btn-secondary" onclick="showTierInfo()" style="padding:5px 12px; font-size:0.78rem;">Tier Features</button>
           <button class="btn btn-primary" id="btn-show-add-league">+ Add League</button>
         </div>
 
@@ -991,7 +1096,7 @@
               <label class="form-label">Customer ID <span style="color:var(--muted); font-weight:400;\">(optional — filters leagues visible to this customer)</span></label>
               <input class="form-control" id="new-league-customer-id" placeholder="e.g. doug123">
             </div>
-            <div class="form-group">
+            <div class="form-group" id="new-league-sheet-group">
               <label class="form-label">Google Sheet ID <span style="color:var(--muted); font-weight:400;">(optional — leave blank to auto-create)</span></label>
               <input class="form-control" id="new-league-sheet" placeholder="Leave blank to auto-create">
             </div>
@@ -1045,7 +1150,84 @@
         <div id="h2h-content"></div>
       </section>
 
+      <!-- ═══ TIMERS ═══ -->
+      <section id="page-timers" class="tab-panel">
+        <div style="display:flex; justify-content:flex-end; margin-bottom:12px;">
+          <button id="btn-add-timer" class="btn btn-primary" onclick="addTimer()" style="padding:7px 16px; font-size:0.82rem;">+ Add Timer</button>
+        </div>
+        <div id="timers-container"></div>
+      </section>
+
     </main>
+  </div>
+</div>
+
+<!-- Timer Config Modal -->
+<div id="timer-config-modal" style="display:none; position:fixed; inset:0; z-index:300;
+  background:rgba(0,0,0,0.72); backdrop-filter:blur(4px);
+  align-items:center; justify-content:center;">
+  <div style="background:var(--navy-mid); border:1px solid rgba(255,255,255,0.12); border-radius:14px;
+    padding:26px 28px 22px; max-width:380px; width:92%; position:relative;">
+    <button onclick="document.getElementById('timer-config-modal').style.display='none'"
+      style="position:absolute; top:12px; right:14px; background:none; border:none;
+             color:rgba(255,255,255,0.4); font-size:1.3rem; cursor:pointer; line-height:1;">✕</button>
+    <input type="hidden" id="tmr-cfg-index" value="0">
+    <div style="font-family:var(--font-display); font-weight:700; font-size:1.1rem; letter-spacing:0.05em; text-transform:uppercase; margin-bottom:18px;">Timer Settings</div>
+
+    <!-- Title -->
+    <div class="form-group" style="margin-bottom:14px;">
+      <label class="form-label">Timer Label</label>
+      <input class="form-control" id="tmr-cfg-title" type="text" placeholder="e.g. Game Timer" maxlength="40">
+    </div>
+
+    <!-- Starting time -->
+    <div class="form-group" style="margin-bottom:14px;">
+      <label class="form-label">Starting Time</label>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <input class="form-control" id="tmr-cfg-min" type="number" min="0" max="99" style="width:70px; text-align:center;" placeholder="15">
+        <span style="color:var(--muted); font-size:1.1rem; font-weight:700;">:</span>
+        <input class="form-control" id="tmr-cfg-sec" type="number" min="0" max="59" style="width:70px; text-align:center;" placeholder="00">
+        <span style="font-size:0.78rem; color:var(--muted); margin-left:4px;">min : sec</span>
+      </div>
+    </div>
+
+    <!-- Warning -->
+    <div class="form-group" style="margin-bottom:6px;">
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.85rem; font-weight:500; color:var(--white);">
+        <input type="checkbox" id="tmr-cfg-warn-on" onchange="_syncWarnFields()" style="width:16px; height:16px; accent-color:var(--green);">
+        Enable warning when time remaining reaches…
+      </label>
+    </div>
+    <div id="tmr-warn-group" style="margin-bottom:14px; padding:12px 14px; background:rgba(255,255,255,0.04); border-radius:8px;">
+      <div style="display:flex; align-items:center; gap:6px; margin-bottom:10px;">
+        <input class="form-control" id="tmr-cfg-warn-min" type="number" min="0" max="99" style="width:70px; text-align:center;" placeholder="2">
+        <span style="color:var(--muted); font-size:1.1rem; font-weight:700;">:</span>
+        <input class="form-control" id="tmr-cfg-warn-sec" type="number" min="0" max="59" style="width:70px; text-align:center;" placeholder="00">
+        <span style="font-size:0.78rem; color:var(--muted); margin-left:4px;">min : sec left</span>
+      </div>
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.83rem; color:var(--white);">
+        <input type="checkbox" id="tmr-cfg-warn-sound" style="width:15px; height:15px; accent-color:var(--green);">
+        Play warning sound (in addition to red flash)
+      </label>
+    </div>
+
+    <!-- Court assignment -->
+    <div id="tmr-court-section" style="display:none; margin-bottom:14px; padding:12px 14px; background:rgba(255,255,255,0.04); border-radius:8px;"></div>
+
+    <!-- Count negative -->
+    <div class="form-group" style="margin-bottom:22px;">
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.85rem; font-weight:500; color:var(--white);">
+        <input type="checkbox" id="tmr-cfg-neg" style="width:16px; height:16px; accent-color:var(--green);">
+        Continue counting after 0:00 (show negative time)
+      </label>
+    </div>
+
+    <!-- Actions -->
+    <div style="display:flex; justify-content:flex-end; gap:8px;">
+      <button class="btn btn-secondary" onclick="document.getElementById('timer-config-modal').style.display='none'"
+        style="padding:7px 16px; font-size:0.8rem;">Cancel</button>
+      <button class="btn btn-primary" onclick="saveTimerConfig()" style="padding:7px 20px; font-size:0.8rem;">Save</button>
+    </div>
   </div>
 </div>
 
@@ -1124,6 +1306,49 @@
   </div>
 </div>
 
+<!-- Confirm Admin Password Modal (required before changing admin password) -->
+<div id="confirm-pw-modal" style="display:none; position:fixed; inset:0; z-index:300;
+  background:rgba(0,0,0,0.7); backdrop-filter:blur(4px);
+  align-items:center; justify-content:center;">
+  <div style="background:#152232; border:1px solid rgba(255,255,255,0.12); border-radius:14px;
+    padding:28px 28px 22px; max-width:380px; width:92%; position:relative;">
+    <button onclick="document.getElementById('confirm-pw-modal').style.display='none'"
+      style="position:absolute; top:12px; right:14px; background:none; border:none;
+             color:rgba(255,255,255,0.35); font-size:1.3rem; cursor:pointer; line-height:1;">✕</button>
+    <div style="font-weight:600; font-size:0.95rem; color:var(--white); margin-bottom:6px;">Confirm Current Password</div>
+    <div style="font-size:0.78rem; color:var(--muted); margin-bottom:18px;">
+      Enter your current admin password to confirm this change.
+    </div>
+    <div class="form-group">
+      <label class="form-label">Current Password</label>
+      <input class="form-control" id="confirm-pw-input" type="password"
+        inputmode="text" autocomplete="current-password" placeholder="Current admin password">
+    </div>
+    <div id="confirm-pw-error" style="color:var(--danger); font-size:0.8rem; margin-bottom:10px; display:none;"></div>
+    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:16px;">
+      <button class="btn btn-secondary" onclick="document.getElementById('confirm-pw-modal').style.display='none'"
+        style="padding:7px 18px;">Cancel</button>
+      <button class="btn btn-primary" id="confirm-pw-save-btn" style="padding:7px 18px;">Confirm &amp; Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Tier Info Modal -->
+<div id="tier-info-modal" style="display:none; position:fixed; inset:0; z-index:200;
+  background:rgba(0,0,0,0.7); backdrop-filter:blur(4px);
+  align-items:center; justify-content:center;">
+  <div style="background:#152232; border:1px solid rgba(255,255,255,0.12); border-radius:14px;
+    padding:28px 28px 22px; max-width:620px; width:95%; position:relative; max-height:82vh; overflow-y:auto;">
+    <button onclick="document.getElementById('tier-info-modal').style.display='none'"
+      style="position:absolute; top:12px; right:14px; background:none; border:none;
+             color:rgba(255,255,255,0.35); font-size:1.3rem; cursor:pointer; line-height:1;">✕</button>
+    <div style="font-weight:600; font-size:0.95rem; color:var(--white); margin-bottom:4px;">Feature Tiers</div>
+    <div style="font-size:0.75rem; color:var(--muted); margin-bottom:18px;">All tiers have advanced league management capabilities, but higher tiers unlock many nice-to-have features that took lots of effort to develop, debug, host, and support. 
+	Consider supporting the app developer's efforts to make league management affordable, and to make even more features possible! </div>
+    <div id="tier-info-table"></div>
+  </div>
+</div>
+
 <!-- Changelog modal -->
 <div id="changelog-modal" style="display:none; position:fixed; inset:0; z-index:200;
   background:rgba(0,0,0,0.65); backdrop-filter:blur(4px); align-items:center; justify-content:center;">
@@ -1151,6 +1376,8 @@
   <div id="pairing-overlay-msg" style="color:var(--muted); font-size:0.82rem;"></div>
 </div>
 <style>
+  /* Hide winner-settings summary text when expanded */
+  #queue-winner-details[open] #queue-winner-summary { display: none; }
   /* Hide number input spinners */
   input[type=number].score-input::-webkit-outer-spin-button,
   input[type=number].score-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -1192,7 +1419,7 @@
   }, true);
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="js/settings.js?v=1.4.4"></script>
+<script src="js/settings.js?v=1.4.7"></script>
   <!-- Google Analytics — loads only if GA_MEASUREMENT_ID is set in settings.js -->
   <script>
     window.__gaReady = false;
@@ -1214,14 +1441,15 @@
       window.__gaReady = true;
     });
   </script>
-<script src="js/api.js?v=1.4.4"></script>
-<script src="js/push.js?v=1.4.4"></script>
-<script src="js/auth.js?v=1.4.4"></script>
-<script src="js/pairings.js?v=1.4.4"></script>
-<script src="js/reports.js?v=1.4.4"></script>
-<script src="js/tournament.js?v=1.4.4"></script>
-<script src="js/changelog.js?v=1.4.4"></script>
-<script src="js/admin.js?v=1.4.4"></script>
+<script src="js/api.js?v=1.4.7"></script>
+<script src="js/push.js?v=1.4.7"></script>
+<script src="js/auth.js?v=1.4.7"></script>
+<script src="js/pairings.js?v=1.4.7"></script>
+<script src="js/reports.js?v=1.4.7"></script>
+<script src="js/tournament.js?v=1.4.7"></script>
+<script src="js/changelog.js?v=1.4.7"></script>
+<script src="js/timers.js?v=1.4.7"></script>
+<script src="js/admin.js?v=1.4.7"></script>
 <script>
 (function() {
   const toggle   = document.getElementById('nav-toggle');

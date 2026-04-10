@@ -188,6 +188,7 @@ tr:hover td { background:rgba(255,255,255,0.02); }
     <a class="nav-link" href="#pairing-algorithm">Pairing Algorithm</a>
     <a class="nav-link" href="#game-formats">Game Formats</a>
     <a class="nav-link" href="#scores">Score Entry</a>
+	<a class="nav-link" href="#timers">Score Entry</a>
 
     <div class="nav-section-label">Tournaments</div>
     <a class="nav-link" href="#tournaments">Tournament Overview</a>
@@ -200,6 +201,7 @@ tr:hover td { background:rgba(255,255,255,0.02); }
     <a class="nav-link" href="#player-report">Player Reports</a>
     <a class="nav-link" href="#email">Email Notifications</a>
     <a class="nav-link" href="#head-to-head-report">Head-to-Head Analysis</a>
+	  <a class="nav-link" href="#messaging">Messaging</a>
 
     <div class="nav-section-label">Player Dashboard</div>
     <a class="nav-link" href="#player-view">Player View</a>
@@ -233,31 +235,31 @@ tr:hover td { background:rgba(255,255,255,0.02); }
     <span class="section-num">02</span>
     <h1>Login &amp; Authentication</h1>
     <h2>Player Login</h2>
-    <p>Three-step wizard: select league → select name → enter PIN. URL parameters can skip any or all steps and can be combined freely:</p>
+    <p>Three-step wizard: select league → select name → enter password. URL parameters can skip any or all steps and can be combined freely:</p>
     <div class="table-wrap"><table>
       <tr><th>Parameter</th><th>Effect</th><th>Example</th></tr>
       <tr><td><code>?id=</code></td><td>Filters the league dropdown to leagues belonging to that organisation (plus unassigned leagues)</td><td><code>?id=springfield</code></td></tr>
       <tr><td><code>?league=</code></td><td>Pre-selects a specific league by its ID slug or display name, skipping step 1</td><td><code>?league=tuesday-doubles</code></td></tr>
-      <tr><td><code>?player=</code></td><td>Pre-selects a player by name, skipping step 2 and jumping straight to PIN entry</td><td><code>?player=Doug</code></td></tr>
-    <tr><td><code>?player=</code></td><td>Pre-selects a player by name, skipping step 2 and jumping straight to PIN entry</td><td><code>?player=Doug</code></td></tr>
- <tr><td><code>?player=</code></td><td>Pre-selects a player by name, skipping step 2 and jumping straight to PIN entry</td><td><code>?player=Doug</code></td></tr>
+      <tr><td><code>?player=</code></td><td>Pre-selects a player by name, skipping step 2 and jumping straight to password entry</td><td><code>?player=Doug</code></td></tr>
+    <tr><td><code>?player=</code></td><td>Pre-selects a player by name, skipping step 2 and jumping straight to password entry</td><td><code>?player=Doug</code></td></tr>
+ <tr><td><code>?player=</code></td><td>Pre-selects a player by name, skipping step 2 and jumping straight to password entry</td><td><code>?player=Doug</code></td></tr>
  
 	</table></div>
     <p>All three can be combined in one URL. For example:</p>
     <pre style="background:rgba(255,255,255,0.05); border-radius:8px; padding:12px 16px; font-size:0.82rem; overflow-x:auto; color:var(--gold);">index.html?id=springfield&amp;league=tuesday-doubles&amp;player=Doug</pre>
-    <p>This filters to Springfield leagues, selects Tuesday Doubles, pre-fills Doug's name, and drops straight to the PIN screen — one tap from a bookmark or home-screen shortcut.</p>
+    <p>This filters to Springfield leagues, selects Tuesday Doubles, pre-fills Doug's name, and drops straight to the password screen — one tap from a bookmark or home-screen shortcut.</p>
     <h2>Find My League</h2>
     <p>If a player arrives without a <code>?id=</code> URL and doesn't see their league in the dropdown, a <strong>Find My League</strong> section appears below the dropdown. They can enter either their Organisation ID <em>or</em> a partial league name (or both) and click the search button. Matching leagues are added to the dropdown and auto-selected if only one is found.</p>
     <h2>Admin Login</h2>
-    <p>Clicking <strong>🔐 Admin Login</strong> opens a dedicated password screen — completely separate from the player PIN system. Two tabs:</p>
+    <p>Clicking <strong>🔐 Admin Login</strong> opens a dedicated password screen — completely separate from the player passowrd system. Two tabs:</p>
     <div class="table-wrap"><table>
       <tr><th>Path</th><th>Password location</th><th>Access</th></tr>
       <tr><td>League Admin</td><td>Config sheet — <code>adminPassword</code> field</td><td>Full league control</td></tr>
       <tr><td>App Manager</td><td>GAS Script Properties — <code>APP_MANAGER_PASSWORD</code></td><td>All leagues, limits, customer IDs</td></tr>
     </table></div>
-    <div class="note"><div class="note-label">Security</div>No player can accidentally gain admin access by choosing the same PIN as the admin password — the two systems are completely separate.</div>
+    <div class="note"><div class="note-label">Security</div>No player can accidentally gain admin access by choosing the same password as the admin password — the two systems are completely separate.</div>
     <h2>Admin Assistants</h2>
-    <p>Assistants log in through the <strong>regular player PIN</strong> path (not Admin Login). Because their role is set to <code>assistant</code> in the Players page, the app automatically routes them to <code>admin.html</code> with restricted access.</p>
+    <p>Assistants log in through the <strong>regular player password</strong> path (not Admin Login). Because their role is set to <code>assistant</code> in the Players page, the app automatically routes them to <code>admin.html</code> with restricted access.</p>
   </section>
 
   <!-- ── Roles ── -->
@@ -269,9 +271,9 @@ tr:hover td { background:rgba(255,255,255,0.02); }
       <tr><th>Role</th><th>Access</th><th>Login path</th></tr>
       <tr><td><span class="role-badge role-manager">★ App Manager</span></td><td>Everything — all leagues, limits, customer IDs. Platform owner.</td><td>Admin Login → App Manager tab</td></tr>
       <tr><td><span class="role-badge role-admin">League Admin</span></td><td>Full league control: players, settings, pairings, scores, emails, approvals.</td><td>Admin Login → League Admin tab</td></tr>
-      <tr><td><span class="role-badge role-assistant">Admin Assistant</span></td><td>Generate &amp; lock pairings, mark attendance, enter scores, view reports. Cannot change settings, delete scores, manage players, or send emails.</td><td>Player PIN → auto-routed to admin.html</td></tr>
+      <tr><td><span class="role-badge role-assistant">Admin Assistant</span></td><td>Generate &amp; lock pairings, mark attendance, enter scores, view reports. Cannot change settings, delete scores, manage players, or send emails.</td><td>Player password → auto-routed to admin.html</td></tr>
       <tr><td><span class="role-badge role-scorer">Scorer</span></td><td>Everything a player sees plus score entry from the player dashboard.</td><td>Player PIN → player.html</td></tr>
-      <tr><td><span class="role-badge role-player">Player</span> <span class="role-badge role-player">Spectator</span></td><td>Player: view pairings, scores, standings, tournaments. Spectator: view only, never in pairings.</td><td>Player PIN → player.html</td></tr>
+      <tr><td><span class="role-badge role-player">Player</span> <span class="role-badge role-player">Spectator</span></td><td>Player: view pairings, scores, standings, tournaments. Spectator: view only, never in pairings.</td><td>Player password → player.html</td></tr>
     </table></div>
     <h3>What Assistants Can and Cannot Do</h3>
     <div class="table-wrap"><table>
@@ -282,7 +284,7 @@ tr:hover td { background:rgba(255,255,255,0.02); }
       <tr><td>Enter new scores</td><td>✓</td><td>✓</td></tr>
       <tr><td>Delete / overwrite scores</td><td>✓</td><td>✗</td></tr>
       <tr><td>Clear pairings</td><td>✓</td><td>✗</td></tr>
-      <tr><td>View/manage players &amp; PINs</td><td>✓</td><td>✗</td></tr>
+      <tr><td>View/manage players &amp; passwords</td><td>✓</td><td>✗</td></tr>
       <tr><td>Change league settings</td><td>✓</td><td>✗</td></tr>
       <tr><td>Send emails</td><td>✓</td><td>✗</td></tr>
     </table></div>
@@ -341,9 +343,9 @@ tr:hover td { background:rgba(255,255,255,0.02); }
     <div class="table-wrap"><table>
       <tr><th>Field</th><th>Description</th></tr>
       <tr><td>Player Handle</td><td>Unique identifier used throughout the app. Doesn't have to be a full name.</td></tr>
-      <tr><td>PIN</td><td>Alpha-Numeric login code. Up to 8 characters.  Stored in the sheet.</td></tr>
+      <tr><td>Password</td><td>Alpha-Numeric login code. Up to 8 characters.  Stored in the sheet.</td></tr>
       <tr><td>Group</td><td>M / F / Either — used for Mixed Doubles pairing gender balance.</td></tr>
-      <tr><td>Email</td><td>For PIN recovery and email reports.</td></tr>
+      <tr><td>Email</td><td>For password recovery and email reports.</td></tr>
       <tr><td>Notify</td><td>If checked, player receives session result emails.</td></tr>
       <tr><td>Init Rank</td><td>Starting rank before season standings exist. Used for pairing balance and tournament seeding. Duplicates allowed — alphabetical tiebreak applied.</td></tr>
       <tr><td>Role</td><td>Access level. See <a href="#roles">Roles</a>.</td></tr>
@@ -361,7 +363,7 @@ tr:hover td { background:rgba(255,255,255,0.02); }
     <p>Enable on the Setup page with <strong>Allow self-registration</strong>. A <em>Register as New Player</em> button appears on the login page.</p>
     <h2>Registration Flow</h2>
     <ol>
-      <li>Player clicks Register, enters the <strong>Invite Code</strong> (provided by admin), their handle, email (optional), gender group, notification preference, PIN, and role (Player or Spectator).</li>
+      <li>Player clicks Register, enters the <strong>Invite Code</strong> (provided by admin), their handle, email (optional), gender group, notification preference, password, and role (Player or Spectator).</li>
       <li>GAS validates the code, checks the pending cap, and checks for duplicate handles.</li>
       <li>New player is written to the sheet as <strong>inactive</strong>.</li>
       <li>Admin receives a notification email (if Reply-To is configured).</li>
@@ -386,7 +388,7 @@ tr:hover td { background:rgba(255,255,255,0.02); }
     <h1>Multi-League &amp; Customer IDs</h1>
     <p>The app supports unlimited leagues from one deployment. The master registry Google Sheet lists all leagues.</p>
     <h2>Customer ID Filtering</h2>
-    <p>Each league in the registry can have a <strong>Customer ID</strong> (col 13). This controls which leagues appear in the login dropdown:</p>
+    <p>Each league in the registry can have a <strong>Customer ID</strong> This controls which leagues appear in the login dropdown:</p>
     <ul>
       <li><code>index.html?id=abc</code> — shows leagues with <code>customerId = abc</code> plus leagues with no ID</li>
       <li>No <code>?id=</code> — shows only leagues with <strong>no</strong> customer ID assigned</li>
@@ -394,10 +396,11 @@ tr:hover td { background:rgba(255,255,255,0.02); }
     <p>This lets you give each customer a URL that shows only their leagues, while shared/public leagues remain visible to all.</p>
     <h2>New Customer Setup</h2>
     <ol>
-      <li>App Manager assigns a customer ID (e.g. their organisation slug).</li>
+      <li>App Manager assigns a customer ID (e.g. their organization slug).</li>
       <li>Creates an initial league with that ID via the All Leagues page.</li>
       <li>Shares the URL: <code>index.html?id=&lt;customerId&gt;</code></li>
       <li>All leagues the customer creates inherit their ID automatically.</li>
+		<li>Admin can install a simple script on a google sheet and provide the App the URL so that any messages sent within the app will come from the admin's gmail account instead of the app's account.</li>
     </ol>
     <div class="note"><div class="note-label">Note</div>Customer IDs are a display filter, not a security mechanism. Anyone who knows a league's slug can access it via <code>?league=slug</code>.</div>
     <h2>Hidden Leagues</h2>
@@ -433,45 +436,86 @@ tr:hover td { background:rgba(255,255,255,0.02); }
   <section class="section" id="attendance">
     <span class="section-num">10</span>
     <h1>Attendance &amp; Sit-Out</h1>
-    <p>Mark attendance before generating pairings. Only <strong>In</strong> players are included in generation.</p>
+    <p>Mark attendance as OUT before generating pairings. Only <strong>In</strong> players are included in generation. Can set back to IN and re-generate later rounds if comes back.</p>
     <div class="table-wrap"><table>
       <tr><th>State</th><th>Meaning</th></tr>
       <tr><td><strong style="color:var(--green-light);">In</strong></td><td>Present and included in pairing generation.</td></tr>
-      <tr><td><strong style="color:var(--danger);">Out</strong></td><td>Absent for this session.</td></tr>
-      <tr><td><strong style="color:var(--muted);">TBD</strong></td><td>Status not yet set — not included in generation.</td></tr>
-      <tr><td><strong style="color:var(--gold);">Sit Out</strong></td><td>Present but temporarily sitting out mid-session. Stays in standings and history. Excluded from pairing regeneration until switched back to In.</td></tr>
+      <tr><td><strong style="color:var(--danger);">Out</strong></td><td>Absent for this session or round if individual rounds are generated.</td></tr>
+		<tr>
+			<td>
+				<strong style="color:var(--muted);">TBD</strong>
+			</td>
+			<td>Status not yet set — not included in generation.</td>
+		</tr>
     </table></div>
     <p>Click any attendance cell to cycle through states. Changes save automatically. Spectator-role players only cycle between Out and TBD. The <strong>Players In</strong> totals row at the bottom of the grid updates live as you click cells — no page refresh needed.</p>
     <div class="note"><div class="note-label">Mid-session sit-out</div>If a player needs to sit out mid-session, mark them <strong>Sit Out</strong> and regenerate the remaining rounds. They'll be excluded from the new pairings but their existing scores and standings are preserved.</div>
   </section>
 
   <!-- ── Pairings ── -->
-  <section class="section" id="pairings">
-    <span class="section-num">11</span>
-    <h1>Generating Pairings</h1>
-    <p>The Pairings page has three collapsible sections: <strong>Generate Pairings</strong>, <strong>Tournament Mode</strong>, and <strong>Edit / Add Pairing</strong>.</p>
-    <h2>Generate Pairings Flow</h2>
-    <ol>
-      <li>Mark attendance for the session.</li>
-      <li>Select scope: All rounds, All remaining rounds, or a specific round number.</li>
-      <li>Click <strong>🎲 Generate Best Pairings</strong>. A spinner shows while the optimizer runs.</li>
-      <li>Review the proposed pairings in the preview below.</li>
-		<li>
-			Click <strong>🎲 Generate Best Pairings</strong> as many times as you want to search for better pairings. Will only replace if find a better set..
-		</li>
-		<li>
-			Click <strong>Start Fresh</strong> if you want to discard the best pairings and start over. Use this if weights changed or if the available players changed.
-		</li>
-      <li>Click <strong>🔒 Lock &amp; Save</strong> to commit them to the sheet.</li>
-    </ol>
-    <div class="warn"><div class="note-label">Warning</div>Pairings are not saved until you click Lock &amp; Save. Navigating away will lose unsaved pairings.</div>
-    <h2>Partial Round Generation</h2>
-    <p>You can generate individual rounds independently. The optimizer pre-warms from already-locked rounds, so it's aware of partners and opponents from earlier rounds when generating later ones.</p>
-    <h2>Editing Pairings</h2>
-    <p>Use <strong>Edit / Add Pairing</strong> to manually create or modify individual games. Select session, round, and court, then click Load to edit an existing pairing or fill in new values to add one. Corresponding score entries are updated to match.</p>
-    <h2>Clearing Pairings</h2>
-    <p>Use <strong>🗑 Clear Rounds</strong> to remove generated pairings. Scope selector controls which rounds are cleared. Existing scores for cleared rounds are also removed.</p>
-  </section>
+	<section class="section" id="pairings">
+		<span class="section-num">11</span>
+		<h1>Generating Pairings</h1>
+		<p>
+			The Pairings page has three collapsible sections: <strong>Generate Pairings</strong>, <strong>Tournament Mode</strong>, and <strong>Edit / Add Pairing</strong>.
+		</p>
+		<h2>
+			Two types of Generation are possible based on a league config setting: Round-based and Queue-based.
+		</h2>
+		<h3>Generate Rounds based Pairings Flow</h3>
+		<ol>
+			<li>Mark attendance for the session.</li>
+			<li>Select scope: All rounds, All remaining rounds, or a specific round number.</li>
+			<li>
+				Click <strong>🎲 Generate Best Pairings</strong>. A spinner shows while the optimizer runs.
+			</li>
+			<li>Review the proposed pairings in the preview below.</li>
+			<li>
+				Click <strong>🎲 Generate Best Pairings</strong> as many times as you want to search for better pairings. Will only replace if find a better set..
+			</li>
+			<li>
+				Click <strong>Start Fresh</strong> if you want to discard the best pairings and start over. Use this if weights changed or if the available players changed.
+			</li>
+			<li>
+				Click <strong>🔒 Lock &amp; Save</strong> to commit them to the sheet.
+			</li>
+		</ol>
+		<h3>Generate Queue-based Pairings Flow</h3>
+		<ol>
+			<li> This option works best if there are many more players than courts, and you want to keep the courts busy instead of waiting for all games to finish before starting next round.</li>
+			<li>Mark attendance for which players are currently available to play.</li>
+			<li>Configure if winners get to remain on courts for a maximum number of games before returning to the queue, and if they stay together, split and play against each other, or split and play again on different courts.</li>
+			<li>Select which courts to assign pairings too from a list of courts not currently being used (pairs assigned but no score reported yet).</li>
+			<li>
+				Click <strong>🎲 Generate Best Pairings</strong>. A spinner shows while the optimizer runs.
+			</li>
+			<li> in addition to the factors used during round-based generation, a weighted factor also looks at time waiting in queue to favor players who have not played the longest.</li>
+			<li>Review the proposed pairings in the preview below.</li>
+			<li>
+				Click <strong>🎲 Generate Best Pairings</strong> as many times as you want to search for better pairings. Will only replace if find a better set..
+			</li>
+			<li>
+				Click <strong>Start Fresh</strong> if you want to discard the best pairings and start over. Use this if weights changed or if the available players changed.
+			</li>
+			<li>
+				Click <strong>🔒 Lock &amp; Save</strong> to commit them to the sheet.
+			</li>
+			<li> Pairings assigned by queue-based method do not count toward or against attendance requirements.</li>
+		</ol>
+		<div class="warn">
+			<div class="note-label">Warning</div>Pairings are not saved until you click Lock &amp; Save. Navigating away will lose unsaved pairings.
+		</div>
+		<h3>Partial Round Generation</h3>
+		<p>You can generate individual rounds independently. The optimizer pre-warms from already-locked rounds, so it's aware of partners and opponents from earlier rounds when generating later ones.</p>
+		<h3>Editing Pairings</h3>
+		<p>
+			Use <strong>Edit / Add Pairing</strong> to manually create or modify individual games. Select session, round, and court, then click Load to edit an existing pairing or fill in new values to add one. Corresponding score entries are updated to match.
+		</p>
+		<h3>Clearing Pairings</h3>
+		<p>
+			Use <strong>🗑 Clear Rounds</strong> to remove generated pairings. Scope selector controls which rounds are cleared. Existing scores for cleared rounds are also removed.
+		</p>
+	</section>
 
   <!-- ── Pairing Algorithm ── -->
   <section class="section" id="pairing-algorithm">
@@ -479,6 +523,7 @@ tr:hover td { background:rgba(255,255,255,0.02); }
     <h1>Pairing Algorithm</h1>
     <p>The optimizer evaluates up to 500 random candidate solutions and keeps the best one. Each candidate is scored by a weighted sum of penalty factors — lower score = better pairing.</p>
 	  <p>Within each evaluation it swaps players within the court to see if that improves the score. </p>
+	  <p>Pairing with lots of courts and players will automatically be restricted due to exponentially harder problem to solve.</p>
 	  <p>After checking all the solutions for the best one, it then does player swapping within the round and between rounds to determine if any swaps would improve the score.</p>
 
 	  <div class="table-wrap"><table>
@@ -491,14 +536,20 @@ tr:hover td { background:rgba(255,255,255,0.02); }
       <tr><td>History Partners</td><td>10</td><td>Penalty based on full-season repeat partner history.</td></tr>
       <tr><td>Rank Std Dev</td><td>8</td><td>Penalises games where all four player ranks are very spread out.</td></tr>
       <tr><td>History Opponents</td><td>3</td><td>Penalty based on full-season repeat opponent history.</td></tr>
+		  <tr>
+			  <td>Number of players assigned to courts while waiting</td>
+			  <td>3</td>
+			  <td>Penalty for not being in queue very long. (only applies in queue-based generation).</td>
+		  </tr>
     </table></div>
-    <p>All weights are configurable in Setup → Optimizer Weights. Set to 0 to ignore a factor entirely.</p>
+    <p>All weights are configurable in Pairings -> Optimizer Weights. Set to 0 to ignore a factor entirely.</p>
     <h2>Weight Calibration</h2>
     <p>Raw penalty values are on different scales. Before scoring, each weight is automatically calibrated by sampling real distributions so that all factors contribute proportionally to their configured importance.</p>
     <h2>Ranking Integration</h2>
-    <p>Player ranks feed into pairing decisions. For players without season standings, <strong>Init Rank</strong> provides a fallback. Players with no rank get the median rank position.</p>
-    <h2>Bye Assignment</h2>
-    <p>Players with the fewest session byes sit out first. Season bye count is the secondary tiebreaker. Any players left over after courts are filled also receive byes automatically.</p>
+    <p>Player ranks feed into pairing decisions. For players without season standings, <strong>Initial Rank</strong> provides a fallback. Players with no rank get the median rank position.</p>
+	  <p>League setting can also set to always use the initial rankings instead of current rank.</p>
+	  <h2>Bye Assignment</h2>
+    <p>Players with the fewest session byes sit out first if the Bye factor is weighted high. Season bye count is another factor that can be weighted. Any players left over after courts are filled also receive byes automatically.</p>
   </section>
 
   <!-- ── Game Formats ── -->
@@ -533,10 +584,36 @@ tr:hover td { background:rgba(255,255,255,0.02); }
     </ul>
     <div class="note"><div class="note-label">Players entering scores</div>Players with <strong>Scorer</strong> role or <strong>Can Score</strong> enabled can enter scores from the player dashboard. Their scores are merged with existing scores — they cannot clear or overwrite other entries.</div>
   </section>
+	<!-- ── Timers ── -->
+	<section class="section" id="timers">
+		<span class="section-num">15</span>
+		<h1>Timer configuration</h1>
+		<p>
+			Up to three timers can be use to keep track of how long matches are going if time limits are used.
+		</p>
+			
+		
+		<ul>
+			<li>Each timer is collapsible — a ▲/▼ triangle on the left of the round header toggles it. Time remaining still shows when collapsed.</li>
+			<li>
+				Each timer can set the initial count, when a warning beep is sounded.  Large numbers can be used to let players see it from the court, and turn red when time is about to expire.
+			</li>
+			<li>Timers can be paused, reset, or muted.</li>
+			<li>
+				Timers can be associated with particular courts, and anyone playing on those courts will be able to see the timer on their dashboard
+			</li>
+			<li>If the player has the site bookmarked to their phone home screen, they will also receive alerts when the warning time is reached and player has not opted out of receiving messages from the app.</li>
+			<li> The warning will also show on an Apple Watch if paired with the phone. </li>
+
+			
+		</ul>
+		
+		
+	</section>
 
   <!-- ── Tournaments ── -->
   <section class="section" id="tournaments">
-    <span class="section-num">15</span>
+    <span class="section-num">16</span>
     <h1>Tournament Overview</h1>
     <p>Tournaments run within a regular session. Tournament pairings are saved as type <code>tourn-game</code>, which distinguishes them from regular round-robin pairings in standings and displays.</p>
     <p>All three modes use the same <strong>seeding priority</strong>: season standings rank → Init Rank → alphabetical.</p>
@@ -554,7 +631,7 @@ tr:hover td { background:rgba(255,255,255,0.02); }
   </section>
 
   <section class="section" id="single-elim">
-    <span class="section-num">15a</span>
+    <span class="section-num">16a</span>
     <h1>Single Elimination</h1>
     <p>One loss eliminates a player or team. Fastest format — ideal for end-of-season finales.</p>
     <ul>
@@ -566,7 +643,7 @@ tr:hover td { background:rgba(255,255,255,0.02); }
   </section>
 
   <section class="section" id="double-elim">
-    <span class="section-num">15b</span>
+    <span class="section-num">16b</span>
     <h1>Double Elimination</h1>
     <p>Two separate brackets — Winners and Losers. Players need two losses to be eliminated.</p>
     <ul>
@@ -579,7 +656,7 @@ tr:hover td { background:rgba(255,255,255,0.02); }
   </section>
 
   <section class="section" id="round-robin">
-    <span class="section-num">15c</span>
+    <span class="section-num">16c</span>
     <h1>Round Robin (Reseeded)</h1>
     <p>Everyone plays every round — no eliminations. The player with the most wins at the end is champion. Ideal for odd player counts since the bye rotates automatically.</p>
     <ul>
@@ -593,7 +670,7 @@ tr:hover td { background:rgba(255,255,255,0.02); }
 
   <!-- ── Standings ── -->
   <section class="section" id="standings">
-    <span class="section-num">16</span>
+    <span class="section-num">17</span>
     <h1>Standings</h1>
     <p>Three tabs on the Standings page:</p>
     <ul>
@@ -607,7 +684,7 @@ tr:hover td { background:rgba(255,255,255,0.02); }
 
   <!-- ── Player Report ── -->
   <section class="section" id="player-report">
-    <span class="section-num">17</span>
+    <span class="section-num">18</span>
     <h1>Player Reports</h1>
     <p>Found under Reports → Player Report. When a player opens this page, it automatically defaults to their own name and loads their report immediately — no manual selection needed. They can then choose any other player from the dropdown.</p>
     <p>Shows for a selected player:</p>
@@ -622,7 +699,7 @@ tr:hover td { background:rgba(255,255,255,0.02); }
 
   <!-- ── Email ── -->
   <section class="section" id="email">
-    <span class="section-num">18</span>
+    <span class="section-num">19</span>
     <h1>Email Notifications</h1>
     <p>Four types of email are available. All use the <strong>Reply-To</strong> address from Setup if configured.</p>
     <div class="table-wrap"><table>
@@ -637,7 +714,7 @@ tr:hover td { background:rgba(255,255,255,0.02); }
 
   <!-- ── Head-to-Head ── -->
   <section class="section" id="head-to-head-report">
-    <span class="section-num">19</span>
+    <span class="section-num">20</span>
     <h1>Head-to-Head Analysis (only available for Admin)</h1>
     <p>Found under Reports → Head-to-Head. Shows how often every pair of players has faced each other, across two tabs.</p>
     <h2>Partners Tab</h2>
@@ -648,10 +725,27 @@ tr:hover td { background:rgba(255,255,255,0.02); }
     <p>For each player: multiply each partner's/opponent's rank by the number of games played with them, sum those values, then divide by total games. Ranks come from current season standings, with Init Rank as fallback, and median rank for anyone without a rank yet.</p>
     <p>Both tabs have a <strong>session filter</strong> — select a specific session or all sessions to see how pairings evolved over the season.</p>
   </section>
+	<!-- ── Messaging ── -->
+	<section class="section" id="messaging">
+		<span class="section-num">21</span>
+		<h1>Various options are available for the admin to communicate with the players right from within the app.</h1>
+		<p>Admin can compose an email and automatically select what information to include such as leage dates/times, location, and standings.</p>
+		
+		<p>
+			Admin may also select a session and send an email asking for player who are still TBD for that session to provide status. The email has simple buttons for them to push without having to open the app to mark there status for all sessions that do not have scores yet.
+		</p>
+		<p>The email will also provide a button where they can request their personal player report be emailed to them without even having to open the app.</p>
+		<p>
+			Admin may also send alerts to players who have saved the app to their phone desktop and have opted in to receiving notifications. 
+		</p>
+		<p>A future enhancemnet might support players sending messages to each other to be able to connect with each other outside of the league. </p>
+		<p>The admin also has a form for submitting features requests or bug reports to the app developer.</p>
+		
+	</section>
 
   <!-- ── Player View ── -->
   <section class="section" id="player-view">
-    <span class="section-num">20</span>
+    <span class="section-num">22</span>
     <h1>Player Dashboard</h1>
     <p>Uses a two-phase load for speed: config, players, and attendance load immediately; pairings, scores, and standings load in the background.</p>
     <div class="table-wrap"><table>

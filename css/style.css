@@ -502,8 +502,8 @@ select.form-control option { background: var(--navy-mid); }
 
 .att-row {
   display: grid;
-  grid-template-columns: 120px repeat(auto-fill, minmax(70px, 1fr));
-  gap: 4px;
+  grid-template-columns: 90px repeat(auto-fill, minmax(44px, 1fr));
+  gap: 3px;
   align-items: center;
 }
 
@@ -571,6 +571,10 @@ select.form-control option { background: var(--navy-mid); }
 @keyframes spin {
   0%   { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
 }
 
 .login-logo h1 {
@@ -845,6 +849,24 @@ select.form-control option { background: var(--navy-mid); }
 
   .tabs { gap: 2px; }
   .tab-btn { padding: 6px 10px; font-size: 0.72rem; }
+}
+
+/* ── Game Timers ─────────────────────────────────────────────── */
+@keyframes tmr-blink {
+  0%, 49%  { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+@keyframes tmr-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.65; transform: scale(1.06); }
+}
+
+.tmr-flash {
+  animation: tmr-blink 0.55s step-end infinite;
+}
+.tmr-start-pulse {
+  animation: tmr-pulse 0.5s ease-in-out infinite;
+  display: inline-block;
 }
 
 /* ── Utility ─────────────────────────────────────────────────── */

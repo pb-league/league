@@ -20,7 +20,7 @@
   <div class="login-box">
 
     <div class="login-logo">
-      <img src="img/pb_rot.gif" style="width:72px; height:72px; object-fit:contain; display:block; margin:0 auto 8px;" alt="">
+      <img src="img/pb_logo.png" style="width:72px; height:72px; object-fit:contain; display:block; margin:0 auto 8px;" alt="">
       <h1>LEAGUE<span> MANAGER</span></h1>
     </div>
 
@@ -191,7 +191,8 @@
         <input class="form-control" id="admin-password" type="password"
                inputmode="text" placeholder="Enter password" autocomplete="current-password">
       </div>
-      <div id="admin-error" style="color:var(--danger); font-size:0.82rem; margin-bottom:10px; display:none;"></div>
+      <div id="admin-error" style="color:var(--danger); font-size:0.82rem; margin-bottom:8px; display:none;"></div>
+      <div id="admin-recovery" class="hidden" style="font-size:0.8rem; margin-bottom:10px;"></div>
       <div class="btn-group">
         <button class="btn btn-secondary" id="btn-admin-back">← Back</button>
         <button class="btn btn-primary" id="btn-admin-login" style="flex:1;">Login →</button>
@@ -335,7 +336,7 @@
 
 <div id="toast-container"></div>
 
-<script src="js/settings.js?v=1.4.4"></script>
+<script src="js/settings.js?v=1.4.7"></script>
   <!-- Google Analytics — loads only if GA_MEASUREMENT_ID is set in settings.js -->
   <script>
     window.__gaReady = false;
@@ -357,8 +358,8 @@
       window.__gaReady = true;
     });
   </script>
-<script src="js/api.js?v=1.4.4"></script>
-<script src="js/auth.js?v=1.4.4"></script>
+<script src="js/api.js?v=1.4.7"></script>
+<script src="js/auth.js?v=1.4.7"></script>
 <script>
 (async function init() {
   // If already logged in with a valid league, redirect
@@ -736,13 +737,20 @@
     goTo('step-admin');
   });
 
+  function clearAdminLoginState() {
+    document.getElementById('admin-password').value = '';
+    document.getElementById('admin-error').style.display = 'none';
+    const rec = document.getElementById('admin-recovery');
+    rec.classList.add('hidden');
+    rec.innerHTML = '';
+  }
+
   document.getElementById('btn-role-admin').addEventListener('click', () => {
     adminLoginRole = 'admin';
     document.getElementById('btn-role-admin').className = 'btn btn-primary';
     document.getElementById('btn-role-manager').className = 'btn btn-secondary';
     document.getElementById('admin-pw-label').textContent = 'Admin Password';
-    document.getElementById('admin-password').value = '';
-    document.getElementById('admin-error').style.display = 'none';
+    clearAdminLoginState();
   });
 
   document.getElementById('btn-role-manager').addEventListener('click', () => {
@@ -750,12 +758,11 @@
     document.getElementById('btn-role-manager').className = 'btn btn-primary';
     document.getElementById('btn-role-admin').className = 'btn btn-secondary';
     document.getElementById('admin-pw-label').textContent = 'App Manager Password';
-    document.getElementById('admin-password').value = '';
-    document.getElementById('admin-error').style.display = 'none';
+    clearAdminLoginState();
   });
 
   document.getElementById('btn-admin-back').addEventListener('click', () => {
-    document.getElementById('admin-password').value = '';
+    clearAdminLoginState();
     goTo('step-player');
   });
 
@@ -786,6 +793,32 @@
         errEl.textContent = result.reason || 'Incorrect password.';
         errEl.style.display = 'block';
         document.getElementById('admin-password').value = '';
+
+        // Offer recovery email for league admin (not app manager — no email on file)
+        if (adminLoginRole === 'admin' && selectedLeague) {
+          const recEl = document.getElementById('admin-recovery');
+          recEl.innerHTML = `<span style="color:var(--muted);">Forgot your password?
+            <button id="btn-admin-send-pw" class="btn btn-secondary"
+              style="padding:3px 10px; font-size:0.75rem; margin-left:6px;">
+              Email my password
+            </button>
+          </span>`;
+          recEl.classList.remove('hidden');
+          document.getElementById('btn-admin-send-pw').addEventListener('click', async () => {
+            const sendBtn = document.getElementById('btn-admin-send-pw');
+            sendBtn.disabled = true; sendBtn.textContent = '…';
+            try {
+              const r = await API.emailAdminPin(selectedLeague.leagueId);
+              if (r.success) {
+                recEl.innerHTML = `<span style="color:var(--green);">✓ Password sent to the recovery email on file.</span>`;
+              } else {
+                recEl.innerHTML = `<span style="color:var(--danger);">${r.reason || 'Could not send recovery email.'}</span>`;
+              }
+            } catch (e) {
+              recEl.innerHTML = `<span style="color:var(--danger);">Send failed: ${e.message}</span>`;
+            }
+          });
+        }
       }
     } catch (e) {
       errEl.textContent = 'Error: ' + e.message;

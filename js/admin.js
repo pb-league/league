@@ -6400,6 +6400,7 @@ function doPost(e) {
         if (n.trim()) courtNamesMap[c] = n.trim();
       }
 
+      const safeName = leagueName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
       const lsKey = 'offline_sheet_' + leagueId + '_w' + week;
 
       const courtsOpts = Array.from({length: maxCourts}, (_, i) => {
@@ -6616,7 +6617,6 @@ render();
 </body>
 </html>`;
 
-      const safeName = leagueName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
       _triggerDownload(html, `${safeName}-session${week}-scoresheet.html`, 'text/html');
       showToast('Offline scoresheet downloaded — open the HTML file in any browser', 'success');
     }

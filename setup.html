@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>League Setup — Pickleball League Manager</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    body { min-height:100vh; display:flex; align-items:flex-start; justify-content:center;
+           padding:48px 16px; background:#0d1b2a; }
+    .setup-card { background:#152232; border:1px solid rgba(255,255,255,0.1);
+                  border-radius:14px; max-width:520px; width:100%; padding:32px 32px 28px; }
+    .setup-logo  { display:flex; align-items:center; gap:8px; margin-bottom:24px; }
+    .setup-logo img { width:28px; height:28px; object-fit:contain; }
+    .setup-logo span { font-family:'DM Sans',sans-serif; font-size:1.05rem; font-weight:700;
+                       color:#f0f4f0; }
+    .setup-title { font-family:'DM Sans',sans-serif; font-size:1.15rem; font-weight:700;
+                   color:#f0f4f0; margin-bottom:6px; }
+    .setup-sub   { font-size:0.8rem; color:rgba(255,255,255,0.4); line-height:1.6; margin-bottom:22px; }
+    .field-label { display:block; font-size:0.73rem; font-weight:600; color:rgba(255,255,255,0.5);
+                   text-transform:uppercase; letter-spacing:0.07em; margin-bottom:5px; }
+    .field-hint  { font-size:0.71rem; color:rgba(255,255,255,0.3); margin-top:4px; line-height:1.5; }
+    .step        { display:none; }
+    .step.active { display:block; }
+    .error-box   { font-size:0.8rem; color:#e05555; background:rgba(224,85,85,0.08);
+                   border:1px solid rgba(224,85,85,0.25); border-radius:8px;
+                   padding:10px 14px; margin-bottom:14px; display:none; }
+    .success-box { background:rgba(45,122,58,0.12); border:1px solid rgba(45,122,58,0.3);
+                   border-radius:10px; padding:20px; text-align:center; }
+    .success-box h3 { color:#5ec26a; font-family:'DM Sans',sans-serif; margin:0 0 10px; }
+    .success-box p  { font-size:0.87rem; color:rgba(255,255,255,0.7); line-height:1.7; margin:0 0 16px; }
+  </style>
+</head>
+<body>
+<div class="setup-card">
+  <div class="setup-logo">
+    <img src="img/pb_rot.gif" alt="">
+    <span>Pickleball League Manager</span>
+  </div>
+
+  <!-- ── Step 1: Enter setup password ── -->
+  <div class="step active" id="step-1">
+    <div class="setup-title">New League Setup</div>
+    <div class="setup-sub">
+      Enter the temporary password from your approval email to get started.
+      If you haven't received an approval email, your application may still be under review.
+    </div>
+    <div class="error-box" id="err-1"></div>
+    <div style="margin-bottom:14px;">
+      <label class="field-label">Setup Password <span style="color:#e05555;">*</span></label>
+      <input id="setup-password" class="form-control" type="text"
+        placeholder="e.g. XKBJ73NQ" autocomplete="off" spellcheck="false"
+        style="font-family:monospace; font-size:1rem; letter-spacing:0.1em; text-transform:uppercase;">
+    </div>
+    <button id="btn-verify-password" class="btn btn-primary w-full">Continue →</button>
+  </div>
+
+  <!-- ── Step 2: League setup form ── -->
+  <div class="step" id="step-2">
+    <div class="setup-title">Create Your League</div>
+    <div class="setup-sub">
+      Fill in the details below. You can adjust most settings later from the admin panel.
+    </div>
+    <div class="error-box" id="err-2"></div>
+
+    <div style="margin-bottom:14px;">
+      <label class="field-label">League / Tournament Name <span style="color:#e05555;">*</span></label>
+      <input id="setup-league-name" class="form-control" placeholder="e.g. Riverside Pickleball Club">
+    </div>
+
+    <div style="margin-bottom:6px;">
+      <label class="field-label">League ID (slug) <span style="color:#e05555;">*</span></label>
+      <input id="setup-slug" class="form-control" placeholder="e.g. riverside-pickleball"
+        autocomplete="off" spellcheck="false"
+        style="font-family:monospace; font-size:0.9rem;">
+      <div class="field-hint">
+        Lowercase letters, numbers, and hyphens only — <strong style="color:rgba(255,255,255,0.5);">no spaces</strong>.
+        This becomes part of your URL and <strong style="color:rgba(255,255,255,0.5);">cannot be changed</strong> after creation.
+      </div>
+    </div>
+
+    <div style="margin-bottom:14px; margin-top:14px;">
+      <label class="field-label">Data Storage</label>
+      <select id="setup-storage" class="form-control" style="max-width:280px;">
+        <option value="supabase">Supabase (shared — recommended)</option>
+        <option value="supabase-own">Supabase (my own account)</option>
+        <option value="google">Google Sheets</option>
+      </select>
+      <div class="field-hint">Shared Supabase is fastest to set up. Use your own Supabase account for full data ownership. Google Sheets is simpler but slower.</div>
+    </div>
+
+    <!-- Own Supabase fields -->
+    <div id="setup-own-sb-group" style="display:none; margin-bottom:14px;">
+      <div style="margin-bottom:10px;">
+        <label class="field-label">Supabase Project URL <span style="color:#e05555;">*</span></label>
+        <input id="setup-sb-url" class="form-control" placeholder="https://xxxx.supabase.co"
+          autocomplete="off" spellcheck="false" style="font-family:monospace; font-size:0.85rem;">
+        <div class="field-hint">Found in your Supabase project → Settings → API → Project URL.</div>
+      </div>
+      <div style="margin-bottom:10px;">
+        <label class="field-label">service_role Key <span style="color:#e05555;">*</span></label>
+        <input id="setup-sb-key" class="form-control" type="password" placeholder="eyJ…"
+          autocomplete="new-password" spellcheck="false" style="font-family:monospace; font-size:0.85rem;">
+        <div class="field-hint">Found in Settings → API → Project API keys → <code style="color:rgba(255,200,100,0.9); background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:3px;">service_role</code>. Keep this secret.</div>
+      </div>
+      <div style="margin-bottom:10px;">
+        <label class="field-label">Database Setup</label>
+        <div class="field-hint" style="margin-bottom:6px;">Run this SQL in your Supabase project → SQL Editor before validating.</div>
+        <textarea id="setup-sb-sql" readonly rows="5"
+          style="width:100%; box-sizing:border-box; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1);
+                 border-radius:6px; padding:8px 10px; font-family:monospace; font-size:0.72rem;
+                 color:rgba(255,255,255,0.6); resize:vertical;">Loading SQL…</textarea>
+        <button type="button" id="btn-setup-copy-sql" class="btn btn-secondary"
+          style="margin-top:6px; padding:4px 14px; font-size:0.78rem;">Copy SQL</button>
+      </div>
+      <button type="button" id="btn-setup-validate-sb" class="btn btn-secondary"
+        style="padding:4px 14px; font-size:0.78rem;">Validate Connection</button>
+      <div id="setup-sb-validate-msg" style="font-size:0.78rem; margin-top:6px;"></div>
+    </div>
+
+    <div id="setup-sheet-group" style="display:none; margin-bottom:14px;">
+      <label class="field-label">Google Sheet ID <span style="color:rgba(255,255,255,0.3); font-weight:400; text-transform:none;">(optional — leave blank to auto-create)</span></label>
+      <input id="setup-sheet-id" class="form-control" placeholder="Leave blank to auto-create"
+        autocomplete="off" spellcheck="false" style="font-family:monospace; font-size:0.85rem;">
+      <div class="field-hint">
+        If you'd like to use your own Google Sheet, paste its ID here — the part of the URL between
+        <code style="color:rgba(255,200,100,0.9); background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:3px;">d/</code>
+        and
+        <code style="color:rgba(255,200,100,0.9); background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:3px;">/edit</code>.
+        You must first share the sheet with
+        <strong style="color:rgba(255,255,255,0.6); user-select:all;">pbleaguemanager@gmail.com</strong>
+        as <strong style="color:rgba(255,255,255,0.6);">Editor</strong>.
+      </div>
+    </div>
+
+    <div style="margin-bottom:20px;">
+      <label class="field-label">Admin Password <span style="color:#e05555;">*</span></label>
+      <input id="setup-admin-pin" class="form-control" type="password"
+        placeholder="Choose a password for admin login" autocomplete="new-password"
+        style="max-width:280px;">
+      <div class="field-hint">You'll use this to log in to the league admin panel.</div>
+    </div>
+
+    <div id="setup-creating" style="display:none; font-size:0.83rem; color:rgba(255,255,255,0.5);
+      margin-bottom:12px; display:none; align-items:center; gap:8px;">
+      <span style="animation:spin 0.8s linear infinite; display:inline-block;">⏳</span>
+      Creating your league — this may take 15–20 seconds…
+    </div>
+
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <button id="btn-create-league" class="btn btn-primary">Create League</button>
+      <button id="btn-back-1" class="btn btn-secondary">← Back</button>
+    </div>
+  </div>
+
+  <!-- ── Step 3: Success ── -->
+  <div class="step" id="step-3">
+    <div class="success-box">
+      <h3>Your league is ready!</h3>
+      <p>Your league has been created. Use the link below to log in — bookmark it so you can always find your league.</p>
+      <a id="setup-login-link" href="#" class="btn btn-primary" style="display:inline-block; margin-bottom:16px;">
+        Log In to Your League →
+      </a>
+      <div style="background:rgba(0,0,0,0.2); border-radius:6px; padding:10px 14px; margin-bottom:4px; text-align:left;">
+        <div style="font-size:0.7rem; color:rgba(255,255,255,0.4); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:4px;">Your league URL</div>
+        <div id="setup-login-url" style="font-family:monospace; font-size:0.8rem; color:rgba(255,255,255,0.75); word-break:break-all; user-select:all;"></div>
+      </div>
+      <p style="font-size:0.75rem; color:rgba(255,255,255,0.3); margin:6px 0 0;">Click the URL above to select and copy it.</p>
+    </div>
+  </div>
+</div>
+
+<script src="js/settings.js"></script>
+<script>
+(function() {
+  // Simple fetch wrapper — GAS requires text/plain for CORS
+  async function post(body) {
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(body),
+      redirect: 'follow',
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    return data;
+  }
+
+  function showStep(n) {
+    document.querySelectorAll('.step').forEach((s, i) => s.classList.toggle('active', i + 1 === n));
+  }
+
+  function showErr(id, msg) {
+    const el = document.getElementById(id);
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+  function hideErr(id) { document.getElementById(id).style.display = 'none'; }
+
+  let _setupPassword = '';
+
+  // ── Step 1: Verify password ──────────────────────────────
+  document.getElementById('setup-password').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('btn-verify-password').click();
+  });
+
+  document.getElementById('btn-verify-password').addEventListener('click', async () => {
+    hideErr('err-1');
+    const pw = document.getElementById('setup-password').value.trim().toUpperCase();
+    if (!pw) { showErr('err-1', 'Please enter your setup password.'); return; }
+
+    const btn = document.getElementById('btn-verify-password');
+    btn.disabled = true; btn.textContent = '⏳ Checking…';
+
+    // Pre-validate by passing to setup; if password doesn't match we get an error back.
+    // We don't actually create the league yet — just check the password exists by calling
+    // submitSetupForm with intentionally missing fields; the GAS function checks password first.
+    // Instead, we just move to step 2 and let the final submit catch a bad password there.
+    // (No separate "validate password only" endpoint — keep it simple and let step 2 handle it.)
+    _setupPassword = pw;
+    btn.disabled = false; btn.textContent = 'Continue →';
+    showStep(2);
+  });
+
+  // ── Step 2: Create league ────────────────────────────────
+  // Load SQL into textarea when own-supabase is first selected
+  (function() {
+    let _sqlLoaded = false;
+    document.getElementById('setup-storage').addEventListener('change', function() {
+      const isOwnSb = this.value === 'supabase-own';
+      const isGoogle = this.value === 'google';
+      document.getElementById('setup-sheet-group').style.display = isGoogle ? '' : 'none';
+      document.getElementById('setup-own-sb-group').style.display = isOwnSb ? '' : 'none';
+      if (isOwnSb && !_sqlLoaded) {
+        _sqlLoaded = true;
+        fetch('supabase_setup.sql')
+          .then(r => r.ok ? r.text() : Promise.reject())
+          .then(sql => { document.getElementById('setup-sb-sql').value = sql; })
+          .catch(() => { document.getElementById('setup-sb-sql').value = '-- Could not load supabase_setup.sql'; });
+      }
+    });
+  })();
+
+  document.getElementById('btn-setup-copy-sql').addEventListener('click', async function() {
+    const sql = document.getElementById('setup-sb-sql').value;
+    try { await navigator.clipboard.writeText(sql); }
+    catch { document.getElementById('setup-sb-sql').select(); document.execCommand('copy'); }
+    this.textContent = 'Copied!';
+    setTimeout(() => { this.textContent = 'Copy SQL'; }, 2000);
+  });
+
+  document.getElementById('btn-setup-validate-sb').addEventListener('click', async function() {
+    const url = document.getElementById('setup-sb-url').value.trim();
+    const key = document.getElementById('setup-sb-key').value.trim();
+    const msg = document.getElementById('setup-sb-validate-msg');
+    if (!url || !key) { msg.style.color = '#e05555'; msg.textContent = 'Enter URL and key first.'; return; }
+    this.disabled = true; this.textContent = 'Validating…'; msg.textContent = '';
+    try {
+      const res = await post({ action: 'validateOwnSupabase', supabaseUrl: url, supabaseKey: key });
+      if (res.success) {
+        msg.style.color = '#5ec26a';
+        msg.textContent = '✓ Connection OK — all tables found.';
+      } else {
+        msg.style.color = '#e05555';
+        msg.textContent = res.missing?.length
+          ? 'Missing tables: ' + res.missing.join(', ') + '. Run the SQL script first.'
+          : (res.error || 'Validation failed.');
+      }
+    } catch(e) { msg.style.color = '#e05555'; msg.textContent = e.message; }
+    finally { this.disabled = false; this.textContent = 'Validate Connection'; }
+  });
+
+  document.getElementById('btn-back-1').addEventListener('click', () => {
+    hideErr('err-2');
+    showStep(1);
+  });
+
+  // Auto-generate slug from league name
+  document.getElementById('setup-league-name').addEventListener('input', function() {
+    const slugEl = document.getElementById('setup-slug');
+    if (!slugEl._edited) {
+      slugEl.value = this.value.toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .trim()
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-');
+    }
+  });
+  document.getElementById('setup-slug').addEventListener('input', function() {
+    this._edited = this.value.length > 0;
+    // Force valid characters
+    this.value = this.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+  });
+
+  document.getElementById('btn-create-league').addEventListener('click', async () => {
+    hideErr('err-2');
+    const leagueName = document.getElementById('setup-league-name').value.trim();
+    const leagueId   = document.getElementById('setup-slug').value.trim().toLowerCase();
+    const storage    = document.getElementById('setup-storage').value;
+    const sheetId    = document.getElementById('setup-sheet-id').value.trim();
+    const adminPin   = document.getElementById('setup-admin-pin').value.trim();
+
+    if (!leagueName) { showErr('err-2', 'League name is required.'); return; }
+    if (!leagueId)   { showErr('err-2', 'League ID is required.'); return; }
+    if (!/^[a-z0-9-]+$/.test(leagueId)) {
+      showErr('err-2', 'League ID may only contain lowercase letters, numbers, and hyphens.'); return;
+    }
+    if (!adminPin)   { showErr('err-2', 'Admin password is required.'); return; }
+    if (adminPin.length < 4) { showErr('err-2', 'Admin password must be at least 4 characters.'); return; }
+
+    const supabaseUrl = document.getElementById('setup-sb-url').value.trim();
+    const supabaseKey = document.getElementById('setup-sb-key').value.trim();
+    if (storage === 'supabase-own') {
+      if (!supabaseUrl || !supabaseKey) {
+        showErr('err-2', 'Supabase URL and service_role key are required for your own Supabase account.');
+        return;
+      }
+    }
+
+    const btn = document.getElementById('btn-create-league');
+    const creatingEl = document.getElementById('setup-creating');
+    btn.disabled = true; btn.textContent = '⏳ Creating…';
+    creatingEl.style.display = 'flex';
+
+    try {
+      const result = await post({
+        action: 'submitSetupForm',
+        setupPassword: _setupPassword,
+        leagueId,
+        leagueName,
+        storage,
+        sheetId,
+        adminPin,
+        supabaseUrl: supabaseUrl || null,
+        supabaseKey: supabaseKey || null,
+      });
+
+      if (!result.success) throw new Error(result.error || 'League creation failed.');
+
+      // Build login link
+      const finalId  = result.leagueId || leagueId;
+      const loginUrl = APP_BASE_URL + 'index.html?league=' + encodeURIComponent(finalId);
+      document.getElementById('setup-login-link').href = loginUrl;
+      document.getElementById('setup-login-url').textContent = loginUrl;
+      showStep(3);
+    } catch(e) {
+      showErr('err-2', e.message);
+      btn.disabled = false; btn.textContent = 'Create League';
+      creatingEl.style.display = 'none';
+    }
+  });
+})();
+</script>
+</body>
+</html>

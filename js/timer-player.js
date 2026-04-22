@@ -21,7 +21,21 @@ function _updatePlayerTimerCourt(courtNum) {
   _renderPlayerTimers();
 }
 
+// When a push notification arrives the service worker posts PUSH_RECEIVED to all
+// open clients.  React immediately so the player sees timer changes with no lag
+// instead of waiting up to 60 s for the next background poll.
+if (navigator.serviceWorker) {
+  navigator.serviceWorker.addEventListener('message', event => {
+    if (event.data && event.data.type === 'PUSH_RECEIVED') {
+      _fetchPtState();
+    }
+  });
+}
+
 // Start polling — safe to call multiple times (guarded).
+// 5 s interval: only runs for players who have opted in via the checkbox,
+// so the polling cost is limited to those who explicitly want timer display.
+// Push notifications trigger immediate fetches as a bonus when available.
 function _startPlayerTimerPolling() {
   if (_ptPollId) return;
   _fetchPtState();

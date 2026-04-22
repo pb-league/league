@@ -187,8 +187,9 @@ tr:hover td { background:rgba(255,255,255,0.02); }
     <a class="nav-link" href="#pairings">Generating Pairings</a>
     <a class="nav-link" href="#pairing-algorithm">Pairing Algorithm</a>
     <a class="nav-link" href="#game-formats">Game Formats</a>
+    <a class="nav-link" href="#ladder-league">Ladder League</a>
     <a class="nav-link" href="#scores">Score Entry</a>
-	<a class="nav-link" href="#timers">Score Entry</a>
+    <a class="nav-link" href="#timers">Court Timers</a>
 
     <div class="nav-section-label">Tournaments</div>
     <a class="nav-link" href="#tournaments">Tournament Overview</a>
@@ -201,13 +202,14 @@ tr:hover td { background:rgba(255,255,255,0.02); }
     <a class="nav-link" href="#player-report">Player Reports</a>
     <a class="nav-link" href="#email">Email Notifications</a>
     <a class="nav-link" href="#head-to-head-report">Head-to-Head Analysis</a>
-	  <a class="nav-link" href="#messaging">Messaging</a>
+    <a class="nav-link" href="#messaging">Messaging</a>
 
     <div class="nav-section-label">Player Dashboard</div>
     <a class="nav-link" href="#player-view">Player View</a>
+    <a class="nav-link" href="#chat">Chat</a>
   </div>
   <div class="sidebar-footer">
-    v1.1 · <a href="#" onclick="window.close(); return false;">✕ Close</a>
+    v1.4 · <a href="#" onclick="window.close(); return false;">✕ Close</a>
   </div>
 </nav>
 
@@ -566,6 +568,45 @@ tr:hover td { background:rgba(255,255,255,0.02); }
     </table></div>
   </section>
 
+  <!-- ── Ladder League ── -->
+  <section class="section" id="ladder-league">
+    <span class="section-num">13a</span>
+    <h1>Ladder League</h1>
+    <p>An alternative to standard win-percentage standings. Players earn points for <em>showing up and playing</em>, not just for winning. Great for recreational leagues where participation matters as much as performance.</p>
+    <h2>Enabling Ladder Mode</h2>
+    <p>In <strong>Setup → Standings Method</strong>, switch from <em>Standard</em> to <em>Ladder League</em>. A point-schedule section expands immediately below.</p>
+    <h2>Point Schedule</h2>
+    <div class="table-wrap"><table>
+      <tr><th>Event</th><th>Default Pts</th><th>Description</th></tr>
+      <tr><td>Attend a session</td><td>2</td><td>Awarded once per session for any player who shows up, regardless of results.</td></tr>
+      <tr><td>Play any game</td><td>1</td><td>Awarded per game played (not per win).</td></tr>
+      <tr><td>Upset win</td><td>3</td><td>Bonus awarded when your team's average rank is <em>worse</em> than your opponents' — i.e., you beat a stronger team.</td></tr>
+      <tr><td>Favored-win ranges</td><td>configurable</td><td>Four rank-margin bands. When your team's average rank is better than opponents' by a set margin, you earn fewer points for winning (or none). Discourages easy-match farming.</td></tr>
+    </table></div>
+    <p>All point values are fully configurable per league — set any to 0 to disable that reward entirely.</p>
+    <h2>Favored-Win Ranges</h2>
+    <p>Each range defines a minimum and maximum rank-margin (your average rank versus opponents' average rank) and a points award for winning in that band. Rank margin is calculated as: <strong>opponents' avg rank − your avg rank</strong>. A positive margin means you are favored (your rank number is lower = stronger).</p>
+    <div class="table-wrap"><table>
+      <tr><th>Range</th><th>Min</th><th>Max</th><th>Points for winning</th></tr>
+      <tr><td>Range 1</td><td>1</td><td>3</td><td>2 (slight favorite)</td></tr>
+      <tr><td>Range 2</td><td>4</td><td>6</td><td>1 (moderate favorite)</td></tr>
+      <tr><td>Range 3</td><td>7</td><td>99</td><td>0 (heavy favorite — win expected)</td></tr>
+      <tr><td>Range 4</td><td colspan="3">Disabled by default (set max to 0)</td></tr>
+    </table></div>
+    <div class="note"><div class="note-label">Tip</div>Set Range 3 max to <code>0</code> to disable it. Any margin not covered by a range defaults to 0 points.</div>
+    <h2>Player Challenges</h2>
+    <p>Optional for Ladder Leagues. Enable via <strong>Setup → Enable player challenges</strong>. When enabled:</p>
+    <ul>
+      <li>Players can challenge each other from the player dashboard to request a ranked game.</li>
+      <li>The challenged player accepts or declines from their dashboard.</li>
+      <li>The admin sees accepted challenges in the Pairings section and can schedule them into a session.</li>
+      <li>Challenge games count toward standings like any other game.</li>
+    </ul>
+    <div class="note"><div class="note-label">Tier note</div>Challenges are available on tiers that include the <code>challenges</code> feature. The checkbox is automatically disabled if the current tier does not support it.</div>
+    <h2>Ladder Standings Display</h2>
+    <p>When Ladder mode is active, the Standings page shows accumulated <strong>ladder points</strong> instead of win percentage. The season podium (top 3 finishers) still appears above the standings table at season end. Ranking trend charts continue to work and show rank by ladder points.</p>
+  </section>
+
   <!-- ── Scores ── -->
   <section class="section" id="scores">
     <span class="section-num">14</span>
@@ -725,23 +766,22 @@ tr:hover td { background:rgba(255,255,255,0.02); }
     <p>For each player: multiply each partner's/opponent's rank by the number of games played with them, sum those values, then divide by total games. Ranks come from current season standings, with Init Rank as fallback, and median rank for anyone without a rank yet.</p>
     <p>Both tabs have a <strong>session filter</strong> — select a specific session or all sessions to see how pairings evolved over the season.</p>
   </section>
-	<!-- ── Messaging ── -->
-	<section class="section" id="messaging">
-		<span class="section-num">21</span>
-		<h1>Various options are available for the admin to communicate with the players right from within the app.</h1>
-		<p>Admin can compose an email and automatically select what information to include such as leage dates/times, location, and standings.</p>
-		
-		<p>
-			Admin may also select a session and send an email asking for player who are still TBD for that session to provide status. The email has simple buttons for them to push without having to open the app to mark there status for all sessions that do not have scores yet.
-		</p>
-		<p>The email will also provide a button where they can request their personal player report be emailed to them without even having to open the app.</p>
-		<p>
-			Admin may also send alerts to players who have saved the app to their phone desktop and have opted in to receiving notifications. 
-		</p>
-		<p>A future enhancemnet might support players sending messages to each other to be able to connect with each other outside of the league. </p>
-		<p>The admin also has a form for submitting features requests or bug reports to the app developer.</p>
-		
-	</section>
+  <!-- ── Messaging ── -->
+  <section class="section" id="messaging">
+    <span class="section-num">21</span>
+    <h1>Messaging</h1>
+    <p>Several tools are available for the admin to communicate with players directly from within the app.</p>
+    <h2>League Email</h2>
+    <p>Admin can compose a custom email to all active players with <strong>Notify</strong> enabled. Checkboxes let you optionally include league dates/times, location, rules, player list, standings, and the league URL — all formatted automatically.</p>
+    <h2>Availability Requests</h2>
+    <p>Select a session and send an email asking players who are still TBD to provide their attendance status. The email contains simple IN / OUT / NOT SURE buttons — players tap once without ever opening the app. It also shows their full session-by-session attendance record, and includes a button to request their personal player report by email.</p>
+    <h2>Push Notifications</h2>
+    <p>Players who have saved the app to their phone's home screen and opted in to notifications can receive push alerts sent by the admin — useful for last-minute session changes or announcements.</p>
+    <h2>Coordinator Card</h2>
+    <p>Set a <strong>Coordinator Name</strong> and <strong>photo</strong> on the Setup page (League Coordinator card). These appear on every player's dashboard so players know who to contact. The coordinator's email address (from the Admin Email field in Messaging settings) is shown as a clickable <code>mailto:</code> link.</p>
+    <h2>Feedback to Developer</h2>
+    <p>A form on the Messaging page lets the admin report bugs, ask for help, or suggest new features directly to the app developer.</p>
+  </section>
 
   <!-- ── Player View ── -->
   <section class="section" id="player-view">
@@ -757,8 +797,41 @@ tr:hover td { background:rgba(255,255,255,0.02); }
       <tr><td>Tournament</td><td>Appears only when the current session has tournament data. Shows bracket (elimination) or standings table (round robin). Player's games highlighted with a green border.</td></tr>
       <tr><td>Attendance</td><td>Full attendance grid showing all players across all sessions.</td></tr>
       <tr><td>Player Report</td><td>Auto-loads the logged-in player's own report on first visit. Full partner/opponent frequency tables and game log.</td></tr>
+      <tr><td>Chat</td><td>Real-time group and private messaging. Appears in the nav only when enabled for the league's subscription tier. See <a href="#chat">Chat</a> section below.</td></tr>
     </table></div>
-    <div class="note"><div class="note-label">Loading behaviour</div>The player dashboard uses a two-phase load for speed. The My Games page shows a loading spinner rather than "No games" while pairings and scores load in the background. Switching scoresheets sessions also shows an immediate loading indicator rather than a blank screen.</div>
+    <div class="note"><div class="note-label">Loading behaviour</div>The player dashboard uses a two-phase load for speed. The My Games page shows a loading spinner rather than "No games" while pairings and scores load in the background. Switching scoresheet sessions also shows an immediate loading indicator rather than a blank screen.</div>
+    <h2>League Coordinator Card</h2>
+    <p>If the admin has set a Coordinator Name in Setup, every player's dashboard shows a contact card with the coordinator's avatar, name, and a clickable email link. Players always know who to reach out to.</p>
+    <h2>Season Podium</h2>
+    <p>When the season is over (all sessions have scores), a 🥇🥈🥉 podium appears above the standings table showing the top 3 finishers with their avatars and names. During the season this area shows <em>Season Leaders</em> with the current top 3.</p>
+  </section>
+
+  <!-- ── Chat ── -->
+  <section class="section" id="chat">
+    <span class="section-num">23</span>
+    <h1>Chat</h1>
+    <p>A real-time group and private messaging system for players and the league coordinator. Available on subscription tiers that include the <code>messaging</code> feature.</p>
+    <h2>For Players</h2>
+    <p>A <strong>💬 Chat</strong> item appears in the player nav once the app confirms the tier supports messaging. Players can:</p>
+    <ul>
+      <li>Post messages visible to everyone in the league (broadcast).</li>
+      <li>Send a <strong>private message</strong> to a specific person by choosing them from the recipient dropdown — including the league coordinator. Private messages are marked with a 🔒 badge and a gold left border.</li>
+      <li>See private messages addressed to them even when others cannot.</li>
+      <li>Send to the <strong>coordinator</strong> by name from the dropdown — a dedicated option even if the coordinator isn't a player.</li>
+    </ul>
+    <h2>Private Message Notifications</h2>
+    <p>When a new private message arrives for a player, a <strong>flashing dot</strong> appears on the Chat nav item. The dot disappears once they open the Chat page. Notification state is stored per-browser and per-player — it won't bleed across devices.</p>
+    <h2>For the Admin / Coordinator</h2>
+    <p>Admins have their own Chat page (same nav, same UI). The admin sees <em>all</em> messages — including private ones between players — so the coordinator has full visibility. Messages sent by the admin are attributed to the <strong>Coordinator Name</strong> set in Setup (or the session name if none is set), and display the coordinator's avatar.</p>
+    <h2>Message Rules</h2>
+    <ul>
+      <li>Messages are capped at <strong>160 characters</strong>. A live character counter turns red when fewer than 20 characters remain.</li>
+      <li>Press <kbd>Enter</kbd> to send (Shift+Enter for a new line is not needed — the input is single-line).</li>
+      <li>Messages are stored in a dedicated <code>chat</code> tab in the league's Google Sheet.</li>
+    </ul>
+    <h2>Polling</h2>
+    <p>The chat panel polls for new messages every <strong>10 seconds</strong> while the Chat page is open, and every <strong>25 seconds</strong> in the background (to keep the notification badge current). New messages are appended without disrupting your scroll position if you are reading older messages.</p>
+    <div class="note"><div class="note-label">Tier gate</div>The Chat nav item is hidden for leagues on tiers where <code>messaging</code> is in the disabled list. Admins on those tiers will also have the Chat nav item hidden automatically.</div>
   </section>
 
 </main>

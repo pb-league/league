@@ -12,6 +12,113 @@ function gaPage(pageName) {
 }
 
 // ============================================================
+// Photo / avatar utilities (shared by player and admin pages)
+// ============================================================
+
+function resizeImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = e => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const MAX = 200;
+        let w = img.width, h = img.height;
+        if (w > MAX || h > MAX) {
+          if (w >= h) { h = Math.round(h * MAX / w); w = MAX; }
+          else        { w = Math.round(w * MAX / h); h = MAX; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        // Return base64 string only (no data-URL prefix)
+        resolve(canvas.toDataURL('image/jpeg', 0.75).split(',')[1]);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function generateInitialAvatar(name, size) {
+  size = size || 40;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const palette = ['#c84c4c','#c87c38','#9a8c28','#3a9e50','#2e8eb4','#4060c0','#8044b8','#b04488'];
+  let hash = 0;
+  for (let i = 0; i < (name || '').length; i++) hash = (hash * 31 + name.charCodeAt(i)) & 0x7fffffff;
+  ctx.fillStyle = palette[hash % palette.length];
+  const r = size / 2;
+  ctx.beginPath(); ctx.arc(r, r, r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.font = `bold ${Math.round(size * 0.46)}px sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(((name || '?')[0]).toUpperCase(), r, r + Math.round(size * 0.03));
+  return canvas.toDataURL('image/png');
+}
+
+function playerPhotoSrc(name, photo, size) {
+  if (photo) return 'data:image/jpeg;base64,' + photo;
+  return generateInitialAvatar(name, size || 40);
+}
+
+// Returns true if the given feature is enabled for the supplied tier string.
+// tier comes from state.limits?.tier; feature is a key from TIERS disableList.
+function tierAllows(tier, feature) {
+  if (!tier || typeof TIERS === 'undefined') return true;
+  const def = TIERS.find(t => t.version.toLowerCase() === tier.toLowerCase());
+  if (!def) return true;
+  return !(def.disableList || []).includes(feature);
+}
+
+// Builds the podium HTML for the top-3 season finishers.
+// topThree  — array of standings objects sorted by rank (index 0 = 1st place)
+// photoMap  — { name: base64photoString }
+// photosOn  — boolean, whether photo avatars are enabled for this tier
+// seasonComplete — boolean, whether the season is over (affects title label)
+function buildPodiumHTML(topThree, photoMap, photosOn, seasonComplete) {
+  if (!topThree || topThree.length < 3) return '';
+  const _esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // Visual order: 2nd (left), 1st (centre/tallest), 3rd (right)
+  const slots = [
+    { s: topThree[1], label: '🥈 2nd', height: 68,  grad: 'rgba(192,192,192,0.25)', border: 'rgba(192,192,192,0.5)' },
+    { s: topThree[0], label: '🥇 1st', height: 96,  grad: 'rgba(245,200,66,0.25)',  border: 'rgba(245,200,66,0.6)'  },
+    { s: topThree[2], label: '🥉 3rd', height: 48,  grad: 'rgba(205,127,50,0.25)',  border: 'rgba(205,127,50,0.5)'  },
+  ];
+
+  const slotHtml = slots.map(({ s, label, height, grad, border }) => {
+    const photo = photosOn ? (photoMap[s.name] || '') : '';
+    const avatarHtml = photosOn
+      ? `<img src="${playerPhotoSrc(s.name, photo, 60)}"
+           style="width:60px;height:60px;border-radius:50%;object-fit:cover;
+                  border:2px solid ${border};margin-bottom:5px;flex-shrink:0;">`
+      : '';
+    const nameHtml = `<div style="font-size:0.76rem;font-weight:600;color:var(--white);
+        text-align:center;margin-bottom:5px;max-width:86px;
+        overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_esc(s.name)}</div>`;
+    const blockHtml = `<div style="width:86px;height:${height}px;
+        background:${grad};border:1px solid ${border};
+        border-radius:6px 6px 0 0;display:flex;align-items:center;
+        justify-content:center;font-size:0.82rem;font-weight:700;color:var(--white);">${label}</div>`;
+    return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;">
+      ${avatarHtml}${nameHtml}${blockHtml}
+    </div>`;
+  }).join('');
+
+  const title = seasonComplete ? '🏆 Season Champions' : 'Season Leaders';
+  return `<div style="text-align:center;padding-bottom:4px;margin-bottom:8px;">
+    <div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;
+        color:var(--muted);margin-bottom:2px;">${title}</div>
+    <div style="display:flex;align-items:flex-end;justify-content:center;gap:6px;padding-top:12px;">
+      ${slotHtml}
+    </div>
+  </div>`;
+}
+
+// ============================================================
 // player.js — Player dashboard logic
 // ============================================================
 
@@ -44,11 +151,15 @@ function gaPage(pageName) {
   let state = {
     config: {}, players: [], attendance: [],
     pairings: [], scores: [], standings: [],
+    challenges: [],           // all active challenges for this league
     currentSheetWeek: 1, currentWstandWeek: 1,
     dataLoaded: false,        // true after phase 2 pairings/scores are loaded
     saveLocks: {},            // per-week save queue to prevent concurrent writes
     _scoreEntryLoading: false, // nav fetch in flight — block external re-renders
-    _scoreEntryTouched: false  // user has typed in score entry — block external re-renders
+    _scoreEntryTouched: false, // user has typed in score entry — block external re-renders
+    chatMessages: [],         // all visible chat messages, newest last
+    chatLastId: 0,            // highest message id seen — used for incremental polling
+    chatPollTimer: null,      // setInterval handle for background chat polling
   };
 
   // ── Phase 1: Fast load — config, players, attendance ────────
@@ -56,9 +167,10 @@ function gaPage(pageName) {
   showLoading(true);
   try {
     const early = await API.getEarlyData();
-    state.config = sanitizeConfig(early.config     || {});
+    state.config     = sanitizeConfig(early.config || {});
     state.players    = early.players    || [];
     state.attendance = early.attendance || [];
+    state.challenges = early.challenges || [];
   } catch (e) {
     toast('Failed to load data: ' + e.message, 'error');
   } finally {
@@ -68,6 +180,9 @@ function gaPage(pageName) {
   renderAll();
   setupNav();
   setupEvents();
+  window.addEventListener('beforeunload', e => {
+    if (state._prefsDirty) { e.preventDefault(); e.returnValue = ''; }
+  });
   initPushSubscribeUI();
   // Reconcile scoresheet and score-entry week — always start on the same session.
   if (canScore) {
@@ -95,6 +210,7 @@ function gaPage(pageName) {
       state.pairings  = data.pairings  || [];
       state.scores    = data.scores    || [];
       state.standings = data.standings || [];
+      if (data.limits) state.limits = data.limits;
       state.loadedSinceWeek = sinceWeek;
 
       // Update current week pointers to latest available
@@ -138,6 +254,43 @@ function gaPage(pageName) {
       populateWeekSelect('wstand-select', 'currentWstandWeek');
       if (canScore) populateWeekSelect('player-score-week-select', 'currentScoreEntryWeek');
 
+      // ── Chat initialization ───────────────────────────────
+      if (tierAllows(state.limits?.tier, 'messaging')) {
+        const navChat = document.getElementById('nav-chat');
+        if (navChat) navChat.classList.remove('hidden');
+        pollChatMessages(); // initial fetch (don't await — non-blocking)
+        startChatPolling(false); // 120 s fallback for non-push users
+        if (navigator.serviceWorker) {
+          navigator.serviceWorker.addEventListener('message', event => {
+            if (event.data && event.data.type === 'PUSH_RECEIVED') pollChatMessages();
+          });
+        }
+      }
+
+      // ── Timer opt-in ─────────────────────────────────────────
+      if (tierAllows(state.limits?.tier, 'timers')) {
+        const optInKey  = `pb_timer_optin_${session.leagueId}`;
+        const optInWrap = document.getElementById('timer-opt-in');
+        const optInBox  = document.getElementById('timer-opt-in-check');
+        if (optInWrap && optInBox) {
+          optInWrap.style.display = '';
+          optInBox.checked = localStorage.getItem(optInKey) === 'true';
+          if (optInBox.checked && typeof _startPlayerTimerPolling === 'function') {
+            _startPlayerTimerPolling();
+          }
+          optInBox.addEventListener('change', () => {
+            localStorage.setItem(optInKey, String(optInBox.checked));
+            if (optInBox.checked) {
+              if (typeof _startPlayerTimerPolling === 'function') _startPlayerTimerPolling();
+            } else {
+              if (typeof _stopPlayerTimerPolling === 'function') _stopPlayerTimerPolling();
+              const w = document.getElementById('player-timer-widget');
+              if (w) w.innerHTML = '';
+            }
+          });
+        }
+      }
+
       // ── New pairings indicator ──────────────────────────────
       // Show a pulsing dot on "My Games" nav if the latest pairing week
       // is newer than what this player last acknowledged.
@@ -165,10 +318,195 @@ function gaPage(pageName) {
     }
   })();
 
+  // ── Chat ─────────────────────────────────────────────────────
+
+  function chatTimeAgo(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d)) return '';
+    const s = Math.floor((Date.now() - d) / 1000);
+    if (s < 60)    return 'just now';
+    if (s < 3600)  return Math.floor(s / 60) + 'm ago';
+    if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  function chatSeenKey() {
+    return `chat_seen_${session.leagueId || ''}_${playerName}`;
+  }
+  function chatGetLastSeen() { return parseInt(localStorage.getItem(chatSeenKey()) || '0'); }
+  function chatSetLastSeen(id) { if (id > chatGetLastSeen()) localStorage.setItem(chatSeenKey(), String(id)); }
+
+  function updateChatBadge() {
+    const badge = document.getElementById('chat-nav-badge');
+    if (!badge) return;
+    const lastSeen = chatGetLastSeen();
+    const hasUnread = state.chatMessages.some(m => m.recipient === playerName && m.id > lastSeen);
+    badge.classList.toggle('visible', hasUnread);
+  }
+
+  function buildChatMsgHTML(m) {
+    const isMe        = m.sender === playerName;
+    const isPrivToMe  = m.recipient === playerName;
+    const isPrivFromMe = isMe && m.recipient !== '';
+    const photosOn    = tierAllows(state.limits?.tier, 'playerPhotos');
+    const coordName   = state.config.coordinatorName || '';
+    const senderIsCoord = coordName && m.sender === coordName;
+    const senderPl    = state.players.find(p => p.name === m.sender) || {};
+    const senderPhoto = senderIsCoord ? (state.config.coordinatorPhoto || '') : (senderPl.photo || '');
+    const avatarHtml  = photosOn
+      ? `<img src="${playerPhotoSrc(m.sender, senderPhoto, 28)}"
+           style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;margin-top:1px;">`
+      : `<div style="width:28px;height:28px;border-radius:50%;background:var(--border);
+           flex-shrink:0;display:flex;align-items:center;justify-content:center;
+           font-size:0.72rem;font-weight:700;color:var(--muted);">${esc((m.sender||'?')[0].toUpperCase())}</div>`;
+
+    const recipLabel = isPrivFromMe
+      ? ` <span style="color:var(--muted);">→</span> <span style="color:var(--gold);">${esc(m.recipient)}</span>` : '';
+    const privateBadge = (m.recipient !== '')
+      ? `<span style="font-size:0.65rem;padding:1px 5px;background:rgba(245,200,66,0.18);
+           color:var(--gold);border-radius:3px;margin-left:5px;border:1px solid rgba(245,200,66,0.3);">🔒 private</span>` : '';
+    const rowBg = isPrivToMe
+      ? 'background:rgba(245,200,66,0.07);border-left:2px solid rgba(245,200,66,0.35);padding-left:8px;'
+      : isPrivFromMe
+      ? 'background:rgba(255,255,255,0.03);border-left:2px solid rgba(255,255,255,0.08);padding-left:8px;'
+      : '';
+
+    return `<div class="chat-msg" data-id="${m.id}"
+        style="display:flex;gap:8px;padding:5px 8px;border-radius:6px;margin-bottom:3px;${rowBg}">
+      <div style="flex-shrink:0;">${avatarHtml}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:0.72rem;margin-bottom:2px;display:flex;align-items:baseline;flex-wrap:wrap;gap:2px;">
+          <span style="font-weight:600;color:${isMe ? 'var(--green)' : 'var(--white)'};">${esc(m.sender)}</span>
+          ${recipLabel}${privateBadge}
+          <span style="margin-left:auto;font-size:0.66rem;color:var(--muted);white-space:nowrap;">${chatTimeAgo(m.timestamp)}</span>
+        </div>
+        <div style="font-size:0.87rem;word-break:break-word;">${esc(m.message)}</div>
+      </div>
+    </div>`;
+  }
+
+  function renderChatMessages() {
+    const c = document.getElementById('chat-messages');
+    if (!c) return;
+    if (!state.chatMessages.length) {
+      c.innerHTML = `<div style="text-align:center;padding:40px 16px;color:var(--muted);font-size:0.85rem;">
+        No messages yet. Start the conversation! 👋</div>`;
+      return;
+    }
+    const atBottom = c.scrollHeight - c.scrollTop - c.clientHeight < 60;
+    c.innerHTML = state.chatMessages.map(buildChatMsgHTML).join('');
+    if (atBottom || !c._hasScrolled) { c.scrollTop = c.scrollHeight; c._hasScrolled = true; }
+  }
+
+  function appendChatMsgs(newMsgs) {
+    const c = document.getElementById('chat-messages');
+    if (!c || !newMsgs.length) return;
+    const atBottom = c.scrollHeight - c.scrollTop - c.clientHeight < 60;
+    if (!c.querySelector('.chat-msg')) { renderChatMessages(); return; }
+    newMsgs.forEach(m => {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = buildChatMsgHTML(m);
+      c.appendChild(tmp.firstChild);
+    });
+    if (atBottom) { c.scrollTop = c.scrollHeight; }
+    c._hasScrolled = true;
+  }
+
+  function renderChat() {
+    const sel = document.getElementById('chat-recipient');
+    if (sel) {
+      const active = state.players.filter(p =>
+        p.active !== false && p.active !== 'false' && p.name !== playerName
+      );
+      // Add coordinator as a private-message target if a name is configured
+      const coordName = state.config.coordinatorName || '';
+      // Only add coordinator if they're not already a player in the list
+      const coordIsPlayer = coordName && active.some(p => p.name === coordName);
+      const coordOption = coordName && !coordIsPlayer
+        ? `<option value="${esc(coordName)}">${esc(coordName)} (Coordinator)</option>` : '';
+      sel.innerHTML = `<option value="">Everyone</option>${coordOption}` +
+        active.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+    }
+    renderChatMessages();
+    // Mark all visible messages as seen
+    if (state.chatMessages.length) {
+      chatSetLastSeen(Math.max(...state.chatMessages.map(m => m.id)));
+      updateChatBadge();
+    }
+    // Wire input / send button once
+    const input   = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('btn-chat-send');
+    const counter = document.getElementById('chat-char-count');
+    const status  = document.getElementById('chat-send-status');
+    if (input && !input._chatWired) {
+      input._chatWired = true;
+      input.addEventListener('input', () => {
+        const rem = 160 - input.value.length;
+        if (counter) { counter.textContent = rem; counter.style.color = rem < 20 ? 'var(--danger)' : 'var(--muted)'; }
+      });
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendBtn?.click(); }
+      });
+    }
+    if (sendBtn && !sendBtn._chatWired) {
+      sendBtn._chatWired = true;
+      sendBtn.addEventListener('click', async () => {
+        const msg = input?.value.trim() || '';
+        if (!msg) return;
+        const recipient = document.getElementById('chat-recipient')?.value || '';
+        sendBtn.disabled = true; sendBtn.textContent = '…';
+        if (status) status.textContent = '';
+        try {
+          const res = await API.postChatMessage(playerName, recipient, msg);
+          if (res.success) {
+            if (input) { input.value = ''; }
+            if (counter) { counter.textContent = '160'; counter.style.color = 'var(--muted)'; }
+            await pollChatMessages();
+          } else if (status) { status.textContent = res.error || 'Failed to send'; }
+        } catch (err) {
+          if (status) status.textContent = 'Error: ' + err.message;
+        } finally { sendBtn.disabled = false; sendBtn.textContent = 'Send'; }
+      });
+    }
+  }
+
+  async function pollChatMessages() {
+    try {
+      const data = await API.getChatMessages(state.chatLastId, playerName);
+      if (!data.messages?.length) return;
+      const existingIds = new Set(state.chatMessages.map(m => m.id));
+      const newMsgs = data.messages.filter(m => !existingIds.has(m.id));
+      if (!newMsgs.length) return;
+      state.chatMessages.push(...newMsgs);
+      if (state.chatMessages.length > 200) state.chatMessages = state.chatMessages.slice(-200);
+      state.chatLastId = Math.max(...state.chatMessages.map(m => m.id));
+      updateChatBadge();
+      // If chat page is active, append and mark seen
+      if (document.getElementById('page-chat')?.classList.contains('active')) {
+        appendChatMsgs(newMsgs);
+        chatSetLastSeen(state.chatLastId);
+        updateChatBadge();
+      }
+    } catch (e) { /* polling errors are silent */ }
+  }
+
+  function startChatPolling(fast) {
+    if (state.chatPollTimer) clearInterval(state.chatPollTimer);
+    state.chatPollTimer = setInterval(pollChatMessages, fast ? 10000 : 120000);
+  }
+
   // ── Nav ────────────────────────────────────────────────────
   function setupNav() {
     document.querySelectorAll('.nav-item').forEach(item => {
       item.addEventListener('click', () => {
+        // Warn if navigating away from availability page with unsaved profile changes
+        const currentPage = document.querySelector('.tab-panel.active')?.id?.replace('page-', '');
+        if (currentPage === 'attendance' && state._prefsDirty) {
+          if (!confirm('You have unsaved changes to your profile. Leave without saving?')) return;
+          state._prefsDirty = false;
+        }
+
         // Pre-emptively show spinner on score-entry BEFORE making panel visible
         if (item.dataset.page === 'score-entry') {
           const entryEl = document.getElementById('player-scoresheet-entry');
@@ -242,6 +580,15 @@ function gaPage(pageName) {
           }).catch(() => renderFullAttendance());
         }
 
+        // Chat page — fast poll while open; stop polling when leaving
+        if (page === 'chat') {
+          renderChat();
+          startChatPolling(true);
+        } else if (state.chatPollTimer) {
+          clearInterval(state.chatPollTimer);
+          state.chatPollTimer = null;
+        }
+
         // Clear new-pairings dot when player opens My Games
         if (page === 'my-games') {
           const dot = item.querySelector('.new-dot');
@@ -259,6 +606,7 @@ function gaPage(pageName) {
 
   function renderAll() {
     updatePageHeaders();
+    renderFinalBanner();
     renderNextGame();
     renderMyGames();
     renderMyAttendance();
@@ -269,7 +617,93 @@ function gaPage(pageName) {
     renderFullAttendance();
     renderPlayerReportSelect();
     renderTournamentBracket();
+    renderChallenges();
     if (canScore && !state._scoreEntryLoading && !state._scoreEntryTouched) renderScoreEntry();
+  }
+
+  function renderFinalBanner() {
+    const el = document.getElementById('player-final-banner');
+    if (!el) return;
+    const totalWeeks = parseInt(state.config.weeks || 0);
+    if (!totalWeeks) { el.innerHTML = ''; return; }
+    const weeks = [...new Set(state.pairings.map(p => parseInt(p.week)))].sort((a, b) => a - b);
+    const currentWeek = weeks.length ? Math.max(...weeks) : 1;
+    if (currentWeek < totalWeeks) { el.innerHTML = ''; return; }
+
+    const idPrefix = 'player';
+    el.innerHTML = `
+      <details id="${idPrefix}-final-banner-details" style="margin-top:10px; margin-bottom:4px;">
+        <summary style="list-style:none; cursor:pointer; display:flex; align-items:center;
+            justify-content:space-between; background:rgba(232,184,75,0.13);
+            border:1px solid rgba(232,184,75,0.35); border-radius:8px; padding:10px 16px;
+            user-select:none;">
+          <div style="font-size:0.9rem; font-weight:600; color:var(--gold);">
+            🏆 Final Session! &nbsp; Please leave feedback for the app developer
+          </div>
+          <span style="font-size:0.72rem; color:var(--gold); opacity:0.7; flex-shrink:0; margin-left:10px;">▼</span>
+        </summary>
+        <div style="padding:14px 16px; background:rgba(232,184,75,0.05);
+            border:1px solid rgba(232,184,75,0.25); border-top:none;
+            border-radius:0 0 8px 8px;">
+          <p style="font-size:0.85rem; color:var(--muted); line-height:1.75; margin:0 0 14px;">
+            This app was built and provided to help run your league — completely free. Other apps doing far less
+            often charge significant fees, which could raise the cost to you. It took hundreds of hours to develop, test, and support.
+            If you'd like to show appreciation for the effort, free-will donations can be made on
+            Venmo to <strong style="color:var(--white);">Doug-Tucker-26</strong>
+            &nbsp;<a href="https://venmo.com/Doug-Tucker-26" target="_blank"
+              style="color:var(--green); text-decoration:none; font-size:0.8rem;
+                     border:1px solid rgba(94,194,106,0.3); border-radius:4px; padding:1px 9px;
+                     white-space:nowrap;">💸 Open Venmo</a>.
+            <br>Donations also help cover ongoing costs for tools and hosting, and will allow for faster hosting
+            and more advanced features to be added.
+          </p>
+          <div style="border-top:1px solid rgba(255,255,255,0.07); padding-top:12px;">
+            <div style="font-size:0.78rem; font-weight:600; color:var(--muted);
+                text-transform:uppercase; letter-spacing:0.06em; margin-bottom:8px;">
+              💡 Suggestions for the app
+            </div>
+            <textarea id="${idPrefix}-final-suggestion-text"
+                placeholder="What would you like to see improved or added?"
+                style="width:100%; box-sizing:border-box; min-height:80px; padding:8px 10px;
+                       font-size:0.85rem; background:rgba(255,255,255,0.05);
+                       border:1px solid rgba(255,255,255,0.15); border-radius:6px;
+                       color:var(--white); resize:vertical; font-family:inherit;"></textarea>
+            <div style="display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap;">
+              <button id="${idPrefix}-final-suggestion-send"
+                  class="btn btn-primary" style="font-size:0.82rem; padding:5px 16px;">
+                📨 Send
+              </button>
+              <span id="${idPrefix}-final-suggestion-status" style="font-size:0.82rem;"></span>
+            </div>
+          </div>
+        </div>
+      </details>`;
+
+    const btn    = document.getElementById(`${idPrefix}-final-suggestion-send`);
+    const txtEl  = document.getElementById(`${idPrefix}-final-suggestion-text`);
+    const statEl = document.getElementById(`${idPrefix}-final-suggestion-status`);
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      const message = txtEl.value.trim();
+      if (!message) { statEl.innerHTML = '<span style="color:var(--danger);">Please enter a suggestion.</span>'; return; }
+      btn.disabled = true; btn.textContent = '⏳ Sending…'; statEl.innerHTML = '';
+      try {
+        await API.sendFeedback({
+          feedbackType: 'Suggestion',
+          name:       session.name || '',
+          email:      '',
+          message,
+          leagueId:   session.leagueId,
+          leagueName: session.leagueName,
+        });
+        statEl.innerHTML = '<span style="color:var(--green);">✓ Sent — thank you!</span>';
+        txtEl.value = '';
+      } catch (e) {
+        statEl.innerHTML = `<span style="color:var(--danger);">Failed: ${esc(e.message)}</span>`;
+      } finally {
+        btn.disabled = false; btn.textContent = '📨 Send';
+      }
+    });
   }
 
   function updatePageHeaders() {
@@ -340,8 +774,16 @@ function gaPage(pageName) {
       const won = score && parseInt(myScore) > parseInt(oppScore);
       const date = formatDateTime(week, state.config) ? ' · ' + formatDateTime(week, state.config) : '';
 
+      const _photosOn = tierAllows(state.limits?.tier, 'playerPhotos');
+      const partnerAvatarLast = _photosOn ? `<img src="${playerPhotoSrc(partner, (state.players.find(p=>p.name===partner)||{}).photo, 28)}"
+        style="width:28px;height:28px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:5px;">` : '';
+      const oppAvatarsLast = opps.map(o => {
+        const av = _photosOn ? `<img src="${playerPhotoSrc(o, (state.players.find(p=>p.name===o)||{}).photo, 28)}"
+          style="width:28px;height:28px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:5px;">` : '';
+        return av + esc(o);
+      }).join(' <span style="color:var(--muted);">&amp;</span> ');
       if (typeof _updatePlayerTimerCourt === 'function') _updatePlayerTimerCourt(lastGame.court);
-    if (typeof _startPlayerTimerPolling === 'function') _startPlayerTimerPolling();
+    if (document.getElementById('timer-opt-in-check')?.checked && typeof _startPlayerTimerPolling === 'function') _startPlayerTimerPolling();
     el.innerHTML = `<div class="card mt-1" style="border-left:3px solid ${won ? 'var(--green)' : 'var(--danger)'}; margin-bottom:12px;">
         <div class="card-header" style="padding-bottom:8px;">
           <div class="card-title" style="font-size:0.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">Session ${week}${date} · Round ${lastRound} — All Done</div>
@@ -349,8 +791,8 @@ function gaPage(pageName) {
         </div>
         <div style="display:flex; gap:24px; flex-wrap:wrap; font-size:0.88rem;">
           <div><span class="label">Court</span><br><strong>${courtName(lastGame.court)}</strong></div>
-          <div><span class="label">Partner</span><br><strong style="color:var(--green);">${esc(partner)}</strong></div>
-          <div><span class="label">Opponents</span><br><strong>${opps.map(o => esc(o)).join(' &amp; ')}</strong></div>
+          <div><span class="label">Partner</span><br><strong style="color:var(--green);">${partnerAvatarLast}${esc(partner)}</strong></div>
+          <div><span class="label">Opponents</span><br><strong>${oppAvatarsLast}</strong></div>
         </div>
       </div>`;
       return;
@@ -363,16 +805,24 @@ function gaPage(pageName) {
       : [nextGame.p1, nextGame.p2].filter(Boolean);
     const date = formatDateTime(week, state.config) ? ' · ' + formatDateTime(week, state.config) : '';
 
+    const _photosOn2 = tierAllows(state.limits?.tier, 'playerPhotos');
+    const partnerAvatar = _photosOn2 ? `<img src="${playerPhotoSrc(partner, (state.players.find(p=>p.name===partner)||{}).photo, 32)}"
+      style="width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;">` : '';
+    const oppAvatars = opps.map(o => {
+      const av = _photosOn2 ? `<img src="${playerPhotoSrc(o, (state.players.find(p=>p.name===o)||{}).photo, 32)}"
+        style="width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;">` : '';
+      return av + esc(o);
+    }).join(' <span style="color:var(--muted);">&amp;</span> ');
     if (typeof _updatePlayerTimerCourt === 'function') _updatePlayerTimerCourt(nextGame.court);
-    if (typeof _startPlayerTimerPolling === 'function') _startPlayerTimerPolling();
+    if (document.getElementById('timer-opt-in-check')?.checked && typeof _startPlayerTimerPolling === 'function') _startPlayerTimerPolling();
     el.innerHTML = `<div class="card mt-1" style="border-left:3px solid var(--gold); margin-bottom:12px;">
       <div class="card-header" style="padding-bottom:8px;">
         <div class="card-title" style="font-size:0.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">Session ${week}${date} · Up Next — Round ${nextRound}</div>
         <span class="badge badge-gold">${courtName(nextGame.court)}</span>
       </div>
       <div style="display:flex; gap:24px; flex-wrap:wrap; font-size:0.88rem;">
-        <div><span class="label">Partner</span><br><strong style="color:var(--green); font-size:1rem;">${esc(partner)}</strong></div>
-        <div><span class="label">Opponents</span><br><strong style="font-size:1rem;">${opps.map(o => esc(o)).join(' &amp; ')}</strong></div>
+        <div><span class="label">Partner</span><br><strong style="color:var(--green); font-size:1rem;">${partnerAvatar}${esc(partner)}</strong></div>
+        <div><span class="label">Opponents</span><br><strong style="font-size:1rem;">${oppAvatars}</strong></div>
       </div>
     </div>`;
   }
@@ -398,9 +848,13 @@ function gaPage(pageName) {
       let urlHtml = '';
       const lid = session.leagueId || '';
       if (lid) {
-        const base = (c.leagueUrl || '').replace(/([?&]league=)[^&]*.*$/, '').replace(/[?&]$/, '')
-                  || 'https://pb-league.github.io/league/index.html';
-        const leagueUrl  = base + '?league=' + encodeURIComponent(lid);
+        // Resolve customerId: sessionStorage set at login time (most reliable),
+        // then fall back to the ?id= embedded in the stored leagueUrl.
+        const _storedCid = sessionStorage.getItem('pb_customer_id')
+                        || (c.leagueUrl || '').match(/[?&]id=([^&]+)/)?.[1]
+                        || '';
+        const leagueUrl  = APP_BASE_URL + 'index.html?league=' + encodeURIComponent(lid)
+                         + (_storedCid ? '&id=' + _storedCid : '');
         const personalUrl = leagueUrl + '&player=' + encodeURIComponent(playerName);
         urlHtml = `<div style="margin-top:10px; padding:10px 12px; background:rgba(255,255,255,0.04);
                                border-radius:8px; border:1px solid rgba(255,255,255,0.08);">
@@ -420,9 +874,43 @@ function gaPage(pageName) {
         </div>`;
       }
 
+      // League Coordinator card
+      const coordName  = c.coordinatorName || '';
+      const coordEmail = c.replyTo || '';
+      const coordPhone = c.coordinatorPhone || '';
+      let coordHtml = '';
+      if (coordName || coordEmail) {
+        const photosOn  = tierAllows(state.limits?.tier, 'playerPhotos');
+        const photoSrc  = photosOn
+          ? playerPhotoSrc(coordName || 'Admin', c.coordinatorPhoto || '', 48)
+          : generateInitialAvatar(coordName || 'Admin', 48);
+        const phoneHtml = coordPhone
+          ? `<div style="font-size:0.8rem; margin-top:2px;">
+               <a href="sms:${esc(coordPhone)}" style="color:var(--green);text-decoration:none;"
+                  title="Text the coordinator — only works if this app is saved to your phone's home screen"
+               >${esc(coordPhone)}</a>
+             </div>`
+          : '';
+        coordHtml = `<div style="display:flex; align-items:center; gap:12px; padding:10px 14px;
+            background:rgba(255,255,255,0.03); border-radius:8px;
+            border:1px solid rgba(255,255,255,0.08); margin-bottom:12px;">
+          <img src="${photoSrc}" style="width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0;" alt="coordinator">
+          <div>
+            <div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.07em;
+                color:var(--muted);margin-bottom:3px;">League Coordinator</div>
+            ${coordName  ? `<div style="font-size:0.9rem;font-weight:600;color:var(--white);margin-bottom:2px;">${esc(coordName)}</div>` : ''}
+            ${coordEmail ? `<div style="font-size:0.8rem;"><a href="mailto:${esc(coordEmail)}"
+                style="color:var(--green);text-decoration:none;"
+                title="Email the coordinator — only works if this app is saved to your phone's home screen"
+                >${esc(coordEmail)}</a></div>` : ''}
+            ${phoneHtml}
+          </div>
+        </div>`;
+      }
+
       infoEl.innerHTML = (parts.length
         ? `<div style="display:flex; flex-wrap:wrap; gap:8px 20px; margin-bottom:12px; font-size:0.85rem; color:var(--muted);">${parts.join('')}</div>`
-        : '') + urlHtml;
+        : '') + coordHtml + urlHtml;
     }
 
     const rulesEl = document.getElementById('player-dash-rules');
@@ -652,50 +1140,118 @@ function gaPage(pageName) {
     const el = document.getElementById('email-prefs');
     if (!el) return;
     const me = state.players.find(p => p.name === playerName) || {};
+    const photosEnabled = tierAllows(state.limits?.tier, 'playerPhotos');
+    const photoSrc = photosEnabled ? playerPhotoSrc(playerName, me.photo || '', 80) : '';
     el.innerHTML = `
       <div class="card mt-2">
-        <div class="card-header"><div class="card-title">Email Notifications</div></div>
-        <p style="font-size:0.85rem; color:var(--muted); margin-bottom:14px;">
-          Receive session results by email after each session.
-        </p>
-        <div class="form-row" style="align-items:center; gap:16px;">
-          <div class="form-group" style="flex:2;">
-            <label class="form-label">Your Email Address</label>
-            <input class="form-control" id="player-email" type="email"
-              value="${esc(me.email || '')}" placeholder="you@example.com">
-          </div>
-          <div class="form-group" style="flex:0; white-space:nowrap;">
-            <label class="form-label">Send Results</label>
-            <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
-              <input type="checkbox" id="player-notify" ${me.notify ? 'checked' : ''}
-                style="width:18px; height:18px;">
-              <span style="font-size:0.85rem; color:var(--white);">Yes, notify me</span>
+        <div style="display:flex; gap:14px; align-items:flex-start;">
+          ${photosEnabled ? `<div style="flex-shrink:0; text-align:center;">
+            <img id="player-photo-preview" src="${photoSrc}"
+              style="width:58px; height:58px; border-radius:50%; object-fit:cover;
+                     border:2px solid var(--border); display:block; margin-bottom:5px;">
+            <label style="cursor:pointer; font-size:0.72rem; color:var(--muted); white-space:nowrap;"
+                   title="Change profile photo">
+              📷 Photo
+              <input type="file" id="player-photo-input" accept="image/*" capture="environment"
+                style="display:none;">
+            </label>
+            <div id="photo-save-status" style="font-size:0.7rem; margin-top:3px; color:var(--muted); max-width:58px;"></div>
+          </div>` : ''}
+          <div style="flex:1; display:grid; grid-template-columns:1fr 1fr; gap:6px 12px; min-width:0;">
+            <div>
+              <label class="form-label">Full Name</label>
+              <input class="form-control" id="player-fullname" type="text"
+                style="padding:5px 9px;" value="${esc(me.fullName || '')}" placeholder="First Last">
+            </div>
+            <div>
+              <label class="form-label">Cell Phone</label>
+              <input class="form-control" id="player-phone" type="tel"
+                style="padding:5px 9px;" value="${esc(me.phone || '')}" placeholder="555-123-4567">
+            </div>
+            <div>
+              <label class="form-label">Email Address</label>
+              <input class="form-control" id="player-email" type="email"
+                style="padding:5px 9px;" value="${esc(me.email || '')}" placeholder="you@example.com">
+            </div>
+            <div style="display:flex; align-items:flex-end; gap:14px; padding-bottom:3px; flex-wrap:wrap;">
+              <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:0.82rem;
+                            color:var(--white); white-space:nowrap;"
+                     title="Receive session results by email after each session">
+                <input type="checkbox" id="player-notify" ${me.notify ? 'checked' : ''}
+                  style="width:15px; height:15px;">
+                Notify me
+              </label>
+              <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:0.82rem;
+                            color:var(--white); white-space:nowrap;"
+                     title="Let other players see your email and phone on the attendance page">
+                <input type="checkbox" id="player-share-contact" ${me.shareContact ? 'checked' : ''}
+                  style="width:15px; height:15px;">
+                Share contact
+              </label>
             </div>
           </div>
         </div>
-        <button class="btn btn-primary" id="btn-save-email" style="margin-top:4px;">Save</button>
-        <div id="email-save-status" style="font-size:0.8rem; margin-top:8px;"></div>
+        <div style="display:flex; align-items:center; gap:12px; margin-top:10px;">
+          <button class="btn btn-primary" id="btn-save-email" style="padding:6px 20px;">Save</button>
+          <div id="email-save-status" style="font-size:0.8rem;"></div>
+        </div>
       </div>`;
 
+    // Mark dirty when any profile field is edited
+    ['player-fullname','player-phone','player-email','player-notify','player-share-contact'].forEach(id => {
+      document.getElementById(id)?.addEventListener('change', () => { state._prefsDirty = true; });
+    });
+    // input fires on text fields as the user types; change fires on checkboxes
+    ['player-fullname','player-phone','player-email'].forEach(id => {
+      document.getElementById(id)?.addEventListener('input', () => { state._prefsDirty = true; });
+    });
+
     document.getElementById('btn-save-email').addEventListener('click', async () => {
-      const email  = document.getElementById('player-email').value.trim();
-      const notify = document.getElementById('player-notify').checked;
+      const fullName     = document.getElementById('player-fullname').value.trim();
+      const phone        = document.getElementById('player-phone').value.trim();
+      const email        = document.getElementById('player-email').value.trim();
+      const notify       = document.getElementById('player-notify').checked;
+      const shareContact = document.getElementById('player-share-contact').checked;
       const btn    = document.getElementById('btn-save-email');
       const status = document.getElementById('email-save-status');
       btn.disabled = true;
       try {
-        // Update local player record then save all players
         const updatedPlayers = state.players.map(pl =>
-          pl.name === playerName ? { ...pl, email, notify } : pl
+          pl.name === playerName ? { ...pl, fullName, phone, email, notify, shareContact } : pl
         );
         await API.savePlayers(updatedPlayers);
         state.players = updatedPlayers;
+        state._prefsDirty = false;
         status.textContent = '✓ Saved';
         status.style.color = 'var(--green)';
       } catch (e) {
         status.textContent = 'Save failed: ' + e.message;
         status.style.color = 'var(--danger)';
       } finally { btn.disabled = false; }
+    });
+
+    if (photosEnabled) document.getElementById('player-photo-input').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const status = document.getElementById('photo-save-status');
+      const preview = document.getElementById('player-photo-preview');
+      status.textContent = 'Saving…';
+      status.style.color = 'var(--muted)';
+      try {
+        const b64 = await resizeImageFile(file);
+        await API.savePlayerPhoto(playerName, b64);
+        // Update local state so re-renders use the new photo
+        state.players = state.players.map(pl =>
+          pl.name === playerName ? { ...pl, photo: b64 } : pl
+        );
+        preview.src = 'data:image/jpeg;base64,' + b64;
+        status.textContent = '✓ Photo saved';
+        status.style.color = 'var(--green)';
+      } catch (err) {
+        status.textContent = 'Failed: ' + err.message;
+        status.style.color = 'var(--danger)';
+      }
+      e.target.value = ''; // allow re-selecting same file
     });
   }
 
@@ -977,8 +1533,8 @@ function gaPage(pageName) {
           <div style="display:grid; grid-template-columns:auto 1fr auto 1fr; align-items:center; gap:6px;">
             <div style="font-size:0.7rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); padding-right:4px; white-space:nowrap;">${courtName(game.court)}</div>
             <div style="min-width:0; text-align:right;">
-              <div style="${t1style} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p1)}</div>
-              ${game.p2 ? `<div style="${t1style} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p2)}</div>` : ''}
+              <div style="${t1style} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><span class="ss-player-link" data-ssplayer="${esc(game.p1)}" style="cursor:pointer; text-decoration:underline; text-underline-offset:2px;">${esc(game.p1)}</span></div>
+              ${game.p2 ? `<div style="${t1style} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><span class="ss-player-link" data-ssplayer="${esc(game.p2)}" style="cursor:pointer; text-decoration:underline; text-underline-offset:2px;">${esc(game.p2)}</span></div>` : ''}
             </div>
             <div style="display:flex; align-items:center; justify-content:center; gap:4px; flex-shrink:0; padding:0 4px; ${tieWarning ? 'border:1px solid var(--danger); border-radius:5px;' : ''}">
               <div class="score-display ${entered ? (t1win ? 'winner' : 'loser') : 'pending'}" style="min-width:28px; text-align:center;">${entered ? s1 : '—'}</div>
@@ -986,8 +1542,8 @@ function gaPage(pageName) {
               <div class="score-display ${entered ? (t2win ? 'winner' : 'loser') : 'pending'}" style="min-width:28px; text-align:center;">${entered ? s2 : '—'}</div>
             </div>
             <div style="min-width:0;">
-              <div style="${t2style} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p3)}</div>
-              ${game.p4 ? `<div style="${t2style} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(game.p4)}</div>` : ''}
+              <div style="${t2style} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><span class="ss-player-link" data-ssplayer="${esc(game.p3)}" style="cursor:pointer; text-decoration:underline; text-underline-offset:2px;">${esc(game.p3)}</span></div>
+              ${game.p4 ? `<div style="${t2style} font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><span class="ss-player-link" data-ssplayer="${esc(game.p4)}" style="cursor:pointer; text-decoration:underline; text-underline-offset:2px;">${esc(game.p4)}</span></div>` : ''}
             </div>
           </div>
           ${tieWarning ? `<div style="margin-top:3px; font-size:0.68rem; color:var(--danger); text-align:center;">⚠️ Tied score</div>` : ''}
@@ -1004,6 +1560,14 @@ function gaPage(pageName) {
     });
 
     document.getElementById('player-scoresheet').innerHTML = html;
+
+    document.querySelectorAll('#player-scoresheet .ss-player-link').forEach(el => {
+      el.addEventListener('click', e => {
+        e.stopPropagation();
+        const p = state.players.find(pl => pl.name === el.dataset.ssplayer);
+        if (p) showContactCard(p);
+      });
+    });
   }
 
   // ── Score Entry (canScore players) ────────────────────────
@@ -1077,15 +1641,16 @@ function gaPage(pageName) {
         const winStyle  = 'color:var(--green); font-weight:700;';
         const loseStyle = 'color:var(--muted);';
 
-        const p2div = game.p2 ? '<div style="' + (entered ? (t1win ? winStyle : loseStyle) : '') + ' font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + esc(game.p2) + '</div>' : '';
-        const p4div = game.p4 ? '<div style="' + (entered ? (t2win ? winStyle : loseStyle) : '') + ' font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + esc(game.p4) + '</div>' : '';
+        const ssLink = (name, style) => '<span class="ss-player-link" data-ssplayer="' + esc(name) + '" style="cursor:pointer; text-decoration:underline; text-underline-offset:2px;">' + esc(name) + '</span>';
+        const p2div = game.p2 ? '<div style="' + (entered ? (t1win ? winStyle : loseStyle) : '') + ' font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + ssLink(game.p2) + '</div>' : '';
+        const p4div = game.p4 ? '<div style="' + (entered ? (t2win ? winStyle : loseStyle) : '') + ' font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + ssLink(game.p4) + '</div>' : '';
 
         html += '<div class="game-card" style="background:var(--card-bg); border-radius:10px; padding:10px 12px; margin-bottom:8px;"'
              +  ' data-week="' + week + '" data-round="' + game.round + '" data-court="' + game.court + '">'
              +  '<div style="font-size:0.7rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); margin-bottom:5px;">' + courtName(game.court) + '</div>'
              +  '<div style="display:grid; grid-template-columns:1fr 110px 1fr; align-items:center; gap:6px;">'
              +    '<div style="min-width:0;">'
-             +      '<div style="' + (entered ? (t1win ? winStyle : loseStyle) : '') + ' font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + esc(game.p1) + '</div>'
+             +      '<div style="' + (entered ? (t1win ? winStyle : loseStyle) : '') + ' font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + ssLink(game.p1) + '</div>'
              +      p2div
              +    '</div>'
              +    '<div style="display:flex; align-items:center; justify-content:center; gap:4px;">'
@@ -1094,7 +1659,7 @@ function gaPage(pageName) {
              +      '<input type="number" class="score-input" data-score="2" value="' + s2 + '" min="0" max="30" placeholder="0" inputmode="numeric" style="width:44px; text-align:center; padding:4px; -moz-appearance:textfield;">'
              +    '</div>'
              +    '<div style="min-width:0; text-align:right;">'
-             +      '<div style="' + (entered ? (t2win ? winStyle : loseStyle) : '') + ' font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + esc(game.p3) + '</div>'
+             +      '<div style="' + (entered ? (t2win ? winStyle : loseStyle) : '') + ' font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + ssLink(game.p3) + '</div>'
              +      p4div
              +    '</div>'
              +  '</div>'
@@ -1133,6 +1698,14 @@ function gaPage(pageName) {
     // Assign sequential tabindex to all score inputs so Tab skips round headings.
     // Also remove summary elements from tab order — they are natively focusable
     // (tabIndex=0) and would intercept Tab between rounds without this.
+    document.querySelectorAll('#player-scoresheet-entry .ss-player-link').forEach(el => {
+      el.addEventListener('click', e => {
+        e.stopPropagation();
+        const p = state.players.find(pl => pl.name === el.dataset.ssplayer);
+        if (p) showContactCard(p);
+      });
+    });
+
     document.querySelectorAll('#player-scoresheet-entry summary').forEach(s => { s.tabIndex = -1; });
     document.querySelectorAll('#player-scoresheet-entry .score-input').forEach((input, i) => {
       input.tabIndex = i + 1;
@@ -1264,20 +1837,83 @@ function gaPage(pageName) {
     if (weeklyTitle) weeklyTitle.textContent = prefix + 'Session Standings';
     if (trendTitle)  trendTitle.textContent  = prefix + 'Overall Ranking by Session';
 
+    const isLadder = (state.config.standingsMethod || 'standard') === 'ladder';
+
+    // Build rankMap once (used for ladder mode to classify wins)
+    const buildRankMap = () => {
+      const std = Reports.computeStandings(state.scores, state.players, state.pairings, null,
+        state.config.rankingMethod, state.attendance, state.config.pairingMode);
+      const rm = {};
+      std.forEach(s => { if (s.rank && s.rank !== '-') rm[s.name] = s.rank; });
+      state.players.forEach(p => { if (rm[p.name] == null && p.initialRank) rm[p.name] = p.initialRank; });
+      return rm;
+    };
+
     // Season tab
-    const season = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance, state.config.pairingMode);
-    document.getElementById('season-standings-table').innerHTML = renderStandingsTable(season, playerName);
+    const photosOnStand = tierAllows(state.limits?.tier, 'playerPhotos');
+    const podiumPhotoMap = {};
+    if (photosOnStand) state.players.forEach(p => { if (p.photo) podiumPhotoMap[p.name] = p.photo; });
+    const podiumFullNameMap = {};
+    state.players.forEach(p => { if (p.fullName) podiumFullNameMap[p.name] = p.fullName; });
+
+    // Detect whether the final session is fully scored (season complete)
+    const seasonDone = (() => {
+      const totalWeeks = parseInt(state.config.weeks) || 0;
+      if (!totalWeeks) return false;
+      const lastGames = state.pairings.filter(p => parseInt(p.week) === totalWeeks && (p.type === 'game' || p.type === 'tourn-game'));
+      if (!lastGames.length) return false;
+      return lastGames.every(g => {
+        const sc = state.scores.find(s => parseInt(s.week) === totalWeeks && parseInt(s.round) === parseInt(g.round) && String(s.court) === String(g.court));
+        return sc && sc.score1 !== '' && sc.score1 !== null && sc.score2 !== '' && sc.score2 !== null;
+      });
+    })();
+
+    const ladderWrap  = (title, html) => `<details open style="margin-bottom:10px;">
+        <summary style="list-style:none; cursor:pointer; display:flex; align-items:center;
+          justify-content:space-between; background:var(--surface); border-radius:var(--radius);
+          padding:10px 16px; user-select:none;">
+          <span style="font-size:0.88rem; font-weight:700; color:var(--white);">${title}</span>
+          <span style="font-size:0.72rem; color:var(--green); opacity:0.6;">▼</span>
+        </summary><div style="padding:10px 0 4px;">${html}</div>
+      </details>`;
+
+    if (isLadder) {
+      const rankMap = buildRankMap();
+      const season = Reports.computeLadderStandings(state.scores, state.players, state.pairings,
+        null, state.attendance, state.config, rankMap);
+      const topThree = season.filter(s => s.totalPts !== undefined).slice(0, 3);
+      document.getElementById('season-podium').innerHTML = buildPodiumHTML(topThree, podiumPhotoMap, photosOnStand, seasonDone, podiumFullNameMap);
+      const stdAll = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance, state.config.pairingMode);
+      document.getElementById('season-standings-table').innerHTML =
+        ladderWrap('Ladder Standings', renderLadderStandingsTable(season, playerName)) +
+        ladderWrap('Season Win\u00a0% Standings', renderStandingsTable(stdAll, playerName));
+    } else {
+      const season = Reports.computeStandings(state.scores, state.players, state.pairings, null, state.config.rankingMethod, state.attendance, state.config.pairingMode);
+      const topThree = season.filter(s => s.games > 0).slice(0, 3);
+      document.getElementById('season-podium').innerHTML = buildPodiumHTML(topThree, podiumPhotoMap, photosOnStand, seasonDone, podiumFullNameMap);
+      document.getElementById('season-standings-table').innerHTML = renderStandingsTable(season, playerName);
+    }
 
     // Weekly tab
     const week = state.currentWstandWeek;
     const wstandDate = formatDateTime(week, state.config) ? ' — ' + formatDateTime(week, state.config) : '';
     document.getElementById('wstand-label').textContent = `Session ${week}${wstandDate}`;
-    const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week, state.config.rankingMethod);
-    const overallThisWeek = Reports.computeStandings(state.scores, state.players, state.pairings, week, state.config.rankingMethod, state.attendance, state.config.pairingMode);
-    const overallPrevWeek = week > 1
-      ? Reports.computeStandings(state.scores, state.players, state.pairings, week - 1, state.config.rankingMethod, state.attendance, state.config.pairingMode)
-      : null;
-    document.getElementById('weekly-standings-table').innerHTML = renderStandingsTable(weekStand, playerName, overallThisWeek, overallPrevWeek);
+    if (isLadder) {
+      const rankMap = buildRankMap();
+      const weekStand = Reports.computeWeeklyLadderStandings(state.scores, state.players, state.pairings,
+        week, state.attendance, state.config, rankMap);
+      const weekWinPct = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week, state.config.rankingMethod, state.attendance, state.config.pairingMode);
+      document.getElementById('weekly-standings-table').innerHTML =
+        ladderWrap('Ladder Standings', renderLadderStandingsTable(weekStand, playerName)) +
+        ladderWrap('Session Win\u00a0% Standings', renderStandingsTable(weekWinPct, playerName));
+    } else {
+      const weekStand = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week, state.config.rankingMethod);
+      const overallThisWeek = Reports.computeStandings(state.scores, state.players, state.pairings, week, state.config.rankingMethod, state.attendance, state.config.pairingMode);
+      const overallPrevWeek = week > 1
+        ? Reports.computeStandings(state.scores, state.players, state.pairings, week - 1, state.config.rankingMethod, state.attendance, state.config.pairingMode)
+        : null;
+      document.getElementById('weekly-standings-table').innerHTML = renderStandingsTable(weekStand, playerName, overallThisWeek, overallPrevWeek);
+    }
 
     // Default to season tab active
     document.querySelectorAll('#player-standings-tabs .tab-btn').forEach(b => b.classList.remove('active'));
@@ -1288,6 +1924,28 @@ function gaPage(pageName) {
     document.getElementById('player-stand-trend')?.classList.remove('active');
 
     // Wire tabs (guard against duplicate listeners with a flag)
+    // Click player name → navigate to their player report (wired once)
+    const standPageEl = document.getElementById('page-standings');
+    if (standPageEl && !standPageEl.dataset.reportWired) {
+      standPageEl.dataset.reportWired = '1';
+      standPageEl.addEventListener('click', e => {
+        // Avatar click → contact card
+        const img = e.target.closest('[data-contact-player]');
+        if (img) {
+          const p = state.players.find(pl => pl.name === img.dataset.contactPlayer);
+          if (p) showContactCard(p);
+          return;
+        }
+        // Name click → player report
+        const span = e.target.closest('[data-report-player]');
+        if (!span) return;
+        const name = span.dataset.reportPlayer;
+        document.querySelector('.nav-item[data-page="player-report"]')?.click();
+        const sel = document.getElementById('report-player-select');
+        if (sel) { sel.value = name; renderPlayerReport(name); }
+      });
+    }
+
     const tabsEl = document.getElementById('player-standings-tabs');
     if (tabsEl && !tabsEl.dataset.wired) {
       tabsEl.dataset.wired = '1';
@@ -1310,12 +1968,35 @@ function gaPage(pageName) {
     const week = state.currentWstandWeek;
     const wstandDate = formatDateTime(week, state.config) ? ' — ' + formatDateTime(week, state.config) : '';
     document.getElementById('wstand-label').textContent = `Session ${week}${wstandDate}`;
-    const s = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week, state.config.rankingMethod);
-    const overallThisWeek = Reports.computeStandings(state.scores, state.players, state.pairings, week, state.config.rankingMethod, state.attendance, state.config.pairingMode);
-    const overallPrevWeek = week > 1
-      ? Reports.computeStandings(state.scores, state.players, state.pairings, week - 1, state.config.rankingMethod, state.attendance, state.config.pairingMode)
-      : null;
-    document.getElementById('weekly-standings-table').innerHTML = renderStandingsTable(s, playerName, overallThisWeek, overallPrevWeek);
+    const isLadder = (state.config.standingsMethod || 'standard') === 'ladder';
+    if (isLadder) {
+      const std = Reports.computeStandings(state.scores, state.players, state.pairings, null,
+        state.config.rankingMethod, state.attendance, state.config.pairingMode);
+      const rankMap = {};
+      std.forEach(s => { if (s.rank && s.rank !== '-') rankMap[s.name] = s.rank; });
+      state.players.forEach(p => { if (rankMap[p.name] == null && p.initialRank) rankMap[p.name] = p.initialRank; });
+      const s = Reports.computeWeeklyLadderStandings(state.scores, state.players, state.pairings,
+        week, state.attendance, state.config, rankMap);
+      const _lw = (title, html) => `<details open style="margin-bottom:10px;">
+        <summary style="list-style:none; cursor:pointer; display:flex; align-items:center;
+          justify-content:space-between; background:var(--surface); border-radius:var(--radius);
+          padding:10px 16px; user-select:none;">
+          <span style="font-size:0.88rem; font-weight:700; color:var(--white);">${title}</span>
+          <span style="font-size:0.72rem; color:var(--green); opacity:0.6;">▼</span>
+        </summary><div style="padding:10px 0 4px;">${html}</div>
+      </details>`;
+      const _weekWinPct = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week, state.config.rankingMethod, state.attendance, state.config.pairingMode);
+      document.getElementById('weekly-standings-table').innerHTML =
+        _lw('Ladder Standings', renderLadderStandingsTable(s, playerName)) +
+        _lw('Session Win\u00a0% Standings', renderStandingsTable(_weekWinPct, playerName));
+    } else {
+      const s = Reports.computeWeeklyStandings(state.scores, state.players, state.pairings, week, state.config.rankingMethod);
+      const overallThisWeek = Reports.computeStandings(state.scores, state.players, state.pairings, week, state.config.rankingMethod, state.attendance, state.config.pairingMode);
+      const overallPrevWeek = week > 1
+        ? Reports.computeStandings(state.scores, state.players, state.pairings, week - 1, state.config.rankingMethod, state.attendance, state.config.pairingMode)
+        : null;
+      document.getElementById('weekly-standings-table').innerHTML = renderStandingsTable(s, playerName, overallThisWeek, overallPrevWeek);
+    }
   }
 
   // ── Full Attendance ────────────────────────────────────────
@@ -1329,7 +2010,26 @@ function gaPage(pageName) {
       return;
     }
 
-    let html = '<div class="att-grid">';
+    const photosEnabled = tierAllows(state.limits?.tier, 'playerPhotos');
+
+    // Coordinator banner
+    const coordName  = state.config.coordinatorName || '';
+    const coordBanner = coordName ? (() => {
+      const src = photosEnabled
+        ? playerPhotoSrc(coordName, state.config.coordinatorPhoto || '', 36)
+        : generateInitialAvatar(coordName, 36);
+      return `<div style="display:flex; align-items:center; gap:10px; padding:8px 12px; margin-bottom:10px;
+          background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid rgba(255,255,255,0.08);">
+        <img src="${src}" style="width:36px; height:36px; border-radius:50%; object-fit:cover; border:2px solid rgba(255,255,255,0.12); flex-shrink:0;">
+        <div>
+          <div style="font-size:0.65rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); margin-bottom:2px;">League Coordinator</div>
+          <span class="att-coord-link" style="font-size:0.88rem; font-weight:600; color:var(--white);
+            cursor:pointer; text-decoration:underline; text-underline-offset:2px;">${esc(coordName)}</span>
+        </div>
+      </div>`;
+    })() : '';
+
+    let html = coordBanner + '<div class="att-grid">';
     html += '<div class="att-row"><div></div>';
     for (let w = 1; w <= weeks; w++) {
       const date = formatDateTime(w, state.config);
@@ -1339,8 +2039,13 @@ function gaPage(pageName) {
 
     players.forEach(p => {
       const isMe = p.name === playerName;
+      const avatarSrc = playerPhotoSrc(p.name, photosEnabled ? (p.photo || '') : '', 28);
       html += `<div class="att-row" ${isMe ? 'style="background:rgba(94,194,106,0.05); border-radius:6px;"' : ''}>`;
-      html += `<div class="att-player-name" ${isMe ? 'style="color:var(--green); font-weight:600;"' : ''}>${esc(p.name)}</div>`;
+      html += `<div class="att-player-name" style="${isMe ? 'color:var(--green); font-weight:600;' : ''}display:flex; align-items:center; gap:6px;">
+        <img src="${avatarSrc}" style="width:28px; height:28px; border-radius:50%; object-fit:cover; flex-shrink:0;">
+        <span class="att-contact-link" data-player="${esc(p.name)}"
+          style="cursor:pointer; text-decoration:underline; text-underline-offset:2px;">${esc(p.name)}</span>
+      </div>`;
       for (let w = 1; w <= weeks; w++) {
         const rec = state.attendance.find(a => a.player === p.name && String(a.week) === String(w));
         const status = rec ? rec.status : 'tbd';
@@ -1351,6 +2056,95 @@ function gaPage(pageName) {
 
     html += '</div>';
     document.getElementById('full-attendance-grid').innerHTML = html;
+
+    document.querySelectorAll('#full-attendance-grid .att-contact-link').forEach(el => {
+      el.addEventListener('click', () => {
+        const p = state.players.find(pl => pl.name === el.dataset.player);
+        if (p) showContactCard(p);
+      });
+    });
+
+    document.querySelector('#full-attendance-grid .att-coord-link')?.addEventListener('click', () => {
+      showContactCard({
+        name:         state.config.coordinatorName || 'Coordinator',
+        photo:        state.config.coordinatorPhoto || '',
+        fullName:     '',
+        email:        state.config.replyTo || '',
+        phone:        state.config.coordinatorPhone || '',
+        shareContact: true,
+      });
+    });
+  }
+
+  // ── Contact Card popup ─────────────────────────────────────
+  let _contactCardWired = false;
+  function showContactCard(player) {
+    const modal = document.getElementById('contact-card-modal');
+    if (!modal) return;
+
+    if (!_contactCardWired) {
+      _contactCardWired = true;
+      document.getElementById('contact-card-close')?.addEventListener('click', () => {
+        modal.style.display = 'none';
+      });
+      modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+    }
+
+    const photosOk = tierAllows(state.limits?.tier, 'playerPhotos');
+    const src = playerPhotoSrc(player.name, photosOk ? (player.photo || '') : '', 80);
+    document.getElementById('cc-avatar').src = src;
+    document.getElementById('cc-handle').textContent = player.name;
+
+    const fullNameEl = document.getElementById('cc-fullname');
+    fullNameEl.textContent = player.fullName || '';
+    fullNameEl.style.display = player.fullName ? 'block' : 'none';
+
+    const infoEl = document.getElementById('cc-contact-info');
+    let infoHtml = '';
+    if (player.shareContact) {
+      if (player.email) {
+        infoHtml += `<div style="margin-bottom:8px;">
+          <a href="mailto:${esc(player.email)}"
+             style="color:#5ab4ff; font-size:0.9rem; text-decoration:none;">
+            ✉️ ${esc(player.email)}</a></div>`;
+      }
+      if (player.phone) {
+        infoHtml += `<div>
+          <a href="sms:${esc(player.phone)}"
+             style="color:var(--green); font-size:0.9rem; text-decoration:none;">
+            📱 ${esc(player.phone)}</a></div>`;
+      }
+    }
+    infoEl.innerHTML = infoHtml;
+
+    const hasContact = player.shareContact && (player.email || player.phone || player.fullName);
+    const wrapEl = document.getElementById('cc-add-contact-wrap');
+    const noteEl = document.getElementById('cc-note');
+    if (hasContact) {
+      wrapEl.innerHTML = `<button id="cc-add-btn" class="btn btn-outline"
+        style="font-size:0.85rem; width:100%; margin-top:8px;">📇 Add to Contacts</button>`;
+      document.getElementById('cc-add-btn').addEventListener('click', () => {
+        const lines = ['BEGIN:VCARD', 'VERSION:3.0'];
+        lines.push('FN:' + (player.fullName || player.name));
+        lines.push('NICKNAME:' + player.name);
+        if (player.email) lines.push('EMAIL:' + player.email);
+        if (player.phone) lines.push('TEL;TYPE=CELL:' + player.phone);
+        lines.push('END:VCARD');
+        const blob = new Blob([lines.join('\r\n')], { type: 'text/vcard' });
+        const url  = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = player.name + '.vcf';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+      });
+      noteEl.textContent = 'On mobile, tapping "Add to Contacts" opens your contacts app. On desktop a .vcf file downloads.';
+      noteEl.style.display = 'block';
+    } else {
+      wrapEl.innerHTML = '';
+      noteEl.style.display = 'none';
+    }
+
+    modal.style.display = 'flex';
   }
 
   // ── Events ─────────────────────────────────────────────────
@@ -1736,6 +2530,9 @@ function gaPage(pageName) {
     const minPct = state.config.minParticipation !== null && state.config.minParticipation !== undefined
       ? parseFloat(state.config.minParticipation) / 100 : 0.50;
     const hasParticipation = standings.some(s => s.participationPct !== null);
+    const _standPhotosOn = tierAllows(state.limits?.tier, 'playerPhotos');
+    const photoMap = {};
+    if (_standPhotosOn) state.players.forEach(p => { if (p.photo) photoMap[p.name] = p.photo; });
 
     // Build rank lookups for overall rank column and movement indicator
     const overallRankMap = {};
@@ -1794,9 +2591,14 @@ function gaPage(pageName) {
         }
       }
 
+      const avatar = _standPhotosOn ? `<img src="${playerPhotoSrc(s.name, photoMap[s.name], 24)}"
+        data-contact-player="${esc(s.name)}"
+        style="width:24px;height:24px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;flex-shrink:0;cursor:pointer;" title="View contact card">` : '';
       return `<tr ${isMe ? 'style="background:rgba(94,194,106,0.08);"' : ''}>
         <td class="rank-cell ${top}">${s.rank}</td>
-        <td class="player-name" ${isMe ? 'style="color:var(--green);"' : ''}>${esc(s.name)}${isMe ? ' ◀' : ''}</td>
+        <td class="player-name" style="white-space:nowrap;">
+          ${avatar}<span data-report-player="${esc(s.name)}" ${isMe ? 'style="color:var(--green); cursor:pointer; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px;"' : 'style="cursor:pointer; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px;"'} title="View player report">${esc(s.name)}${isMe ? ' ◀' : ''}</span>
+        </td>
         <td>${s.wins}/${s.losses}</td>
         <td>${Reports.pct(s.winPct)}</td>
         ${secCol}
@@ -1817,6 +2619,86 @@ function gaPage(pageName) {
       : '';
     return `<table class="compact-table">
       <thead><tr><th>#</th><th>Player</th><th>W/L</th><th>Win%</th>${secHeader}${pctHeader}${overallHeader}${movHeader}</tr></thead>
+      <tbody>${rows.join('')}</tbody>
+    </table>`;
+  }
+
+  function renderLadderStandingsTable(standings, highlightPlayer = null) {
+    if (!standings || !standings.length) return '<p class="text-muted">No standings data yet.</p>';
+    const cfg = state.config || {};
+    const fmt = v => { const n = parseFloat(v) || 0; return n % 1 === 0 ? n.toFixed(0) : n.toFixed(1); };
+    const attendPts = parseFloat(cfg.ladderAttendPts) || 0;
+    const playPts   = parseFloat(cfg.ladderPlayPts)   || 0;
+    const ranges = [1, 2, 3, 4, 5, 6].map(i => ({
+      min: parseFloat(cfg[`ladderRange${i}Min`]) || 0,
+      max: parseFloat(cfg[`ladderRange${i}Max`]) || 0,
+      pts: parseFloat(cfg[`ladderRange${i}Pts`]) || 0,
+      idx: i - 1,
+    })).filter(r => r.max > r.min);
+
+    const _ladderPhotosOn = tierAllows(state.limits?.tier, 'playerPhotos');
+    const ladderPhotoMap = {};
+    if (_ladderPhotosOn) state.players.forEach(p => { if (p.photo) ladderPhotoMap[p.name] = p.photo; });
+
+    // ── Points legend ─────────────────────────────────────────
+    const legendRows = [];
+    if (attendPts) legendRows.push(`<tr><td>Attend a session</td><td style="text-align:right; font-weight:600; color:var(--gold);">${fmt(attendPts)} pt${attendPts !== 1 ? 's' : ''}</td></tr>`);
+    if (playPts)   legendRows.push(`<tr><td>Play any game</td><td style="text-align:right; font-weight:600; color:var(--gold);">${fmt(playPts)} pt${playPts !== 1 ? 's' : ''}</td></tr>`);
+    ranges.forEach(r => {
+      const isUpset   = r.max < 0;
+      const isFavored = r.min >= 0;
+      const typeLabel = isUpset ? 'Upset win' : isFavored ? 'Favored win' : 'Win';
+      legendRows.push(`<tr><td><strong>R${r.idx + 1}:</strong> ${typeLabel} <span style="color:var(--muted); font-size:0.78rem;">(rank adv ${r.min} to ${r.max})</span></td><td style="text-align:right; font-weight:600; color:var(--gold);">${fmt(r.pts)} pt${r.pts !== 1 ? 's' : ''}</td></tr>`);
+    });
+    const legendHtml = legendRows.length ? `
+      <details style="margin-bottom:14px;">
+        <summary style="list-style:none; cursor:pointer; display:flex; align-items:center;
+          justify-content:space-between; background:rgba(255,255,255,0.04);
+          border-radius:6px; padding:7px 12px; user-select:none;">
+          <span style="font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.07em; color:var(--muted);">Points Legend</span>
+          <span style="font-size:0.72rem; color:var(--green); opacity:0.6;">▼</span>
+        </summary>
+        <div style="padding:10px 12px 4px; display:inline-block; min-width:260px;">
+          <table style="font-size:0.82rem; border-collapse:collapse; width:100%;">
+            <tbody>${legendRows.join('')}</tbody>
+          </table>
+        </div>
+      </details>` : '';
+
+    const rows = standings.map((s, i) => {
+      const isMe = s.name === highlightPlayer;
+      const top  = i < 3 ? 'top' : '';
+      const rangeCols = ranges.map(r =>
+        `<td style="text-align:center;">${fmt(s.rangePts[r.idx])}</td>`
+      ).join('');
+      const avatar = _ladderPhotosOn ? `<img src="${playerPhotoSrc(s.name, ladderPhotoMap[s.name], 24)}"
+        data-contact-player="${esc(s.name)}"
+        style="width:24px;height:24px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;flex-shrink:0;cursor:pointer;" title="View contact card">` : '';
+      return `<tr ${isMe ? 'style="background:rgba(94,194,106,0.08);"' : ''}>
+        <td class="rank-cell ${top}">${s.rank}</td>
+        <td class="player-name" style="white-space:nowrap;">
+          ${avatar}<span data-report-player="${esc(s.name)}" ${isMe ? 'style="color:var(--green); cursor:pointer; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px;"' : 'style="cursor:pointer; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px;"'} title="View player report">${esc(s.name)}${isMe ? ' ◀' : ''}</span>
+        </td>
+        <td style="text-align:center; font-weight:600; color:var(--gold);">${fmt(s.totalPts)}</td>
+        <td style="text-align:center;">${fmt(s.attendPts)}</td>
+        <td style="text-align:center;">${fmt(s.playPts)}</td>
+        ${rangeCols}
+      </tr>`;
+    });
+    const rangeHeaders = ranges.map(r => {
+      const isUpset   = r.max < 0;
+      const isFavored = r.min >= 0;
+      const typeLabel = isUpset ? 'Upset' : isFavored ? 'Favored' : 'Win';
+      return `<th title="R${r.idx+1}: ${typeLabel} win — rank adv ${r.min} to ${r.max} → ${fmt(r.pts)} pts" style="cursor:help; text-align:center;">R${r.idx+1}</th>`;
+    }).join('');
+    return `${legendHtml}<table class="compact-table">
+      <thead><tr>
+        <th>#</th><th>Player</th>
+        <th style="text-align:center;" title="Total ladder points">Total</th>
+        <th style="text-align:center;" title="Points for attending sessions">Attend</th>
+        <th style="text-align:center;" title="Points for playing games">Play</th>
+        ${rangeHeaders}
+      </tr></thead>
       <tbody>${rows.join('')}</tbody>
     </table>`;
   }
@@ -2224,10 +3106,18 @@ function gaPage(pageName) {
         const cP1 = t1win ? fg.p1 : fg.p3, cP2 = t1win ? fg.p2 : fg.p4;
         const champName = cP2 ? `${esc(cP1)} &amp; ${esc(cP2)}` : esc(cP1);
         const isMe = highlightPlayer && [cP1, cP2].includes(highlightPlayer);
+        const photosOn = tierAllows(state.limits?.tier, 'playerPhotos');
+        const champAvatars = photosOn ? [cP1, cP2].filter(Boolean).map(name => {
+          const photo = state.players.find(p => p.name === name)?.photo || '';
+          return `<img src="${playerPhotoSrc(name, photo, 64)}"
+            style="width:64px;height:64px;border-radius:50%;object-fit:cover;
+                   border:2px solid rgba(245,200,66,0.6);">`;
+        }).join('') : '';
         html += `<div style="margin-top:16px; padding:14px 16px;
           background:linear-gradient(135deg, rgba(245,200,66,0.15), rgba(245,200,66,0.05));
           border:1px solid rgba(245,200,66,0.4); border-radius:10px; text-align:center;">
-          <div style="font-size:1.1rem; color:var(--gold); font-weight:700; margin-bottom:4px;">🏆 Tournament Champion</div>
+          <div style="font-size:1.1rem; color:var(--gold); font-weight:700; margin-bottom:${photosOn ? '10px' : '4px'};">🏆 Tournament Champion</div>
+          ${photosOn ? `<div style="display:flex;justify-content:center;gap:10px;margin-bottom:8px;">${champAvatars}</div>` : ''}
           <div style="font-size:1rem; color:${isMe ? 'var(--green)' : 'var(--white)'}; font-weight:700;">${champName}</div>
           <div style="font-size:0.78rem; color:var(--muted); margin-top:4px;">Final: ${fs.score1} – ${fs.score2}</div>
         </div>`;
@@ -2346,6 +3236,232 @@ function gaPage(pageName) {
     document.getElementById('btn-push-dismiss')?.addEventListener('click', () => {
       bar.style.display = 'none';
       sessionStorage.setItem(PUSH_DISMISS_KEY, '1');
+    });
+  }
+
+  // ── Challenges ──────────────────────────────────────────────
+  function renderChallenges() {
+    const isLadder = (state.config.standingsMethod || 'standard') === 'ladder';
+    const enabled  = state.config.challengesEnabled === true || state.config.challengesEnabled === 'true';
+    const navEl    = document.getElementById('nav-challenges');
+    const el       = document.getElementById('challenges-content');
+
+    // Show nav item only in ladder mode with challenges enabled
+    if (navEl) navEl.classList.toggle('hidden', !(isLadder && enabled));
+
+    // Update notification dot: any challenge where this player is a non-responding participant
+    if (navEl) {
+      const hasPending = state.challenges.some(c =>
+        c.status === 'pending' && (
+          (c.partner   === playerName && c.partnerResponse   === 'pending') ||
+          (c.opponent1 === playerName && c.opponent1Response === 'pending') ||
+          (c.opponent2 === playerName && c.opponent2Response === 'pending')
+        )
+      );
+      let dot = navEl.querySelector('.new-dot');
+      if (hasPending && !dot) {
+        dot = document.createElement('span');
+        dot.className = 'new-dot';
+        navEl.appendChild(dot);
+      } else if (!hasPending && dot) {
+        dot.remove();
+      }
+    }
+
+    if (!el) return;
+    if (!isLadder || !enabled) {
+      el.innerHTML = '<div class="card"><p class="text-muted" style="font-size:0.88rem;">Challenges are not enabled for this league.</p></div>';
+      return;
+    }
+
+    // Partition challenges relevant to this player
+    const myIssued   = state.challenges.find(c => c.challenger === playerName && ['pending','accepted'].includes(c.status));
+    const myPending  = state.challenges.filter(c => c.status === 'pending' && c.challenger !== playerName && [c.partner, c.opponent1, c.opponent2].includes(playerName));
+    const myAccepted = state.challenges.filter(c => c.status === 'accepted' && c.challenger !== playerName && [c.partner, c.opponent1, c.opponent2].includes(playerName));
+    const myScheduled = state.challenges.filter(c => c.status === 'scheduled' && [c.challenger, c.partner, c.opponent1, c.opponent2].includes(playerName));
+
+    const format = state.config.gameMode === 'singles' ? 'singles' : 'doubles';
+    const singles = format === 'singles';
+
+    const esc = s => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+    function respBadge(r) {
+      if (!r || r === '') return '';
+      if (r === 'accepted') return '<span style="color:var(--green);font-size:0.75rem;font-weight:700;">✓ Accepted</span>';
+      if (r === 'rejected') return '<span style="color:#e05a5a;font-size:0.75rem;font-weight:700;">✗ Declined</span>';
+      return '<span style="color:var(--muted);font-size:0.75rem;">⏳ Pending</span>';
+    }
+
+    function teamLine(c) {
+      const t1 = c.partner ? esc(c.challenger) + ' &amp; ' + esc(c.partner) : esc(c.challenger);
+      const t2 = c.opponent2 ? esc(c.opponent1) + ' &amp; ' + esc(c.opponent2) : esc(c.opponent1);
+      return `<span style="font-weight:600;">${t1}</span> <span style="color:var(--muted);font-size:0.8rem;">vs</span> <span style="font-weight:600;">${t2}</span>`;
+    }
+
+    let html = '';
+
+    // ── Challenges this player is waiting to respond to ──
+    if (myPending.length) {
+      html += `<div class="card" style="margin-bottom:12px;">
+        <div class="card-header" style="display:flex;align-items:center;gap:8px;">
+          <div class="card-title">⚔️ Challenges Awaiting Your Response</div>
+        </div>`;
+      myPending.forEach(c => {
+        let myRole = c.partner === playerName ? 'partner' : c.opponent1 === playerName ? 'opponent' : 'opponent';
+        let myResp = c.partner === playerName ? c.partnerResponse : c.opponent1 === playerName ? c.opponent1Response : c.opponent2Response;
+        html += `<div style="padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.07);">
+          <div style="font-size:0.82rem; color:var(--muted); margin-bottom:4px;">${esc(c.challenger)} challenged — you as ${myRole}</div>
+          <div style="margin-bottom:8px;">${teamLine(c)}</div>`;
+        if (myResp === 'pending') {
+          html += `<div style="display:flex;gap:8px;margin-top:6px;">
+            <button class="btn btn-primary" style="padding:4px 16px;font-size:0.82rem;" data-cid="${c.id}" data-resp="accepted">✅ Accept</button>
+            <button class="btn btn-danger"  style="padding:4px 16px;font-size:0.82rem;" data-cid="${c.id}" data-resp="rejected">❌ Decline</button>
+          </div>`;
+        } else {
+          html += `<div style="font-size:0.8rem; margin-top:4px;">Your response: ${respBadge(myResp)}</div>`;
+        }
+        html += `</div>`;
+      });
+      html += `</div>`;
+    }
+
+    // ── Challenge this player has accepted (as opponent/partner) ──
+    if (myAccepted.length) {
+      html += `<div class="card" style="margin-bottom:12px;">
+        <div class="card-header"><div class="card-title">✅ Challenges Accepted — Awaiting Schedule</div></div>`;
+      myAccepted.forEach(c => {
+        html += `<div style="padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.07);">
+          <div style="font-size:0.82rem; color:var(--muted); margin-bottom:4px;">Issued by ${esc(c.challenger)}</div>
+          <div>${teamLine(c)}</div>
+        </div>`;
+      });
+      html += `</div>`;
+    }
+
+    // ── Scheduled challenges ──
+    if (myScheduled.length) {
+      html += `<div class="card" style="margin-bottom:12px;">
+        <div class="card-header"><div class="card-title">📅 Scheduled Challenges</div></div>`;
+      myScheduled.forEach(c => {
+        html += `<div style="padding:8px 0; border-bottom:1px solid rgba(255,255,255,0.07);">
+          <div style="font-size:0.82rem; color:var(--muted); margin-bottom:4px;">Session ${c.weekScheduled || '?'}</div>
+          <div>${teamLine(c)}</div>
+        </div>`;
+      });
+      html += `</div>`;
+    }
+
+    // ── My issued challenge status ──
+    if (myIssued) {
+      const responses = [];
+      if (myIssued.partner)   responses.push(`<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.85rem;"><span>${esc(myIssued.partner)} <span style="color:var(--muted);font-size:0.75rem;">(partner)</span></span>${respBadge(myIssued.partnerResponse)}</div>`);
+      responses.push(`<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.85rem;"><span>${esc(myIssued.opponent1)}</span>${respBadge(myIssued.opponent1Response)}</div>`);
+      if (myIssued.opponent2) responses.push(`<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.85rem;"><span>${esc(myIssued.opponent2)}</span>${respBadge(myIssued.opponent2Response)}</div>`);
+
+      html += `<div class="card" style="margin-bottom:12px;">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+          <div class="card-title">My Challenge</div>
+          <button id="btn-delete-challenge" data-cid="${myIssued.id}" class="btn btn-danger" style="padding:3px 12px;font-size:0.78rem;">Delete</button>
+        </div>
+        <div style="margin-bottom:8px;">${teamLine(myIssued)}</div>
+        <div style="font-size:0.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin:8px 0 4px;">Responses</div>
+        ${responses.join('')}
+      </div>`;
+    }
+
+    // ── Issue a new challenge (only if player has no active issued challenge) ──
+    if (!myIssued) {
+      const activePlayers = state.players
+        .filter(p => p.active === true && p.role !== 'spectator' && p.name !== playerName)
+        .map(p => p.name).sort();
+
+      const opts = activePlayers.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+
+      html += `<div class="card">
+        <div class="card-header"><div class="card-title">⚔️ Issue a Challenge</div></div>
+        <p style="font-size:0.84rem;color:var(--muted);margin-bottom:12px;">
+          Challenge ${singles ? 'another player' : 'another team'} to a game. All players must accept before the admin can schedule it.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          ${!singles ? `<div>
+            <label style="font-size:0.8rem;color:var(--muted);display:block;margin-bottom:4px;">Your Partner</label>
+            <select id="ch-partner" class="form-control" style="max-width:240px;"><option value="">— select partner —</option>${opts}</select>
+          </div>` : ''}
+          <div>
+            <label style="font-size:0.8rem;color:var(--muted);display:block;margin-bottom:4px;">Opponent ${singles ? '' : '1'}</label>
+            <select id="ch-opp1" class="form-control" style="max-width:240px;"><option value="">— select opponent —</option>${opts}</select>
+          </div>
+          ${!singles ? `<div>
+            <label style="font-size:0.8rem;color:var(--muted);display:block;margin-bottom:4px;">Opponent 2</label>
+            <select id="ch-opp2" class="form-control" style="max-width:240px;"><option value="">— select opponent —</option>${opts}</select>
+          </div>` : ''}
+        </div>
+        <div style="margin-top:14px;">
+          <button class="btn btn-primary" id="btn-issue-challenge" style="padding:6px 20px;">⚔️ Send Challenge</button>
+        </div>
+      </div>`;
+    }
+
+    if (!html) {
+      html = '<div class="card"><p class="text-muted" style="font-size:0.88rem;">No active challenges. Issue one below!</p></div>';
+    }
+    el.innerHTML = html;
+
+    // ── Wire respond buttons ──
+    el.querySelectorAll('[data-cid][data-resp]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const cid  = btn.dataset.cid;
+        const resp = btn.dataset.resp;
+        btn.disabled = true;
+        try {
+          await API.respondToChallenge(cid, playerName, resp);
+          state.challenges = (await API.getChallenges()).challenges;
+          renderChallenges();
+        } catch(e) { toast(e.message, 'error'); btn.disabled = false; }
+      });
+    });
+
+    // ── Wire delete button ──
+    document.getElementById('btn-delete-challenge')?.addEventListener('click', async (e) => {
+      const cid = e.currentTarget.dataset.cid;
+      if (!confirm('Delete this challenge?')) return;
+      try {
+        await API.deleteChallenge(cid, playerName);
+        state.challenges = (await API.getChallenges()).challenges;
+        renderChallenges();
+      } catch(err) { toast(err.message, 'error'); }
+    });
+
+    // ── Wire issue challenge button ──
+    document.getElementById('btn-issue-challenge')?.addEventListener('click', async () => {
+      const partner   = singles ? '' : (document.getElementById('ch-partner')?.value || '');
+      const opp1      = document.getElementById('ch-opp1')?.value || '';
+      const opp2      = singles ? '' : (document.getElementById('ch-opp2')?.value || '');
+
+      if (!opp1) { toast('Select at least one opponent.', 'warn'); return; }
+      if (!singles && !partner) { toast('Select your partner.', 'warn'); return; }
+      if (!singles && !opp2)   { toast('Select opponent 2.', 'warn'); return; }
+
+      const players = [playerName, partner, opp1, opp2].filter(Boolean);
+      if (new Set(players).size !== players.length) { toast('A player cannot appear more than once.', 'warn'); return; }
+
+      const btn = document.getElementById('btn-issue-challenge');
+      btn.disabled = true;
+      btn.textContent = '⏳ Sending…';
+      try {
+        const { config } = state;
+        await API.submitChallenge({
+          challenger: playerName,
+          partner, opponent1: opp1, opponent2: opp2,
+          format,
+          gasUrl: GAS_URL,
+          relayConfig: { emailScriptUrl: config.emailScriptUrl, emailScriptSecret: config.emailScriptSecret },
+          leagueId: (JSON.parse(sessionStorage.getItem('pb_session') || '{}')).leagueId,
+        });
+        toast('Challenge sent! Waiting for responses.');
+        state.challenges = (await API.getChallenges()).challenges;
+        renderChallenges();
+      } catch(e) { toast(e.message, 'error'); btn.disabled = false; btn.textContent = '⚔️ Send Challenge'; }
     });
   }
 

@@ -18,9 +18,55 @@ const Tournament = (() => {
     return matches.map((m, i) => ({ ...m, court: (i % courts) + 1 }));
   }
 
-  // Build a seeded bracket entry list from standings + present players
-  // For doubles, consecutive pairs of ranked players form teams
-  function buildSeeds(presentPlayers, standings, doubles, players) {
+  // Return a player's gender group from the players array
+  function getGroup(name, players) {
+    if (!players) return 'Either';
+    const p = players.find(pl => pl.name === name);
+    return p ? (p.group || 'Either') : 'Either';
+  }
+
+  // A doubles pair is "mixed" (acceptable) unless both players are M or both are F.
+  // Either counts as compatible with anyone.
+  function isMixedPair(nameA, nameB, players) {
+    const ga = getGroup(nameA, players);
+    const gb = getGroup(nameB, players);
+    return !(ga === 'M' && gb === 'M') && !(ga === 'F' && gb === 'F');
+  }
+
+  // Form mixed-gender doubles teams from a rank-sorted list of individual players.
+  // Priority: mixed (MF/ME/FE) > rank proximity.
+  // Greedy: for each highest-ranked unpaired player, take the nearest-ranked
+  // compatible partner; fall back to nearest-by-rank if no compatible partner exists.
+  function formMixedTeams(ranked, players) {
+    const remaining = ranked.map(p => ({ ...p }));
+    const pairs = [];
+
+    while (remaining.length >= 2) {
+      const current = remaining.shift(); // best-ranked unpaired player
+      // Find the nearest-ranked compatible (mixed-gender) partner
+      let partnerIdx = -1;
+      for (let i = 0; i < remaining.length; i++) {
+        if (isMixedPair(current.name, remaining[i].name, players)) {
+          partnerIdx = i;
+          break;
+        }
+      }
+      if (partnerIdx < 0) partnerIdx = 0; // no mixed option — take nearest by rank
+      const partner = remaining.splice(partnerIdx, 1)[0];
+      pairs.push([current, partner]);
+    }
+
+    if (remaining.length === 1) {
+      pairs.push([remaining[0], null]); // odd player out — lone team
+    }
+
+    return pairs;
+  }
+
+  // Build a seeded bracket entry list from standings + present players.
+  // For doubles, consecutive pairs of ranked players form teams.
+  // When mixedDoubles is true, team pairing uses the mixed-gender algorithm.
+  function buildSeeds(presentPlayers, standings, doubles, players, mixedDoubles) {
     // Sort present players by rank.
     // Priority: season standings rank > initialRank > alphabetical
     const ranked = presentPlayers
@@ -58,20 +104,26 @@ const Tournament = (() => {
       }));
     }
 
-    // Doubles: pair seeds 1+2, 3+4, 5+6... into teams
-    // If odd number of players, last player teams alone
-    const teams = [];
-    for (let i = 0; i < ranked.length; i += 2) {
-      teams.push({
-        seed: Math.floor(i / 2) + 1,
-        name:  ranked[i].name,
-        name2: ranked[i + 1] ? ranked[i + 1].name : '',
-        wBracketWins: 0, wBracketLosses: 0,
-        lBracketWins: 0, lBracketLosses: 0,
-        eliminated: false, inLosersBracket: false,
-      });
+    // Doubles: form teams, optionally with mixed-gender pairing
+    let pairs;
+    if (mixedDoubles) {
+      pairs = formMixedTeams(ranked, players);
+    } else {
+      // Simple adjacent pairing: rank1+rank2, rank3+rank4, ...
+      pairs = [];
+      for (let i = 0; i < ranked.length; i += 2) {
+        pairs.push([ranked[i], ranked[i + 1] || null]);
+      }
     }
-    return teams;
+
+    return pairs.map(([a, b], i) => ({
+      seed: i + 1,
+      name:  a.name,
+      name2: b ? b.name : '',
+      wBracketWins: 0, wBracketLosses: 0,
+      lBracketWins: 0, lBracketLosses: 0,
+      eliminated: false, inLosersBracket: false,
+    }));
   }
 
   // ── Round 1 generation ─────────────────────────────────────
@@ -298,7 +350,11 @@ const Tournament = (() => {
       }));
   }
 
-  function generateRRRound(rrSeeds, courts, round, week, doubles) {
+  // Generate one round of round-robin pairings.
+  // doubles:      true = form 2-player teams, false = singles matchups
+  // mixedDoubles: true = use mixed-gender team pairing (requires players array)
+  // players:      full player records (needed for gender lookup)
+  function generateRRRound(rrSeeds, courts, round, week, doubles, mixedDoubles, players) {
     // Sort by wins desc, then initial seed asc (lower seed = better)
     const ranked = [...rrSeeds].sort((a, b) =>
       b.wins !== a.wins ? b.wins - a.wins : a.seed - b.seed
@@ -327,15 +383,25 @@ const Tournament = (() => {
     }
 
     if (doubles) {
-      // Re-pair: rank1+rank2 vs rank3+rank4, rank5+rank6 vs rank7+rank8, etc.
-      // top half teams vs bottom half teams (best team vs worst team)
-      const teams = [];
-      for (let i = 0; i < playing.length; i += 2) {
-        teams.push({
-          p1: playing[i].name,
-          p2: playing[i + 1] ? playing[i + 1].name : '',
-        });
+      // Form 2-player teams from ranked players, then match best team vs worst team
+      let teamPairs;
+      if (mixedDoubles) {
+        teamPairs = formMixedTeams(playing, players);
+      } else {
+        // Simple adjacent pairing: rank1+rank2, rank3+rank4, ...
+        teamPairs = [];
+        for (let i = 0; i < playing.length; i += 2) {
+          teamPairs.push([playing[i], playing[i + 1] || null]);
+        }
       }
+
+      // Build team objects [{p1, p2}, ...]
+      const teams = teamPairs.map(([a, b]) => ({
+        p1: a.name,
+        p2: b ? b.name : '',
+      }));
+
+      // Best team vs worst team
       const half = Math.floor(teams.length / 2);
       const matches = [];
       for (let i = 0; i < half; i++) {
@@ -366,7 +432,7 @@ const Tournament = (() => {
     return pairings;
   }
 
-  function advanceRoundRR(rrSeeds, weekPairings, weekScores, currentRound, courts, week, doubles) {
+  function advanceRoundRR(rrSeeds, weekPairings, weekScores, currentRound, courts, week, doubles, mixedDoubles, players) {
     const nextRound = currentRound + 1;
 
     // Update win/loss/bye counts from current round
@@ -407,18 +473,35 @@ const Tournament = (() => {
       }
     });
 
-    const pairings = generateRRRound(updated, courts, nextRound, week, doubles);
+    const pairings = generateRRRound(updated, courts, nextRound, week, doubles, mixedDoubles, players);
     return { pairings, rrSeeds: updated };
   }
 
   // ── Entry points ───────────────────────────────────────────
 
-  function generateTournament(presentPlayers, courts, week, mode, standings, doubles) {
+  // mode: 'single' | 'double' | 'rr' (doubles round-robin) | 'rr-singles'
+  // doubles:      for 'single'/'double' — whether to use 2-player teams
+  // players:      full player records (for initialRank and gender lookup)
+  // mixedDoubles: true = prefer mixed-gender teams in doubles pairing
+  function generateTournament(presentPlayers, courts, week, mode, standings, doubles, players, mixedDoubles) {
+    // Round-robin modes — use separate seed/round structure
+    if (mode === 'rr' || mode === 'rr-singles') {
+      const isDoubles = mode === 'rr'; // rr-singles forces singles
+      const minPlayers = isDoubles ? 4 : 2;
+      if (presentPlayers.length < minPlayers) {
+        return { error: `Need at least ${minPlayers} players for this tournament format.` };
+      }
+      const rrSeeds = buildRRSeeds(presentPlayers, standings, players);
+      const pairings = generateRRRound(rrSeeds, courts, 1, week, isDoubles, isDoubles && mixedDoubles, players);
+      return { pairings, rrSeeds, round: 1, mode, week, doubles: isDoubles };
+    }
+
+    // Elimination modes
     const minPlayers = doubles ? 4 : 2;
     if (presentPlayers.length < minPlayers) {
       return { error: `Need at least ${minPlayers} players for a ${doubles ? 'doubles' : 'singles'} tournament.` };
     }
-    const seeds = buildSeeds(presentPlayers, standings, doubles);
+    const seeds = buildSeeds(presentPlayers, standings, doubles, players, mixedDoubles);
     const pairings = generateRound1(seeds, courts, 1, week, mode);
     return { pairings, seeds, round: 1, mode, week, doubles };
   }

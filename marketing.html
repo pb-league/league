@@ -648,8 +648,8 @@
   <div class="nav-links">
     <a href="#features">Features</a>
     <a href="#tournaments">Tournaments</a>
-    <a href="#roles">Roles</a>
     <a href="#optimizer">Pairings</a>
+    <a href="#roles">Roles</a>
     <a href="#dashboard">Dashboard</a>
     <a href="index.html" class="nav-cta" style="background:rgba(255,255,255,0.08) !important; border:1px solid rgba(255,255,255,0.15) !important; margin-right:6px;">← Login</a>
     <a href="#pricing">Pricing</a>
@@ -699,9 +699,9 @@
 				<div class="hero-stat-label">Tournament Modes</div>
 			</div>
 			<div class="hero-stat">
-				<div class="hero-stat-num">6</div>
-				<div class="hero-stat-label">Player Roles</div>
-			</div>>
+				<div class="hero-stat-num">2</div>
+				<div class="hero-stat-label">Pairing Modes</div>
+			</div>
 		</div>
 	</div>
 </section>
@@ -755,8 +755,26 @@
         <span class="feature-icon">🌐</span>
         <h3>Multi-League Support</h3>
         <p>Run many leagues from a single deployment. Public, private, and hidden leagues. Each league has its own players, schedule, and data. Direct league ID entry on the login page for fast access without searching the list.</p>
-		  <p>Leage database may be kept on your own Google sheet or created and stored by the app developer.</p>
-		  <span class="feature-tag">Scalable</span>
+        <p>League database may be kept on your own Google sheet or created and stored by the app developer.</p>
+        <span class="feature-tag">Scalable</span>
+      </div>
+      <div class="feature-card fade-up">
+        <span class="feature-icon">🏅</span>
+        <h3>Ladder League Mode</h3>
+        <p>An alternative standings system where players earn points for showing up, playing, and pulling off upsets — not just for winning. Configurable point schedule with four favored-win ranges discourages sandbagging. Optional player-challenge system lets players request ranked games against specific opponents. Perfect for recreational leagues where participation matters.</p>
+        <span class="feature-tag">Points-Based</span>
+      </div>
+      <div class="feature-card fade-up fade-up-delay-1">
+        <span class="feature-icon">🎯</span>
+        <h3>Queue-Based Pairings</h3>
+        <p>An alternative to round-based generation for drop-in or open-play formats. Players join a queue; courts are filled as they become free. Winners can stay on court for a configurable maximum before rotating back. A queue-wait weighting factor favors players who have been waiting longest. Ideal when you have far more players than courts and want to keep every court busy at all times.</p>
+        <span class="feature-tag">Open Play</span>
+      </div>
+      <div class="feature-card fade-up fade-up-delay-2">
+        <span class="feature-icon">💬</span>
+        <h3>League Chat</h3>
+        <p>Built-in group and private messaging for players and the coordinator. Send a message to everyone or target a single person with a 🔒 private message. A flashing notification dot on the Chat nav item alerts players to unread private messages. The coordinator's name and photo appear on players' dashboards so everyone always knows who to contact. Messages are stored securely in the league's own spreadsheet.</p>
+        <span class="feature-tag">Real-Time</span>
       </div>
     </div>
   </div>
@@ -832,6 +850,163 @@
           <li>Live standings after every round</li>
           <li>Swiss-system fairness</li>
         </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Ladder League & Queue Pairings -->
+<section style="background:var(--navy-mid); padding:100px 24px;">
+  <div class="container">
+    <div class="section-label">Two Ways to Run Your League</div>
+    <h2>ROUND-BASED <span style="color:var(--gold);">OR</span> OPEN PLAY</h2>
+    <p class="section-sub">Choose the pairing mode that matches how your league actually runs — structured sessions or drop-in play. Switch between them at any time.</p>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:56px;">
+
+      <!-- Round-based -->
+      <div class="fade-up" style="background:var(--navy); border:1px solid rgba(45,122,58,0.3); border-radius:var(--radius); padding:36px;">
+        <div style="font-size:2rem; margin-bottom:14px;">📅</div>
+        <h3 style="font-family:'Bebas Neue',sans-serif; font-size:1.8rem; letter-spacing:0.05em; margin-bottom:10px;">Round-Based</h3>
+        <p style="font-size:0.88rem; color:var(--muted); line-height:1.7; margin-bottom:20px;">The classic session format. Everyone plays at the same time in structured rounds. The optimizer generates all rounds at once or one at a time, keeping history across the full season.</p>
+        <ul style="list-style:none; display:flex; flex-direction:column; gap:9px; font-size:0.84rem; color:var(--muted);">
+          <li style="display:flex; gap:10px;"><span style="color:var(--court-green-light); font-weight:700; flex-shrink:0;">✓</span>All rounds generated in one click</li>
+          <li style="display:flex; gap:10px;"><span style="color:var(--court-green-light); font-weight:700; flex-shrink:0;">✓</span>Season-long partner &amp; opponent history</li>
+          <li style="display:flex; gap:10px;"><span style="color:var(--court-green-light); font-weight:700; flex-shrink:0;">✓</span>Generate, review, then lock &amp; save</li>
+          <li style="display:flex; gap:10px;"><span style="color:var(--court-green-light); font-weight:700; flex-shrink:0;">✓</span>Partial-round regeneration mid-session</li>
+          <li style="display:flex; gap:10px;"><span style="color:var(--court-green-light); font-weight:700; flex-shrink:0;">✓</span>Edit any pairing manually after generation</li>
+        </ul>
+      </div>
+
+      <!-- Queue-based -->
+      <div class="fade-up fade-up-delay-1" style="background:var(--navy); border:1px solid rgba(232,184,75,0.3); border-radius:var(--radius); padding:36px;">
+        <div style="font-size:2rem; margin-bottom:14px;">🎯</div>
+        <h3 style="font-family:'Bebas Neue',sans-serif; font-size:1.8rem; letter-spacing:0.05em; margin-bottom:10px; color:var(--gold);">Queue-Based</h3>
+        <p style="font-size:0.88rem; color:var(--muted); line-height:1.7; margin-bottom:20px;">Built for open-play and drop-in formats where players arrive and leave throughout the session. Courts are assigned as they become free, keeping the courts busy at all times.</p>
+        <ul style="list-style:none; display:flex; flex-direction:column; gap:9px; font-size:0.84rem; color:var(--muted);">
+          <li style="display:flex; gap:10px;"><span style="color:var(--gold); font-weight:700; flex-shrink:0;">✓</span>Assign pairings only to available courts</li>
+          <li style="display:flex; gap:10px;"><span style="color:var(--gold); font-weight:700; flex-shrink:0;">✓</span>Queue-wait factor favors longest-waiting players</li>
+          <li style="display:flex; gap:10px;"><span style="color:var(--gold); font-weight:700; flex-shrink:0;">✓</span>Winners-stay with configurable game limit</li>
+          <li style="display:flex; gap:10px;"><span style="color:var(--gold); font-weight:700; flex-shrink:0;">✓</span>Winner split / stay-together / face-each-other options</li>
+          <li style="display:flex; gap:10px;"><span style="color:var(--gold); font-weight:700; flex-shrink:0;">✓</span>Queue games excluded from attendance requirements</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Ladder League -->
+    <div style="margin-top:24px; background:linear-gradient(135deg, rgba(232,184,75,0.08) 0%, var(--navy) 100%); border:1px solid rgba(232,184,75,0.25); border-radius:var(--radius); padding:36px;" class="fade-up">
+      <div style="display:grid; grid-template-columns:1fr auto; gap:32px; align-items:start;">
+        <div>
+          <div class="section-label" style="margin-bottom:10px;">Ladder League Option</div>
+          <h3 style="font-family:'Bebas Neue',sans-serif; font-size:2rem; letter-spacing:0.05em; margin-bottom:12px; color:var(--gold);">POINTS FOR PLAYING, NOT JUST WINNING</h3>
+          <p style="font-size:0.88rem; color:var(--muted); line-height:1.7; max-width:560px;">Switch the standings method from Standard to Ladder and players earn points for showing up, playing games, and pulling off upsets — not just for win percentage. A configurable favored-win point schedule reduces rewards when the outcome was expected, keeping rankings meaningful. Optional player challenges let anyone request a ranked game against a specific opponent.</p>
+          <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:20px;">
+            <div style="background:rgba(232,184,75,0.1); border:1px solid rgba(232,184,75,0.25); border-radius:8px; padding:12px 16px; font-size:0.82rem;">
+              <div style="color:var(--gold); font-weight:700; margin-bottom:3px;">Attend</div>
+              <div style="color:var(--muted);">Points just for showing up</div>
+            </div>
+            <div style="background:rgba(232,184,75,0.1); border:1px solid rgba(232,184,75,0.25); border-radius:8px; padding:12px 16px; font-size:0.82rem;">
+              <div style="color:var(--gold); font-weight:700; margin-bottom:3px;">Play</div>
+              <div style="color:var(--muted);">Points per game played</div>
+            </div>
+            <div style="background:rgba(232,184,75,0.1); border:1px solid rgba(232,184,75,0.25); border-radius:8px; padding:12px 16px; font-size:0.82rem;">
+              <div style="color:var(--gold); font-weight:700; margin-bottom:3px;">Upset Win</div>
+              <div style="color:var(--muted);">Bonus for beating stronger team</div>
+            </div>
+            <div style="background:rgba(232,184,75,0.1); border:1px solid rgba(232,184,75,0.25); border-radius:8px; padding:12px 16px; font-size:0.82rem;">
+              <div style="color:var(--gold); font-weight:700; margin-bottom:3px;">Challenges</div>
+              <div style="color:var(--muted);">Player-requested ranked games</div>
+            </div>
+          </div>
+        </div>
+        <div style="text-align:center; flex-shrink:0;">
+          <div style="font-family:'Bebas Neue',sans-serif; font-size:4rem; color:var(--gold); line-height:1;">🏅</div>
+          <div style="font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em; margin-top:4px;">Optional Mode</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Chat & Coordinator -->
+<section style="padding:100px 24px;">
+  <div class="container">
+    <div class="section-label">Keep Your League Connected</div>
+    <h2>CHAT. <span style="color:var(--court-green-light);">COORDINATE.</span> COMMUNICATE.</h2>
+    <p class="section-sub">Everything your players need to stay in touch — right inside the app they already use for standings and scores.</p>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:56px; align-items:start;">
+
+      <!-- Chat feature card -->
+      <div class="fade-up" style="background:var(--navy-mid); border:1px solid rgba(45,122,58,0.25); border-radius:var(--radius); overflow:hidden;">
+        <div style="background:rgba(45,122,58,0.1); border-bottom:1px solid rgba(45,122,58,0.2); padding:18px 24px; display:flex; align-items:center; gap:10px;">
+          <span style="font-size:1.1rem;">💬</span>
+          <span style="font-size:0.75rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--court-green-light);">League Chat</span>
+        </div>
+        <div style="padding:20px 24px; display:flex; flex-direction:column; gap:10px;">
+          <!-- broadcast message mock -->
+          <div style="display:flex; gap:10px; padding:10px; background:rgba(255,255,255,0.03); border-radius:8px;">
+            <div style="width:28px; height:28px; border-radius:50%; background:rgba(45,122,58,0.4); flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:0.72rem; font-weight:700;">S</div>
+            <div style="flex:1; min-width:0;">
+              <div style="font-size:0.72rem; color:var(--court-green-light); font-weight:600; margin-bottom:3px;">Sandra T. <span style="color:var(--muted); font-weight:400;">· just now</span></div>
+              <div style="font-size:0.85rem;">Anyone up for an extra practice round on Thursday? 🏸</div>
+            </div>
+          </div>
+          <!-- private message mock -->
+          <div style="display:flex; gap:10px; padding:10px; background:rgba(232,184,75,0.07); border-left:2px solid rgba(232,184,75,0.35); border-radius:8px; padding-left:8px;">
+            <div style="width:28px; height:28px; border-radius:50%; background:rgba(232,184,75,0.25); flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:0.72rem; font-weight:700; color:var(--gold);">J</div>
+            <div style="flex:1; min-width:0;">
+              <div style="font-size:0.72rem; margin-bottom:3px; display:flex; align-items:center; gap:4px; flex-wrap:wrap;">
+                <span style="color:var(--gold); font-weight:600;">Jane (Coordinator)</span>
+                <span style="font-size:0.65rem; padding:1px 5px; background:rgba(232,184,75,0.18); color:var(--gold); border-radius:3px; border:1px solid rgba(232,184,75,0.3);">🔒 private</span>
+                <span style="color:var(--muted); font-weight:400; font-size:0.66rem; margin-left:auto;">2m ago</span>
+              </div>
+              <div style="font-size:0.85rem;">Hey Doug — your score for round 3 looks off, can you check?</div>
+            </div>
+          </div>
+          <!-- another broadcast -->
+          <div style="display:flex; gap:10px; padding:10px; background:rgba(255,255,255,0.03); border-radius:8px;">
+            <div style="width:28px; height:28px; border-radius:50%; background:rgba(122,155,181,0.3); flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:0.72rem; font-weight:700;">R</div>
+            <div style="flex:1; min-width:0;">
+              <div style="font-size:0.72rem; color:var(--white); font-weight:600; margin-bottom:3px;">Richard K. <span style="color:var(--muted); font-weight:400;">· 5m ago</span></div>
+              <div style="font-size:0.85rem; color:rgba(240,244,240,0.8);">Court 2 is free if anyone needs warm-up time</div>
+            </div>
+          </div>
+          <!-- input bar mock -->
+          <div style="display:flex; gap:8px; margin-top:4px;">
+            <div style="flex:1; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:7px; padding:8px 12px; font-size:0.82rem; color:var(--muted);">Message everyone…</div>
+            <div style="background:var(--court-green); border-radius:7px; padding:8px 14px; font-size:0.82rem; font-weight:600; color:var(--white);">Send</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Coordinator + feature list -->
+      <div class="fade-up fade-up-delay-1" style="display:flex; flex-direction:column; gap:20px;">
+
+        <div style="background:var(--navy-mid); border:1px solid rgba(255,255,255,0.08); border-radius:var(--radius); padding:24px;">
+          <div style="font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; color:var(--muted); margin-bottom:14px;">League Coordinator Card</div>
+          <div style="display:flex; align-items:center; gap:14px; margin-bottom:14px;">
+            <div style="width:52px; height:52px; border-radius:50%; background:linear-gradient(135deg, rgba(45,122,58,0.5), rgba(45,122,58,0.2)); flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:1.2rem; border:2px solid rgba(45,122,58,0.4);">👤</div>
+            <div>
+              <div style="font-size:0.68rem; text-transform:uppercase; letter-spacing:0.07em; color:var(--muted); margin-bottom:3px;">League Coordinator</div>
+              <div style="font-size:0.9rem; font-weight:600;">Jane Smith</div>
+              <div style="font-size:0.8rem; color:var(--court-green-light);">jane@example.com</div>
+            </div>
+          </div>
+          <div style="font-size:0.82rem; color:var(--muted); line-height:1.65;">Set your name and photo in Setup. Players see this on their dashboard so they always know who to contact.</div>
+        </div>
+
+        <div style="background:var(--navy-mid); border:1px solid rgba(255,255,255,0.08); border-radius:var(--radius); padding:24px;">
+          <div style="font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; color:var(--muted); margin-bottom:14px;">Chat Features</div>
+          <ul style="list-style:none; display:flex; flex-direction:column; gap:10px; font-size:0.84rem;">
+            <li style="display:flex; gap:10px; align-items:flex-start;"><span style="color:var(--court-green-light); font-weight:700; flex-shrink:0; margin-top:1px;">✓</span><span style="color:var(--muted);">Group broadcast to all players</span></li>
+            <li style="display:flex; gap:10px; align-items:flex-start;"><span style="color:var(--court-green-light); font-weight:700; flex-shrink:0; margin-top:1px;">✓</span><span style="color:var(--muted);">Private 🔒 messages to any player or coordinator</span></li>
+            <li style="display:flex; gap:10px; align-items:flex-start;"><span style="color:var(--court-green-light); font-weight:700; flex-shrink:0; margin-top:1px;">✓</span><span style="color:var(--muted);">Flashing badge when you have unread private messages</span></li>
+            <li style="display:flex; gap:10px; align-items:flex-start;"><span style="color:var(--court-green-light); font-weight:700; flex-shrink:0; margin-top:1px;">✓</span><span style="color:var(--muted);">Coordinator sees all messages including private ones</span></li>
+            <li style="display:flex; gap:10px; align-items:flex-start;"><span style="color:var(--court-green-light); font-weight:700; flex-shrink:0; margin-top:1px;">✓</span><span style="color:var(--muted);">Player avatars next to messages (on supported tiers)</span></li>
+            <li style="display:flex; gap:10px; align-items:flex-start;"><span style="color:var(--court-green-light); font-weight:700; flex-shrink:0; margin-top:1px;">✓</span><span style="color:var(--muted);">Stored in your league's own Google Sheet</span></li>
+          </ul>
+        </div>
       </div>
     </div>
   </div>
@@ -1184,13 +1359,15 @@
         <div style="font-family:'Bebas Neue',sans-serif; font-size:3.5rem; color:var(--court-green-light); line-height:1; margin-bottom:4px;">FREE</div>
         <div style="font-size:0.82rem; color:var(--muted); margin-bottom:24px;">For select non-commercial leagues</div>
         <ul class="role-list" style="gap:12px;">
-          
           <li>All features included — nothing locked</li>
           <li>Multiple leagues per deployment</li>
           <li>All three tournament formats</li>
+          <li>Ladder league mode with player challenges</li>
+          <li>Round-based &amp; queue-based pairing modes</li>
+          <li>Built-in league chat &amp; private messaging</li>
           <li>Full email reporting suite</li>
           <li>Ongoing updates and improvements</li>
-		  <li>Responsive support</li>
+          <li>Responsive support</li>
         </ul>
         <div style="margin-top:24px; padding-top:20px; border-top:1px solid rgba(255,255,255,0.07); font-size:0.78rem; color:var(--muted); line-height:1.6;">
           Access is by invitation — contact Doug Tucker to request access for your league. Has already been used to run two leagues and three more are in progress.
@@ -1240,7 +1417,7 @@
     <span style="font-family:'Bebas Neue',sans-serif;letter-spacing:0.08em;">League Manager</span>
   </div>
   <div>Created by <a href="mailto:dougjt@yahoo.com">Doug Tucker</a> · Free for non-commercial league use</div>
-  <div style="color:rgba(122,155,181,0.5);">v1.3.8 · 2026</div>
+  <div style="color:rgba(122,155,181,0.5);">v1.4.16 · 2026</div>
 </footer>
 
 <script>

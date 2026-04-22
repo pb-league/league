@@ -11,7 +11,7 @@
 //   GAS API     → Network-only (never cache)
 // ============================================================
 
-const FALLBACK_VERSION = 'pb-league-v1.4.7';
+const FALLBACK_VERSION = 'pb-league-v1.5.17';
 
 const HTML_FILES = [
   './index.html',
@@ -62,9 +62,17 @@ self.addEventListener('push', event => {
     tag:     data.tag   || 'pb-league',
     renotify: !!data.tag,
   };
+  // Also notify any open app tabs so they can refresh state immediately
+  // (e.g. timer-player.js fetches updated timer state instead of waiting for its slow poll)
+  const notifyClients = clients.matchAll({ type: 'window', includeUncontrolled: true })
+    .then(list => list.forEach(c => c.postMessage({ type: 'PUSH_RECEIVED' })));
+
   event.waitUntil(
-    self.registration.showNotification(title, options)
-      .catch(err => console.error('[SW] showNotification failed:', err))
+    Promise.all([
+      self.registration.showNotification(title, options)
+        .catch(err => console.error('[SW] showNotification failed:', err)),
+      notifyClients,
+    ])
   );
 });
 

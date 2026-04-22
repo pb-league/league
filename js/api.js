@@ -62,9 +62,13 @@ const API = (() => {
     getLeagues:             (customerId) => get('getLeagues', customerId ? { customerId } : {}),
     getLeaguesAll:          ()           => get('getLeagues', { includeHidden: true }),
     getLeagueAndPlayers:    (leagueId, customerId) => get('getLeagueAndPlayers', customerId ? { leagueId, customerId } : { leagueId }),
-    addLeague:        (leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues, hidden, customerId, adminEmail) => post({ action: 'addLeague', leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues, hidden, customerId, adminEmail }),
-    updateLeague:          (leagueId, name, sheetId, active, canCreateLeagues, hidden, adminEmail, limits) => post({ action: 'updateLeague', leagueId, name, sheetId, active, canCreateLeagues, hidden, adminEmail, limits }),
+    addLeague:        (leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues, hidden, customerId, adminEmail, storage, adminPin, supabaseUrl, supabaseKey) => post({ action: 'addLeague', leagueId, name, sheetId, sourceLeagueId, copyConfig, copyPlayers, canCreateLeagues, hidden, customerId, adminEmail, storage, adminPin, supabaseUrl, supabaseKey }),
+    updateLeague:          (leagueId, name, sheetId, active, canCreateLeagues, hidden, adminEmail, limits, storage) => post({ action: 'updateLeague', leagueId, name, sheetId, active, canCreateLeagues, hidden, adminEmail, limits, storage }),
     updateLeagueWithCaller: (leagueId, name, sheetId, active, canCreateLeagues, callerLeagueId, adminEmail) => post({ action: 'updateLeague', leagueId, name, sheetId, active, canCreateLeagues, callerLeagueId, adminEmail }),
+    migrateLeague:          ()                           => post({ action: 'migrateLeague' }),
+    migrateLeagueToOwnSb:   (supabaseUrl, supabaseKey)   => post({ action: 'migrateLeague', supabaseUrl, supabaseKey }),
+    migrateLeagueBack:      ()                           => post({ action: 'migrateLeagueBack' }),
+    importLeague:           (newLeagueId, newName, adminPin, data) => post({ action: 'importLeague', newLeagueId, newName, adminPin, data }),
 
     // League-scoped (leagueId auto-injected from session)
     getAllData:        (sinceWeek)      => get('getAllData', sinceWeek ? { sinceWeek } : {}),
@@ -77,15 +81,25 @@ const API = (() => {
     getStandings:     (week)           => get('getStandings',    week   !== undefined ? { week }   : {}),
     getPlayerReport:  (player)         => get('getPlayerReport', player !== undefined ? { player } : {}),
 
-    validatePIN:             (name, pin)  => post({ action: 'validatePIN', name, pin }),
-    validateAdminPassword:   (password)   => post({ action: 'validateAdminPassword', password }),
-    validateAppManager:      (password)   => post({ action: 'validateAppManager', password }),
+    createCheckoutSession: (payload)              => post({ action: 'createCheckoutSession', ...payload }),
+    confirmPayment:        (sessionId)            => post({ action: 'confirmPayment', sessionId }),
+    validateOwnSupabase:   (supabaseUrl, supabaseKey) => post({ action: 'validateOwnSupabase', supabaseUrl, supabaseKey }),
+
+    validatePIN:             (name, pin)           => post({ action: 'validatePIN', name, pin }),
+    validateAdminPassword:   (password, isLogin)   => post({ action: 'validateAdminPassword', password, isLogin: isLogin || false }),
+    validateAppManager:      (password)            => post({ action: 'validateAppManager', password }),
+    verifyAdminOtp:          (leagueId, otp)       => post({ action: 'verifyAdminOtp', leagueId, otp }),
     registerPlayer:   (payload)        => post({ action: 'registerPlayer', ...payload }),
-    submitApplication:(payload)        => post({ action: 'submitApplication', ...payload }),
+    submitApplication:  (payload)          => post({ action: 'submitApplication', ...payload }),
+    getApplications:    ()       => post({ action: 'getApplications' }),
+    approveApplication: (appId) => post({ action: 'approveApplication', appId }),
+    submitSetupForm:    (payload)          => post({ action: 'submitSetupForm', ...payload }),
     approvePlayer:    (playerName, relayConfig) => post({ action: 'approvePlayer', playerName, relayConfig }),
     sendFeedback:     (payload)        => post({ action: 'sendFeedback', ...payload }),
+    getDonations:     ()               => post({ action: 'getDonations' }),
     saveConfig:       (config)         => post({ action: 'saveConfig', config }),
     savePlayers:      (players)        => post({ action: 'savePlayers', players }),
+    savePlayerPhoto:  (playerName, photo) => post({ action: 'savePlayerPhoto', playerName, photo }),
     setAttendance:      (player, week, status) => post({ action: 'setAttendance', player, week, status }),
     batchSetAttendance: (changes)             => post({ action: 'batchSetAttendance', changes }),
     savePairings:     (week, pairings) => post({ action: 'savePairings', week, pairings }),
@@ -97,8 +111,14 @@ const API = (() => {
     sendPlayerReport:           (payload) => post({ action: 'sendPlayerReport', ...payload }),
     testEmailRelay:     (relayConfig, testEmail) => post({ action: 'testEmailRelay', relayConfig, testEmail }),
     changePin:        (name, currentPin, newPin) => post({ action: 'changePin', name, currentPin, newPin }),
+    changePinForce:   (name, newPin)             => post({ action: 'changePinForce', name, newPin }),
     emailPin:         (name)             => post({ action: 'emailPin', name }),
     emailAdminPin:    (leagueId)         => post({ action: 'emailAdminPin', leagueId }),
+
+    // Backup reminders
+    getBackupStatus:    ()  => post({ action: 'getBackupStatus' }),
+    recordBackupDone:   ()  => post({ action: 'recordBackupDone' }),
+    recordBackupSkipped: () => post({ action: 'recordBackupSkipped' }),
 
     // Push notifications
     saveVapidPrivateKey:    (password, privateKey)         => post({ action: 'saveVapidPrivateKey', password, privateKey }),
@@ -117,5 +137,15 @@ const API = (() => {
     setTimerState:      (timerState)             => post({ action: 'setTimerState', timerState }),
     getTimerPushSubs:   (adminPin)               => get('getTimerPushSubs', { adminPin }),
     sendTimerPush:      (adminPin, notifications) => post({ action: 'sendTimerPush', adminPin, notifications }),
+
+    // Challenges
+    getChallenges:       ()                             => get('getChallenges'),
+    submitChallenge:     (payload)                      => post({ action: 'submitChallenge', ...payload }),
+    respondToChallenge:  (challengeId, playerName, response) => post({ action: 'respondToChallenge', challengeId, playerName, response }),
+    deleteChallenge:     (challengeId, playerName)      => post({ action: 'deleteChallenge', challengeId, playerName }),
+
+    // Chat
+    getChatMessages: (sinceId, player) => get('getChatMessages', { sinceId: sinceId || 0, player: player || '' }),
+    postChatMessage: (sender, recipient, message) => post({ action: 'postChatMessage', sender, recipient: recipient || '', message }),
   };
 })();

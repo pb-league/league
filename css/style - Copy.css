@@ -343,7 +343,7 @@ td {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: 6px 14px;
+  padding: 9px 20px;
   border-radius: var(--radius);
   border: none;
   cursor: pointer;
@@ -404,7 +404,7 @@ td {
   color: var(--white);
   font-family: var(--font-body);
   font-size: 0.95rem;
-  padding: 6px 8px;
+  padding: 9px 14px;
   outline: none;
   transition: border-color var(--transition);
 }

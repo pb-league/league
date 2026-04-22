@@ -15,11 +15,15 @@
  // const GAS_URL = 'https://script.google.com/macros/s/AKfycbyyOWnHgNGf7JOJqHteSLmu7h1fIc0ZJfmuKJ1-xIjWVuR4b07DXWgAu10LhIrnQTNTAQ/exec';
 
 // for release
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbzudYO4IDqCJt92kR4gu6dVJyGN5LoKtxpD3RYR1pNHepxU_liEdpogjCnE8mWTOXqU/exec';
+ const GAS_URL = 'https://script.google.com/macros/s/AKfycbzudYO4IDqCJt92kR4gu6dVJyGN5LoKtxpD3RYR1pNHepxU_liEdpogjCnE8mWTOXqU/exec';
+
+// Base URL of the hosted app — update this if the hosting site changes.
+// Must end with a trailing slash.
+const APP_BASE_URL = 'https://pb-league.github.io/league/';
 
 // App version — bump when deploying changes
-const APP_VERSION    = '1.4.7';
-const APP_BUILD_DATE = '2026-04-09';
+const APP_VERSION    = '1.5.17';
+const APP_BUILD_DATE = '2026-04-22';
 
 const TIERS = [
 {
@@ -32,6 +36,7 @@ const TIERS = [
       'timers',
       'tournamentPairings',
       'queuePairings',
+      'ladderLeague',
       'headToHead',
       'playerReport',
       'playerRegistration',
@@ -40,9 +45,15 @@ const TIERS = [
       'playerScoring',
       'pairingEditor',
       'finalRoundAnalysis',
-      'arrangeGames'
+      'arrangeGames',
+      'challenges',
+      'playerPhotos',
+      'createLeagues',
+      'deleteLeagues',
+      'deletePlayers',
+      'changePasswords'
     ],
-    
+
   },
   {
     version: 'Mid',
@@ -53,13 +64,16 @@ const TIERS = [
       'timers',
       'queuePairings',
       'tournamentPairings',
+      'ladderLeague',
       'headToHead',
-     'playerReport',
-     'playerRegistration',
-     'playerAttendance',
-     'playerScoring',
-     'finalRoundAnalysis',
-     'arrangeGames'
+      'playerReport',
+      'playerRegistration',
+      'playerAttendance',
+      'playerScoring',
+      'finalRoundAnalysis',
+      'arrangeGames',
+      'challenges',
+      'playerPhotos'
     ],
   },
   {
@@ -121,6 +135,7 @@ function sanitizeConfig(raw) {
   c.useInitialRank      = bool(c.useInitialRank,       false);
   c.adminOnlyEmail      = bool(c.adminOnlyEmail,       false);
   c.allowRegistration   = bool(c.allowRegistration,    false);
+  c.challengesEnabled   = bool(c.challengesEnabled,    false);
 
   // String fields (keep as-is but ensure they're strings, not null/undefined)
   if (c.leagueName   !== undefined) c.leagueName   = str(c.leagueName,   '');
@@ -133,6 +148,30 @@ function sanitizeConfig(raw) {
   if (c.gameMode     !== undefined) c.gameMode     = str(c.gameMode,     'doubles');
   if (c.rankingMethod !== undefined) c.rankingMethod = str(c.rankingMethod, 'avgptdiff');
   c.pairingMode      = str(c.pairingMode      ?? 'round-based', 'round-based');
+  c.standingsMethod  = str(c.standingsMethod  ?? 'standard',    'standard');
+  c.ladderAttendPts    = flt(c.ladderAttendPts,    2);
+  c.ladderPlayPts      = flt(c.ladderPlayPts,      1);
+  c.ladderRange1Min    = flt(c.ladderRange1Min,   -99);
+  c.ladderRange1Max    = flt(c.ladderRange1Max,    -1);
+  c.ladderRange1Pts    = flt(c.ladderRange1Pts,     3);
+  c.ladderRange2Min    = flt(c.ladderRange2Min,     0);
+  c.ladderRange2Max    = flt(c.ladderRange2Max,     3);
+  c.ladderRange2Pts    = flt(c.ladderRange2Pts,     2);
+  c.ladderRange3Min    = flt(c.ladderRange3Min,     4);
+  c.ladderRange3Max    = flt(c.ladderRange3Max,     6);
+  c.ladderRange3Pts    = flt(c.ladderRange3Pts,     1);
+  c.ladderRange4Min    = flt(c.ladderRange4Min,     7);
+  c.ladderRange4Max    = flt(c.ladderRange4Max,    99);
+  c.ladderRange4Pts    = flt(c.ladderRange4Pts,     0);
+  c.ladderRange5Min    = flt(c.ladderRange5Min,     0);
+  c.ladderRange5Max    = flt(c.ladderRange5Max,     0);
+  c.ladderRange5Pts    = flt(c.ladderRange5Pts,     0);
+  c.ladderRange6Min    = flt(c.ladderRange6Min,     0);
+  c.ladderRange6Max    = flt(c.ladderRange6Max,     0);
+  c.ladderRange6Pts    = flt(c.ladderRange6Pts,     0);
+  c.ladderRank1Pts   = flt(c.ladderRank1Pts,   0);
+  c.ladderRank2Pts   = flt(c.ladderRank2Pts,   0);
+  c.ladderRank3Pts   = flt(c.ladderRank3Pts,   0);
   c.queueWinnerStay  = int(c.queueWinnerStay,  0);
   c.queueWinnerSplit = str(c.queueWinnerSplit  ?? 'none',        'none');
   c.wQueueWait       = flt(c.wQueueWait,        10);

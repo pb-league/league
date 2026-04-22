@@ -18,9 +18,13 @@ const Auth = (() => {
   function setSession(name, isAdmin, leagueId, leagueName, canScore = false, role = 'player') {
     sessionStorage.setItem(SESSION_KEY, JSON.stringify({ name, isAdmin, leagueId, leagueName, canScore, role, ts: Date.now() }));
     // Preserve the league slug from the original URL so logout can return to it
-    // Only preserve league slug if it was explicitly in the URL
-    const urlLeague = new URLSearchParams(window.location.search).get('league');
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlLeague = urlParams.get('league');
     if (urlLeague) sessionStorage.setItem('pb_league_slug', urlLeague);
+    // Preserve the org customer ID so admin.js can scope its league list correctly
+    const urlCustomerId = urlParams.get('id');
+    if (urlCustomerId) sessionStorage.setItem('pb_customer_id', urlCustomerId);
+    else sessionStorage.removeItem('pb_customer_id');
   }
 
   function clearSession() {
@@ -53,7 +57,7 @@ const Auth = (() => {
   }
 
   async function loginAdmin(password, leagueId, leagueName) {
-    const result = await API.validateAdminPassword(password);
+    const result = await API.validateAdminPassword(password, true);
     if (result.valid) {
       setSession(result.name, true, leagueId, leagueName, true, result.role || 'admin');
     }

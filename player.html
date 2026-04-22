@@ -34,6 +34,9 @@
   }
   /* Hide round score badge when the round is expanded — reduces tab-focus noise */
   details[open] summary .round-badge { display:none; }
+  /* Chat unread badge on nav */
+  #chat-nav-badge { display:none; width:8px; height:8px; background:var(--danger,#c0392b); border-radius:50%; margin-left:6px; vertical-align:middle; flex-shrink:0; animation:pulse-dot 1.2s ease-in-out infinite; }
+  #chat-nav-badge.visible { display:inline-block; }
 </style>
 </head>
 <body class="court-bg">
@@ -75,6 +78,7 @@
       <div class="nav-section">
         <div class="nav-item active" data-page="my-games"><span class="icon">🎾</span> My Games</div>
         <div class="nav-item" data-page="attendance"><span class="icon">📋</span> Availability</div>
+        <div class="nav-item hidden" id="nav-challenges" data-page="challenges"><span class="icon">⚔️</span> Challenges</div>
         <div class="nav-item" data-page="scoresheet"><span class="icon">📊</span> Scoresheet</div>
         <div class="nav-item hidden" id="nav-score-entry" data-page="score-entry"><span class="icon">✏️</span> Score Entry</div>
       </div>
@@ -84,6 +88,9 @@
         <div class="nav-item hidden" id="nav-tournament" data-page="tournament"><span class="icon">🏆</span> Tournament</div>
         <div class="nav-item" data-page="attendance-all"><span class="icon">👥</span> Attendance</div>
         <div class="nav-item" data-page="player-report"><span class="icon">👤</span> Player Report</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-item hidden" id="nav-chat" data-page="chat"><span class="icon">💬</span> Chat<span id="chat-nav-badge"></span></div>
       </div>
     </nav>
 
@@ -117,8 +124,15 @@
           </div>
         </div>
 
+        <div id="player-final-banner"></div>
         <div id="my-league-info"></div>
         <div id="my-next-game"></div>
+        <div id="timer-opt-in" style="display:none; margin-bottom:8px;">
+          <label style="display:flex; align-items:center; gap:8px; font-size:0.85rem; color:var(--muted); cursor:pointer;">
+            <input type="checkbox" id="timer-opt-in-check" style="width:16px; height:16px; cursor:pointer;">
+            Show court timers
+          </label>
+        </div>
         <div id="player-timer-widget"></div>
         <div id="player-dash-rules"></div>
         <div class="card-grid" id="my-stats"></div>
@@ -207,6 +221,7 @@
           <button class="tab-btn" data-tab="trend">Ranking Trend</button>
         </div>
         <div id="player-stand-season" class="tab-panel active">
+          <div id="season-podium"></div>
           <div class="card">
             <div class="card-header"><div class="card-title" id="season-standings-title">Season Standings</div></div>
             <div class="table-wrap" id="season-standings-table"></div>
@@ -245,6 +260,12 @@
         </div>
       </section>
 
+      <!-- ═══ CHALLENGES ═══ -->
+      <section id="page-challenges" class="tab-panel">
+        <div class="page-header"><h2>Challenges</h2></div>
+        <div id="challenges-content"></div>
+      </section>
+
       <!-- ═══ FULL ATTENDANCE ═══ -->
       <section id="page-attendance-all" class="tab-panel">
         <div class="page-header"><h2 id="ph-attendance-all">Attendance</h2></div>
@@ -265,17 +286,66 @@
         <div id="player-report-content"></div>
       </section>
 
+      <!-- ═══ CHAT ═══ -->
+      <section id="page-chat" class="tab-panel">
+        <div class="page-header">
+          <h2>Chat</h2>
+        </div>
+        <div class="card" style="display:flex; flex-direction:column;">
+          <div id="chat-messages"
+               style="min-height:240px; max-height:420px; overflow-y:auto; padding:4px 0;"></div>
+          <div style="border-top:1px solid var(--border); padding:10px 0 2px; flex-shrink:0;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+              <span style="font-size:0.8rem; color:var(--muted); white-space:nowrap;">To:</span>
+              <select id="chat-recipient" class="form-control"
+                style="max-width:200px; font-size:0.82rem; padding:4px 8px;"></select>
+              <span id="chat-char-count"
+                style="font-size:0.75rem; color:var(--muted); margin-left:auto; white-space:nowrap;">160</span>
+            </div>
+            <div style="display:flex; gap:8px; align-items:flex-end;">
+              <textarea id="chat-input" class="form-control" maxlength="160" rows="2"
+                placeholder="Type a message…"
+                style="flex:1; resize:none; font-size:0.88rem; padding:6px 10px;"></textarea>
+              <button id="btn-chat-send" class="btn btn-primary"
+                style="padding:8px 16px; white-space:nowrap;">Send</button>
+            </div>
+            <div id="chat-send-status"
+              style="font-size:0.75rem; color:var(--danger); margin-top:4px; min-height:14px;"></div>
+          </div>
+        </div>
+      </section>
+
     </main>
   </div>
 </div>
 
 <div id="toast-container"></div>
 <div class="loading-overlay hidden" id="loading"><div class="spinner"></div></div>
+
+<!-- ── Contact Card Modal ──────────────────────────────────── -->
+<div id="contact-card-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65);
+     z-index:3000; align-items:center; justify-content:center; padding:16px;">
+  <div style="background:#1a2a3a; border-radius:14px; width:100%; max-width:340px;
+       border:1px solid rgba(255,255,255,0.12); box-shadow:0 24px 60px rgba(0,0,0,0.5);
+       padding:28px 24px 20px; text-align:center; position:relative;">
+    <button id="contact-card-close" style="position:absolute; top:10px; right:14px;
+            background:none; border:none; color:rgba(255,255,255,0.4); font-size:1.25rem;
+            cursor:pointer; line-height:1; padding:4px 6px;">✕</button>
+    <img id="cc-avatar" src="" alt=""
+         style="width:80px; height:80px; border-radius:50%; object-fit:cover;
+                border:2px solid rgba(255,255,255,0.15); margin-bottom:10px;">
+    <div id="cc-handle" style="font-size:1.15rem; font-weight:700; color:#fff; margin-bottom:2px;"></div>
+    <div id="cc-fullname" style="font-size:0.88rem; color:rgba(255,255,255,0.5); margin-bottom:12px;"></div>
+    <div id="cc-contact-info" style="margin-bottom:4px;"></div>
+    <div id="cc-add-contact-wrap"></div>
+    <p id="cc-note" style="font-size:0.72rem; color:rgba(255,255,255,0.35); margin-top:10px; line-height:1.4;"></p>
+  </div>
+</div>
 <div style="text-align:center; padding:8px 0 4px; font-size:0.68rem; color:rgba(255,255,255,0.18);">
   <span id="player-version"></span>
 </div>
 
-<script src="js/settings.js?v=1.4.7"></script>
+<script src="js/settings.js?v=1.5.17"></script>
   <!-- Google Analytics — loads only if GA_MEASUREMENT_ID is set in settings.js -->
   <script>
     window.__gaReady = false;
@@ -297,12 +367,12 @@
       window.__gaReady = true;
     });
   </script>
-<script src="js/api.js?v=1.4.7"></script>
-<script src="js/push.js?v=1.4.7"></script>
-<script src="js/auth.js?v=1.4.7"></script>
-<script src="js/reports.js?v=1.4.7"></script>
-<script src="js/timer-player.js?v=1.4.7"></script>
-<script src="js/player.js?v=1.4.7"></script>
+<script src="js/api.js?v=1.5.17"></script>
+<script src="js/push.js?v=1.5.17"></script>
+<script src="js/auth.js?v=1.5.17"></script>
+<script src="js/reports.js?v=1.5.17"></script>
+<script src="js/timer-player.js?v=1.5.17"></script>
+<script src="js/player.js?v=1.5.17"></script>
 <script>
 (function() {
   const toggle   = document.getElementById('nav-toggle');

@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // sw.js — Service Worker for Pickleball League Manager
 //
 // Cache version is read automatically from js/settings.js so
@@ -11,7 +11,7 @@
 //   GAS API     → Network-only (never cache)
 // ============================================================
 
-const FALLBACK_VERSION = 'pb-league-v1.5.17';
+const FALLBACK_VERSION = 'pb-league-v1.5.21';
 
 const HTML_FILES = [
   './index.html',

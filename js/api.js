@@ -88,7 +88,7 @@ const API = (() => {
     validatePIN:             (name, pin)           => post({ action: 'validatePIN', name, pin }),
     validateAdminPassword:   (password, isLogin)   => post({ action: 'validateAdminPassword', password, isLogin: isLogin || false }),
     validateAppManager:      (password)            => post({ action: 'validateAppManager', password }),
-    verifyAdminOtp:          (leagueId, otp)       => post({ action: 'verifyAdminOtp', leagueId, otp }),
+    verifyAdminOtp:          (otp)                 => post({ action: 'verifyAdminOtp', otp }),
     registerPlayer:   (payload)        => post({ action: 'registerPlayer', ...payload }),
     submitApplication:  (payload)          => post({ action: 'submitApplication', ...payload }),
     getApplications:    ()       => post({ action: 'getApplications' }),

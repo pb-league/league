@@ -6,6 +6,52 @@
 
 const CHANGELOG = [
 {
+  version: '1.5.21',
+  date: '2026-04-26',
+  changes: [
+    'Pairing Tool: tournament bracket now renders visually — round columns with match cards showing team names, seed numbers, and scores (winner highlighted in green), matching the bracket view in the player app',
+    'Pairing Tool: losers-bracket matches labeled; grand final match highlighted in gold; champion banner shown with final score when tournament completes',
+    'Pairing Tool: reseeded (RR) mode shows a live standings table derived from tournament scores, updating as scores are entered',
+    'Pairing Tool: switching to tournament mode no longer clears previous rounds — play normal rounds first, then start a tournament that seeds players from the accumulated standings',
+    'Pairing Tool: tab key in score entry skips player name dropdowns and moves directly to the next score field',
+  ]
+},
+{
+  version: '1.5.20',
+  date: '2026-04-26',
+  changes: [
+    'Pairing Tool: tournament-style pairings now supported — choose Single Elimination, Double Elimination, Reseeded (Doubles), or Reseeded (Singles) from the new Pairing Mode dropdown in Settings',
+    'Pairing Tool: tournament bracket card shows live bracket status (Winners/Losers/Eliminated for elimination modes; standings for reseeded), with Advance Round button that validates all scores are entered first',
+    'Pairing Tool: tournament rounds appear as normal rounds in the Rounds card for scoring; bracket state syncs via PeerJS to all guests and survives Export/Import',
+    'Pairing Tool: champion banner shown when a single/double elimination tournament finishes; Reset button restores normal mode',
+    'Pairing Tool: added toast notifications (used by existing lock warnings and new tournament alerts)',
+  ]
+},
+{
+  version: '1.5.19',
+  date: '2026-04-26',
+  changes: [
+    'Tier feature: admin donation tracking (marking a player\'s donation amount and method) is now a tier-controlled feature; currently disabled on all tiers — app developer can still record donations directly in the spreadsheet',
+    'Final-session banner: donation solicitation (Venmo/Buy Me a Coffee) is now tier-controlled and hidden when donationTracking is disabled; feedback/suggestions section always shown',
+    'Bug fix: OTP verification on admin login no longer fails with "leagueId is required" — leagueId is now pulled from the active session rather than passed explicitly',
+    'Bug fix: player lockout count resets after a lockout period expires, so waiting out the 30-second penalty gives a genuine fresh start',
+    'Bug fix: blank-PIN probe sent on player selection no longer counts as a failed attempt against the lockout counter',
+  ]
+},
+{
+  version: '1.5.18',
+  date: '2026-04-24',
+  changes: [
+    'Bug fix: player lockout now shows the countdown immediately on the attempt that triggers it, preventing the correct password from being blocked on the very next try',
+    'Bug fix: emailing a player their password no longer fails with "relayConfig is not defined"',
+    'Bug fix: offline scoresheet button no longer throws ReferenceError for safeName',
+    'Settings: admin password field now clears on focus to prevent browser autofill from concatenating old and new passwords; show/hide toggle added',
+    'Settings: deployment environment switcher — change one line (DEPLOY) in settings.js to switch between beta, netlify-beta, and release',
+    'Admin panel: removed redundant My Profile menu (covered by Settings and Messaging)',
+    'Security: 5-minute player lockout message now advises contacting the league admin to reset password',
+  ]
+},
+{
   version: '1.5.17',
   date: '2026-04-22',
   changes: [

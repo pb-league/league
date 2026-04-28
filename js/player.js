@@ -645,6 +645,7 @@ function buildPodiumHTML(topThree, photoMap, photosOn, seasonComplete) {
         <div style="padding:14px 16px; background:rgba(232,184,75,0.05);
             border:1px solid rgba(232,184,75,0.25); border-top:none;
             border-radius:0 0 8px 8px;">
+          ${tierAllows(state.limits?.tier, 'donationTracking') ? `
           <p style="font-size:0.85rem; color:var(--muted); line-height:1.75; margin:0 0 14px;">
             This app was built and provided to help run your league — completely free. Other apps doing far less
             often charge significant fees, which could raise the cost to you. It took hundreds of hours to develop, test, and support.
@@ -656,7 +657,10 @@ function buildPodiumHTML(topThree, photoMap, photosOn, seasonComplete) {
                      white-space:nowrap;">💸 Open Venmo</a>.
             <br>Donations also help cover ongoing costs for tools and hosting, and will allow for faster hosting
             and more advanced features to be added.
-          </p>
+          </p>` : `<p style="font-size:0.85rem; color:var(--muted); line-height:1.75; margin:0 0 14px;">
+            This app was built and provided to help run your league — completely free. Thank you for being patient and understanding 
+            while some bugs were being worked out due to it being only a few weeks old and only one person developing and testing it. 
+            Suggestions for improving it are greatly appreciated so that it can continue to meet the needs of pickleball players. </p>`}
           <div style="border-top:1px solid rgba(255,255,255,0.07); padding-top:12px;">
             <div style="font-size:0.78rem; font-weight:600; color:var(--muted);
                 text-transform:uppercase; letter-spacing:0.06em; margin-bottom:8px;">

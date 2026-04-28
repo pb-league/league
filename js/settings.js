@@ -9,21 +9,28 @@
 // constants are available to api.js and admin.js.
 // ============================================================
 
-// Google Apps Script Web App URL
-// After deploying a new version in GAS, paste the URL here.
-// for beta
- // const GAS_URL = 'https://script.google.com/macros/s/AKfycbyyOWnHgNGf7JOJqHteSLmu7h1fIc0ZJfmuKJ1-xIjWVuR4b07DXWgAu10LhIrnQTNTAQ/exec';
+// ── Deployment target — change ONLY this line when switching environments ──
+const DEPLOY = 'release'; // 'release'; // 'beta' | 'netlify-beta' | 'release'
 
-// for release
- const GAS_URL = 'https://script.google.com/macros/s/AKfycbzudYO4IDqCJt92kR4gu6dVJyGN5LoKtxpD3RYR1pNHepxU_liEdpogjCnE8mWTOXqU/exec';
-
-// Base URL of the hosted app — update this if the hosting site changes.
-// Must end with a trailing slash.
-const APP_BASE_URL = 'https://pb-league.github.io/league/';
+const _DEPLOY_ENVS = {
+  'beta': {
+    GAS_URL:      'https://script.google.com/macros/s/AKfycbyyOWnHgNGf7JOJqHteSLmu7h1fIc0ZJfmuKJ1-xIjWVuR4b07DXWgAu10LhIrnQTNTAQ/exec',
+    APP_BASE_URL: 'https://pb-league.github.io/betaLeague/',
+  },
+  'netlify-beta': {
+    GAS_URL:      'https://script.google.com/macros/s/AKfycbxyF6BK1uWF8B-ANP--Xo-P96G8_R0sOLLg4ErLbSPsyk_xK84rsof98jtUGTj54JYw/exec',
+    APP_BASE_URL: 'https://pickleballmanager.netlify.app/',
+  },
+  'release': {
+    GAS_URL:      'https://script.google.com/macros/s/AKfycbzudYO4IDqCJt92kR4gu6dVJyGN5LoKtxpD3RYR1pNHepxU_liEdpogjCnE8mWTOXqU/exec',
+    APP_BASE_URL: 'https://pb-league.github.io/league/',
+  },
+};
+const { GAS_URL, APP_BASE_URL } = _DEPLOY_ENVS[DEPLOY];
 
 // App version — bump when deploying changes
-const APP_VERSION    = '1.5.17';
-const APP_BUILD_DATE = '2026-04-22';
+const APP_VERSION    = '1.5.21';
+const APP_BUILD_DATE = '2026-04-26';
 
 const TIERS = [
 {
@@ -51,7 +58,8 @@ const TIERS = [
       'createLeagues',
       'deleteLeagues',
       'deletePlayers',
-      'changePasswords'
+      'changePasswords',
+      'donationTracking'
     ],
 
   },
@@ -73,13 +81,14 @@ const TIERS = [
       'finalRoundAnalysis',
       'arrangeGames',
       'challenges',
-      'playerPhotos'
+      'playerPhotos',
+      'donationTracking'
     ],
   },
   {
     version: 'Max',
     description: 'everything enabled.  In-app messaging,  email based attendance updates, More reports, Tournament mode, queued player pairing option, in-app Messaging, players help score, notifications to players, players can register, final round outcome analysis.',
-    disableList: []
+    disableList: ['donationTracking']
   }
 ]
 

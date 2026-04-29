@@ -2236,8 +2236,13 @@ function buildPodiumHTML(topThree, photoMap, photosOn, seasonComplete) {
           const court = card.dataset.court;
           const pairing = weekPairings.find(p => String(p.round) === String(round) && String(p.court) === String(court));
           if (!pairing) return;
-          const s1 = card.querySelector('[data-score="1"]').value;
-          const s2 = card.querySelector('[data-score="2"]').value;
+          const s1El = card.querySelector('[data-score="1"]');
+          const s2El = card.querySelector('[data-score="2"]');
+       
+          const s1 = s1El ? s1El.value : 0;  
+          const s2 = s2El ? s2El.value : 0;
+         // const s1 = card.querySelector('[data-score="1"]').value;
+         // const s2 = card.querySelector('[data-score="2"]').value;
           if (s1 !== '' || s2 !== '') {
             scores.push({
               week, round: parseInt(round), court,
